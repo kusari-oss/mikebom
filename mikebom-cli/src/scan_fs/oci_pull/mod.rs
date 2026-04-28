@@ -1,9 +1,11 @@
 //! OCI registry image pull (milestone 031, restructured into a
 //! submodule directory by milestone 032).
 //!
-//! This module is gated behind the default-off `oci-registry`
-//! Cargo feature. When enabled, the `--image <ref>` CLI argument
-//! accepts an OCI image reference (e.g. `alpine:3.19`,
+//! This module is gated behind the `oci-registry` Cargo feature
+//! (on by default as of milestone 033; users who want a
+//! minimal-deps build can opt out via `--no-default-features`).
+//! When enabled, the `--image <ref>` CLI argument accepts an OCI
+//! image reference (e.g. `alpine:3.19`,
 //! `gcr.io/foo/bar@sha256:...`) in addition to the existing
 //! docker-save tarball path. The reference is parsed, the manifest
 //! plus layer blobs are pulled, gzipped layers are decompressed,

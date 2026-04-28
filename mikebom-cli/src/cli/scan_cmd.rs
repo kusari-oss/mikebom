@@ -461,12 +461,16 @@ pub async fn execute(
                 #[cfg(not(feature = "oci-registry"))]
                 {
                     anyhow::bail!(
-                        "--image argument `{}` is not an existing file. \
-                         OCI image references (e.g. `alpine:3.19`) require the \
-                         `oci-registry` Cargo feature to be enabled. Either:\n\
-                         (a) install with `cargo install mikebom --features oci-registry`, or\n\
-                         (b) pre-extract the image with `docker save <ref> -o image.tar` \
-                         and pass `--image image.tar`.",
+                        "--image argument `{}` is not an existing file, and this \
+                         build of mikebom was compiled with `--no-default-features` \
+                         (the `oci-registry` Cargo feature is OFF), so OCI image \
+                         references like `alpine:3.19` cannot be pulled from a \
+                         registry. Either:\n\
+                         (a) reinstall with the default feature set: \
+                         `cargo install mikebom`, or\n\
+                         (b) pre-extract the image with \
+                         `docker save <ref> -o image.tar` and pass \
+                         `--image image.tar`.",
                         archive.display()
                     );
                 }

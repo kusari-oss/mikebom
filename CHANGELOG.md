@@ -209,6 +209,23 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
   was never relocated there. New unit + integration tests exercise
   every disposition. See `specs/009-maven-shade-deps/spec.md` FR-002b.
 
+### Changed
+- **`oci-registry` Cargo feature is now on by default.** Direct
+  registry pulls (`mikebom sbom scan --image alpine:3.19`) work
+  out of the box on a stock `cargo install mikebom` — matches
+  syft / trivy UX without requiring `--features oci-registry`.
+  The post-milestone-032 substrate (`oci-spec` types-only +
+  workspace `reqwest 0.12` + mikebom-owned thin HTTP client) is
+  small enough + durable enough that the milestone-031 default-off
+  framing no longer pays for itself. Users embedding mikebom in a
+  context that needs a minimal-deps build can opt out via
+  `cargo install mikebom --no-default-features`; the local
+  `--path <dir>` and `--image <foo.tar>` paths still work in that
+  configuration. The dep-audit guardrail
+  (`no_c_dependencies_in_oci_registry_feature_tree` regression
+  test) continues to enforce zero new C-bound transitive deps in
+  the now-default tree.
+
 ### Removed
 - **`mikebom sbom compare` subcommand** and the `demos/` directory.
   The head-to-head comparison story is now owned by a separate test

@@ -425,16 +425,54 @@ pub async fn execute(
     // content (the extracted rootfs for --image, or <path>/etc/os-release
     // for a --path root that looks like a rootfs). Explicit
     // `--deb-codename` on the CLI always wins.
+    // Hold any OCI-pull tempdir alive through the `extract` call.
+    // Dropped immediately after `extract` finishes — the tarball
+    // bytes have been read by then and the rootfs lives in its
+    // own tempdir.
+    #[cfg(feature = "oci-registry")]
+    let mut _oci_pull_tempdir: Option<tempfile::TempDir> = None;
+
     let (root_path, target_name, generation_context, auto_codename, _extracted) =
         if let Some(archive) = args.image.as_ref() {
-            if !archive.is_file() {
-                anyhow::bail!(
-                    "--image must point at a docker save tarball: {}",
-                    archive.display()
-                );
-            }
-            tracing::info!(archive = %archive.display(), "extracting docker image");
-            let extracted = scan_fs::docker_image::extract(archive)?;
+            // Milestone 031 — `--image` accepts either a file path
+            // (existing tarball-extract) or an OCI image reference
+            // (new feature-gated registry pull).
+            let archive_path: std::path::PathBuf = if archive.is_file() {
+                archive.clone()
+            } else {
+                #[cfg(feature = "oci-registry")]
+                {
+                    let arg_str = archive.to_str().context(
+                        "--image argument is not valid UTF-8 — required for OCI ref parsing",
+                    )?;
+                    let kind = scan_fs::oci_pull::detect_image_arg_kind(archive);
+                    if kind != scan_fs::oci_pull::ImageArgKind::OciRef {
+                        anyhow::bail!(
+                            "--image argument is neither an existing tarball file nor a parseable OCI image reference: {}",
+                            archive.display()
+                        );
+                    }
+                    tracing::info!(image_ref = %arg_str, "pulling image from registry");
+                    let tempdir = scan_fs::oci_pull::pull_to_tarball(arg_str)?;
+                    let tarball = tempdir.path().join("image.tar");
+                    _oci_pull_tempdir = Some(tempdir);
+                    tarball
+                }
+                #[cfg(not(feature = "oci-registry"))]
+                {
+                    anyhow::bail!(
+                        "--image argument `{}` is not an existing file. \
+                         OCI image references (e.g. `alpine:3.19`) require the \
+                         `oci-registry` Cargo feature to be enabled. Either:\n\
+                         (a) install with `cargo install mikebom --features oci-registry`, or\n\
+                         (b) pre-extract the image with `docker save <ref> -o image.tar` \
+                         and pass `--image image.tar`.",
+                        archive.display()
+                    );
+                }
+            };
+            tracing::info!(archive = %archive_path.display(), "extracting docker image");
+            let extracted = scan_fs::docker_image::extract(&archive_path)?;
             let target = extracted
                 .repo_tag
                 .clone()

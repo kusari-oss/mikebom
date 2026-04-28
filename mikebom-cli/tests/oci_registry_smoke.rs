@@ -154,6 +154,74 @@ fn pulls_distroless_static_and_emits_well_formed_sbom_with_zero_components() {
     );
 }
 
+/// Cross-arch end-to-end smoke test (milestone 035 / 031.y).
+///
+/// Pulls alpine:3.19 with `--image-platform` set to a non-host arch
+/// and asserts the SBOM's apk PURLs reflect the requested arch's
+/// alpine `apk` arch name (e.g. linux/amd64 → x86_64,
+/// linux/arm64 → aarch64). Skipped silently unless
+/// `MIKEBOM_OCI_NETWORK_TESTS=1`.
+#[test]
+fn pulls_alpine_with_image_platform_override() {
+    if !network_tests_enabled() {
+        eprintln!(
+            "skipping: set MIKEBOM_OCI_NETWORK_TESTS=1 to run network-gated smoke tests"
+        );
+        return;
+    }
+
+    // Pick a non-host arch so the test exercises the override path
+    // even when the host is itself one of the common arches.
+    let (target_platform, expected_apk_arch) = match std::env::consts::ARCH {
+        "x86_64" => ("linux/arm64", "aarch64"),
+        _ => ("linux/amd64", "x86_64"),
+    };
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let out_path = tmp.path().join("alpine-cross-arch.cdx.json");
+    let output = Command::new(env!("CARGO_BIN_EXE_mikebom"))
+        .arg("--offline")
+        .arg("sbom")
+        .arg("scan")
+        .arg("--image")
+        .arg("alpine:3.19")
+        .arg("--image-platform")
+        .arg(target_platform)
+        .arg("--format")
+        .arg("cyclonedx-json")
+        .arg("--output")
+        .arg(&out_path)
+        .output()
+        .expect("mikebom should run");
+    assert!(
+        output.status.success(),
+        "mikebom failed for {target_platform}:\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let bytes = std::fs::read(&out_path).expect("read alpine-cross-arch.cdx.json");
+    let sbom: serde_json::Value = serde_json::from_slice(&bytes).expect("valid CDX JSON");
+    let components = sbom["components"]
+        .as_array()
+        .expect("CDX components array");
+    assert!(!components.is_empty(), "alpine should yield ≥1 component");
+
+    // apk PURLs encode the arch as `arch=<x86_64|aarch64|...>`. We
+    // expect the user-requested arch, NOT the host's.
+    let qualifier = format!("arch={expected_apk_arch}");
+    let has_target_arch = components.iter().any(|c| {
+        c["purl"]
+            .as_str()
+            .is_some_and(|p| p.starts_with("pkg:apk/alpine/") && p.contains(&qualifier))
+    });
+    assert!(
+        has_target_arch,
+        "expected at least one apk PURL with `{qualifier}` for {target_platform}; \
+         got components: {}",
+        serde_json::to_string_pretty(&components).unwrap_or_default()
+    );
+}
+
 /// Authenticated end-to-end smoke test (milestone 034 / 031.x).
 ///
 /// Pulls a private image from the registry using credentials

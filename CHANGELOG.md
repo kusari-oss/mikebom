@@ -8,6 +8,23 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 ## [Unreleased]
 
 ### Added
+- **Milestone 035 (031.y) — `--image-platform` CLI flag for cross-arch
+  image scans.** New `mikebom sbom scan --image <ref>
+  --image-platform linux/<arch>[/<variant>]` selects a specific
+  platform from a multi-arch image index instead of auto-resolving
+  to `linux/<host-arch>`. Common shapes: `linux/amd64`,
+  `linux/arm64`, `linux/arm/v7`, `linux/386`, `linux/ppc64le`,
+  `linux/s390x`. The variant segment is honoured for indexes that
+  carry it (e.g. arm v6 vs v7 vs arm64 v8). Closes the macOS-arm64
+  dev / Linux-x86_64 CI workflow gap that previously required
+  `docker pull --platform <X> && docker save` to scan a non-host
+  image. Registry-only — passing `--image-platform` alongside a
+  pre-extracted tarball errors clearly. Non-`linux` OS values
+  reject with an explanation that mikebom's package-DB readers are
+  linux-rootfs-shaped. No SBOM-shape changes (the byte-identity
+  goldens regen produces zero diff). Closes #67. See
+  `specs/035-image-platform-flag/spec.md` and the new flag row in
+  `docs/user-guide/cli-reference.md`.
 - **Milestone 034 (031.x) — Authenticated OCI registry pulls.**
   `mikebom sbom scan --image <ref>` now supports private registries
   via the standard Docker keychain — the same `~/.docker/config.json`

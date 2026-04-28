@@ -1,22 +1,36 @@
-//! Network-gated end-to-end smoke test for milestone 031.
+//! Network-gated end-to-end smoke tests for the OCI registry-pull
+//! pipeline (milestones 031 anonymous + 034 authenticated).
 //!
-//! This test pulls a real public OCI image from a real registry,
-//! runs it through the full mikebom pipeline (oci_pull →
-//! docker_image::extract → scan → SBOM emission), and verifies the
-//! output is well-formed. It runs ONLY when:
+//! These tests pull real OCI images from real registries, run them
+//! through the full mikebom pipeline (oci_pull →
+//! docker_image::extract → scan → SBOM emission), and verify the
+//! output is well-formed. They run ONLY when:
 //!
 //!   1. The crate is built with `--features oci-registry`, AND
 //!   2. The `MIKEBOM_OCI_NETWORK_TESTS=1` env var is set.
 //!
 //! The default Linux + ebpf + macOS CI lanes do NOT set the env
-//! var, so this test is silently skipped on every standard PR. A
-//! follow-on milestone may add a dedicated `lint-and-test-oci-network`
-//! job that flips it on; for milestone 031 it ships as opt-in only.
+//! var, so these tests are silently skipped on every standard PR.
+//! A follow-on milestone may add a dedicated
+//! `lint-and-test-oci-network` job that flips it on; for now they
+//! ship as opt-in only.
+//!
+//! The authenticated smoke test additionally requires
+//! `MIKEBOM_OCI_AUTH_TESTS=1` and the env var
+//! `MIKEBOM_OCI_AUTH_PRIVATE_IMAGE_REF` pointing at a private image
+//! you already have credentials for in `~/.docker/config.json`.
+//! Documented in PR descriptions for manual verification.
 //!
 //! To run locally:
 //!
 //! ```sh
 //! MIKEBOM_OCI_NETWORK_TESTS=1 cargo +stable test \
+//!     -p mikebom --features oci-registry --test oci_registry_smoke
+//!
+//! MIKEBOM_OCI_NETWORK_TESTS=1 \
+//! MIKEBOM_OCI_AUTH_TESTS=1 \
+//! MIKEBOM_OCI_AUTH_PRIVATE_IMAGE_REF=ghcr.io/<you>/<priv>:tag \
+//!     cargo +stable test \
 //!     -p mikebom --features oci-registry --test oci_registry_smoke
 //! ```
 
@@ -26,6 +40,10 @@ use std::process::Command;
 
 fn network_tests_enabled() -> bool {
     std::env::var("MIKEBOM_OCI_NETWORK_TESTS").ok().as_deref() == Some("1")
+}
+
+fn auth_tests_enabled() -> bool {
+    std::env::var("MIKEBOM_OCI_AUTH_TESTS").ok().as_deref() == Some("1")
 }
 
 #[test]
@@ -134,4 +152,102 @@ fn pulls_distroless_static_and_emits_well_formed_sbom_with_zero_components() {
         components, 0,
         "distroless static image should yield 0 components (it ships no package metadata); got {components}"
     );
+}
+
+/// Authenticated end-to-end smoke test (milestone 034 / 031.x).
+///
+/// Pulls a private image from the registry using credentials
+/// resolved from `~/.docker/config.json`. The image reference is
+/// passed via `MIKEBOM_OCI_AUTH_PRIVATE_IMAGE_REF` so that this
+/// test doesn't bake in any specific user's private repo.
+///
+/// Skipped silently unless BOTH gate env vars are set:
+///   - `MIKEBOM_OCI_NETWORK_TESTS=1`
+///   - `MIKEBOM_OCI_AUTH_TESTS=1`
+///
+/// Verifies the scan succeeds AND that no credential bytes leak to
+/// stdout / stderr. The `auth` field's base64 string is what we'd
+/// most readily detect in a regression — if it ever shows up in
+/// program output, fail loudly.
+#[test]
+fn pulls_private_image_via_docker_keychain() {
+    if !network_tests_enabled() || !auth_tests_enabled() {
+        eprintln!(
+            "skipping: set MIKEBOM_OCI_NETWORK_TESTS=1 and \
+             MIKEBOM_OCI_AUTH_TESTS=1 to run the authenticated smoke test"
+        );
+        return;
+    }
+
+    let image_ref = match std::env::var("MIKEBOM_OCI_AUTH_PRIVATE_IMAGE_REF") {
+        Ok(r) if !r.is_empty() => r,
+        _ => {
+            eprintln!(
+                "skipping: MIKEBOM_OCI_AUTH_PRIVATE_IMAGE_REF must point at a \
+                 private image you have credentials for in ~/.docker/config.json"
+            );
+            return;
+        }
+    };
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let out_path = tmp.path().join("private.cdx.json");
+    let output = Command::new(env!("CARGO_BIN_EXE_mikebom"))
+        .arg("--offline")
+        .arg("sbom")
+        .arg("scan")
+        .arg("--image")
+        .arg(&image_ref)
+        .arg("--format")
+        .arg("cyclonedx-json")
+        .arg("--output")
+        .arg(&out_path)
+        .env("RUST_LOG", "debug")
+        .output()
+        .expect("mikebom should run");
+    assert!(
+        output.status.success(),
+        "mikebom failed for {image_ref}:\nstdout={}\nstderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    // Best-effort secret-leak guard. If the user's config.json puts a
+    // credential value in `auths.<reg>.auth`, we can read it back here
+    // and confirm it doesn't appear in mikebom's output. This is a
+    // sanity check, not a security guarantee — credential helpers
+    // store the secret outside config.json so we can't guard them.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if let Some(home) = std::env::var_os("HOME") {
+        let cfg_path = std::path::PathBuf::from(home).join(".docker/config.json");
+        if let Ok(cfg_bytes) = std::fs::read(&cfg_path) {
+            if let Ok(cfg_json) = serde_json::from_slice::<serde_json::Value>(&cfg_bytes) {
+                if let Some(auths) = cfg_json.get("auths").and_then(|v| v.as_object()) {
+                    for (_reg, entry) in auths {
+                        for field in ["auth", "identitytoken"] {
+                            if let Some(secret) = entry.get(field).and_then(|v| v.as_str()) {
+                                if !secret.is_empty() {
+                                    assert!(
+                                        !stdout.contains(secret),
+                                        "credential `{field}` value leaked to stdout"
+                                    );
+                                    assert!(
+                                        !stderr.contains(secret),
+                                        "credential `{field}` value leaked to stderr"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // SBOM is well-formed.
+    let bytes = std::fs::read(&out_path).expect("read private.cdx.json");
+    let sbom: serde_json::Value = serde_json::from_slice(&bytes).expect("valid CDX JSON");
+    assert!(sbom["bomFormat"].as_str().is_some(), "missing bomFormat");
+    assert!(sbom["specVersion"].as_str().is_some(), "missing specVersion");
 }

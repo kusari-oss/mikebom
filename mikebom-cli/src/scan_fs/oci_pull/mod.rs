@@ -44,6 +44,7 @@
 //! regression test in `mikebom-cli/tests/no_c_dependencies.rs`
 //! locks the substrate decision in.
 
+mod auth;
 mod platform;
 mod reference;
 mod registry;
@@ -83,7 +84,7 @@ pub async fn pull_to_tarball(image_ref: &str) -> Result<tempfile::TempDir> {
 
     let host_arch = host_oci_arch()
         .context("mapping host architecture to OCI platform name")?;
-    let client = RegistryClient::new()?;
+    let client = RegistryClient::new(&reference)?;
 
     // Step 1: fetch the manifest. If it's an image index
     // (manifest list), resolve the platform-specific manifest and

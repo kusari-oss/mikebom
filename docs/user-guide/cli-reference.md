@@ -133,7 +133,7 @@ Exactly one of **`--path <DIR>`** or **`--image <TAR_OR_REF>`** is required.
 | Flag | Default | Purpose |
 |---|---|---|
 | `--path <dir>` | — | Directory to walk recursively. Stream-hashes files with recognised package-artifact suffixes (`.deb`, `.crate`, `.whl`, `.tar.gz`, `.jar`, `.gem`, `.apk`, …). |
-| `--image <tar-or-ref>` | — | Either (a) a `docker save` tarball path on disk, or (b) an OCI image reference like `alpine:3.19` or `gcr.io/foo/bar@sha256:...`. mikebom auto-detects which based on whether the path exists. Refs are pulled from the registry, layers decompressed, and the resulting tarball is extracted to a tempdir (OCI whiteouts honoured) before being scanned like `--path`. Multi-arch image indexes resolve to `linux/<host-arch>` automatically. Currently anonymous public registries only — auth (Docker keychain + cred helpers) and the `--image-platform <linux/arch>` flag for cross-arch selection are deferred to follow-on milestones (031.x / 031.y). Disable the registry-pull capability with `cargo install mikebom --no-default-features` if you want a minimal-deps build for embedded use; tarball-extraction still works. |
+| `--image <tar-or-ref>` | — | Either (a) a `docker save` tarball path on disk, or (b) an OCI image reference like `alpine:3.19` or `gcr.io/foo/bar@sha256:...`. mikebom auto-detects which based on whether the path exists. Refs are pulled from the registry, layers decompressed, and the resulting tarball is extracted to a tempdir (OCI whiteouts honoured) before being scanned like `--path`. Multi-arch image indexes resolve to `linux/<host-arch>` automatically. Both anonymous and authenticated pulls are supported — for private registries, configure `~/.docker/config.json` (the same keychain `docker pull` uses; see ["Authenticating to private registries"](#authenticating-to-private-registries) below). Cross-arch selection (`--image-platform <linux/arch>`) is deferred to milestone 031.y. Disable the registry-pull capability with `cargo install mikebom --no-default-features` if you want a minimal-deps build for embedded use; tarball-extraction still works. |
 | `--output <[FMT=]PATH>` | per-format default (`mikebom.cdx.json`, `mikebom.spdx.json`, …) | Output path override. Two forms: bare `--output <path>` (applies to the single requested format — rejected with multiple formats) and per-format `--output <fmt>=<path>` (repeatable; each entry retargets one format). The special key `openvex` retargets the OpenVEX sidecar that SPDX emission co-produces when VEX is present — legal only alongside an SPDX format. |
 | `--format <fmt>` | `cyclonedx-json` | See [output formats](#output-formats). Comma-separated list + repeatable flag: `--format cyclonedx-json,spdx-2.3-json` produces both from a single scan. Duplicates dedupe silently. |
 | `--max-file-size <bytes>` | `268435456` (256 MB) | Skip hashing files larger than this |
@@ -167,6 +167,87 @@ Behaviour notes:
   `--include-declared-deps`, and `--include-legacy-rpmdb` flags — they
   can be passed either before or after `scan`. See [global flags](#global-flags)
   and [Configuration](configuration.md).
+
+### Authenticating to private registries
+
+When `--image <ref>` resolves to an OCI image reference (rather than a
+tarball path), mikebom uses the same Docker keychain that `docker pull`
+uses — `~/.docker/config.json` (or `$DOCKER_CONFIG/config.json` if set).
+No mikebom-specific credential file or CLI flag is required.
+
+Credentials resolve in this priority order, matching Docker's:
+
+1. **`credHelpers.<registry>`** — per-registry credential helper override.
+   Used by AWS ECR (`docker-credential-ecr-login`) and Google Artifact
+   Registry (`docker-credential-gcloud`). The helper is invoked as a
+   subprocess: `docker-credential-<helper> get` with the registry
+   hostname on stdin, returning `{Username, Secret, ServerURL}` on stdout.
+2. **`credsStore`** — registry-wide helper (e.g. `osxkeychain`, `wincred`,
+   `secretservice`, `pass`, `desktop`). Same subprocess protocol.
+3. **`auths.<registry>.auth`** — direct credentials, base64-encoded as
+   `user:password`. Written by `docker login` on systems without a
+   keychain.
+4. **`auths.<registry>.identitytoken`** — registry-issued bearer token
+   (Azure ACR, some Hub flows). Sent as the secret with username
+   `<token>`.
+
+Examples — `~/.docker/config.json` shapes that mikebom understands:
+
+```json
+// GHCR with a Personal Access Token (PAT) requires the read:packages scope.
+{
+  "auths": {
+    "ghcr.io": { "auth": "<base64('username:ghp_xxxxxxxxxxxx')>" }
+  }
+}
+```
+
+```json
+// macOS Docker Desktop, credentials in the system keychain.
+{
+  "auths": { "ghcr.io": {} },
+  "credsStore": "desktop"
+}
+```
+
+```json
+// AWS ECR via the standard helper.
+{
+  "credHelpers": {
+    "123456789012.dkr.ecr.us-east-1.amazonaws.com": "ecr-login"
+  }
+}
+```
+
+Behaviour notes:
+
+- **Anonymous fallback.** If no `~/.docker/config.json` exists, or no
+  entry matches the target registry, mikebom falls through to the
+  anonymous bearer-token flow that public images already use. No error
+  is raised.
+- **Helper failure → anonymous fallback.** If a credential helper exits
+  non-zero or emits the documented `"credentials not found"` sentinel,
+  mikebom falls through to anonymous (so `credsStore: desktop` doesn't
+  block unrelated public-image scans). Helper stderr is intentionally
+  *not* captured into mikebom's logs — some helpers print partial
+  credentials there.
+- **No secret leakage.** Credentials are never printed to stdout, stderr,
+  `--verbose` output, or `RUST_LOG=debug` traces; the in-memory
+  `Credential` struct redacts both fields in its `Debug` impl. If you
+  observe a leak, please file an issue.
+- **ECR token TTL.** AWS ECR tokens expire after 12 hours. Since
+  mikebom is a one-shot CLI, this never matters in practice — by the
+  time a token would expire, the scan is long since complete.
+- **GHCR PAT scope.** Private GHCR images require `read:packages` on
+  the PAT. `repo` scope alone is not sufficient.
+
+What's not yet supported (deferred to follow-ons):
+
+- `--registry-auth user:pass@host` CLI flag (file `docker login` first).
+- OAuth refresh-token flows beyond the bearer-token retry.
+- Native AWS SDK integration for ECR (`docker-credential-ecr-login`
+  remains the supported path).
+- Registry mirror configs (`registries.conf`, `mirrors`).
 
 ---
 

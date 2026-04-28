@@ -1,17 +1,16 @@
-//! Thin OCI distribution-spec HTTP client (milestone 032).
+//! Thin OCI distribution-spec HTTP client (milestone 032; auth in 034).
 //!
 //! Replaces the milestone-031 `oci-client::Client` integration. Built
 //! on the workspace's `reqwest 0.12 + rustls-tls (ring)` (no new
 //! HTTP/TLS deps) and `oci-spec 0.9` (types-only).
 //!
-//! Anonymous-only scope: when a registry returns 401 with
+//! Auth: when a registry returns 401 with
 //! `WWW-Authenticate: Bearer realm="...",service="...",scope="..."`
-//! we fetch a token from the realm UNAUTHENTICATED and retry. This
-//! covers Docker Hub's "anonymous-but-token-required" handshake +
+//! we fetch a token from the realm. Credentials (when available from
+//! the Docker keychain — see `super::auth`) are sent as Basic auth on
+//! the realm GET. Without credentials the realm GET is anonymous,
+//! covering Docker Hub's "anonymous-but-token-required" handshake +
 //! direct-anonymous registries (gcr.io, ghcr.io public, etc.).
-//! Authenticated registries (private repos) are explicitly out of
-//! scope here — milestone 031.x (#66) covers Docker keychain +
-//! cred helpers.
 //!
 //! Endpoints (per OCI distribution-spec v1):
 //!   - `GET /v2/<repo>/manifests/<reference>` — manifest or index
@@ -22,6 +21,7 @@ use sha2::Digest as _;
 
 use oci_spec::image::{ImageIndex, ImageManifest};
 
+use super::auth::Credential;
 use super::reference::ImageReference;
 
 /// Manifest media types we accept (sent on the `Accept` header
@@ -50,15 +50,33 @@ pub(super) enum ManifestOrIndex {
 /// Thin async HTTP client over the OCI distribution-spec.
 pub(super) struct RegistryClient {
     http: reqwest::Client,
+    /// Resolved credentials for the target registry (milestone 034).
+    /// `None` means anonymous-pull mode. Credentials are bound at
+    /// construction time and applied as Basic auth on the bearer-
+    /// token realm fetch in [`Self::fetch_bearer_token`].
+    credentials: Option<Credential>,
 }
 
 impl RegistryClient {
-    pub(super) fn new() -> Result<Self> {
+    /// Build a client for `reference`, resolving Docker-keychain
+    /// credentials for the target registry from
+    /// `~/.docker/config.json` (or `$DOCKER_CONFIG/config.json`) at
+    /// construction time. Missing config / no entry for this registry
+    /// → anonymous mode.
+    pub(super) fn new(reference: &ImageReference) -> Result<Self> {
         let http = reqwest::Client::builder()
             .user_agent(concat!("mikebom/", env!("CARGO_PKG_VERSION")))
             .build()
             .context("building reqwest::Client for OCI registry")?;
-        Ok(Self { http })
+        let credentials = super::auth::load_default_docker_config()
+            .and_then(|cfg| super::auth::resolve_credentials(&cfg, &reference.registry));
+        if credentials.is_some() {
+            tracing::debug!(
+                registry = %reference.registry,
+                "resolved registry credentials from Docker keychain"
+            );
+        }
+        Ok(Self { http, credentials })
     }
 
     /// Fetch the manifest for `reference`. Returns either a
@@ -145,24 +163,34 @@ impl RegistryClient {
             if retry.status().is_success() {
                 return ResponseBody::from_response(retry).await;
             }
+            if self.credentials.is_some() {
+                bail!(
+                    "registry authentication failed for GET {url} \
+                     (got {} after bearer-token retry). Verify credentials \
+                     in ~/.docker/config.json or your credential helper.",
+                    retry.status()
+                );
+            }
             bail!(
-                "registry returned {} for GET {url} after bearer-token retry. \
-                 Authenticated registries are not yet supported in milestone 031 \
-                 (tracked as 031.x — see issue #66).",
+                "registry returned {} for GET {url} after anonymous \
+                 bearer-token retry. For private registries, configure \
+                 ~/.docker/config.json (`auth` or `identitytoken` field) \
+                 or a credential helper.",
                 retry.status()
             );
         }
         // 403 / 404 / 5xx etc.
-        bail!(
-            "registry returned {status} for GET {url}. \
-             Authenticated registries are not yet supported in milestone 031 \
-             (tracked as 031.x — see issue #66)."
-        );
+        bail!("registry returned {status} for GET {url}.");
     }
 
-    /// Anonymous bearer-token fetch from the realm. Used when
-    /// the registry's 401 response includes a `Bearer
-    /// realm="...",service="...",scope="..."` challenge.
+    /// Bearer-token fetch from the realm. Used when the registry's
+    /// 401 response includes a
+    /// `Bearer realm="...",service="...",scope="..."` challenge.
+    ///
+    /// When [`Self::credentials`] is `Some`, sends `Basic <b64(user:secret)>`
+    /// on the realm GET; the realm validates and returns a bearer
+    /// token scoped per the credentials. When `None`, the request is
+    /// anonymous (covers the public-Hub / public-GHCR / gcr.io flow).
     async fn fetch_bearer_token(&self, challenge: &BearerChallenge) -> Result<String> {
         let mut req = self.http.get(&challenge.realm);
         if let Some(service) = challenge.service.as_deref() {
@@ -170,6 +198,9 @@ impl RegistryClient {
         }
         if let Some(scope) = challenge.scope.as_deref() {
             req = req.query(&[("scope", scope)]);
+        }
+        if let Some(c) = self.credentials.as_ref() {
+            req = req.basic_auth(&c.username, Some(&c.secret));
         }
         let resp = req
             .send()
@@ -511,6 +542,133 @@ mod tests {
         assert_eq!(
             url,
             "https://registry-1.docker.io/v2/library/alpine/blobs/sha256:abc123"
+        );
+    }
+
+    /// End-to-end auth wire-up test (milestone 034 commit 2): when a
+    /// `RegistryClient` carries a `Credential`, the bearer-token realm
+    /// fetch sends `Authorization: Basic <b64(user:secret)>`. We spin
+    /// up a tokio TCP listener that speaks one HTTP request and
+    /// inspect the Authorization header on the wire — no mock-server
+    /// crate dependency.
+    #[tokio::test]
+    async fn fetch_bearer_token_sends_basic_auth_when_credential_present() {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            // Read until end-of-headers (\r\n\r\n). GETs have no body,
+            // so we don't need Content-Length parsing.
+            let mut buf = vec![0u8; 4096];
+            let mut total = 0;
+            while total < buf.len() {
+                let n = stream.read(&mut buf[total..]).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                total += n;
+                if buf[..total].windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let request = String::from_utf8_lossy(&buf[..total]).into_owned();
+            let body = r#"{"token":"the-bearer-token"}"#;
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(resp.as_bytes()).await.unwrap();
+            stream.flush().await.unwrap();
+            request
+        });
+
+        // Construct RegistryClient with explicit credentials (bypassing
+        // the Docker-keychain lookup — we don't want this test to
+        // depend on the developer's actual ~/.docker/config.json).
+        let client = RegistryClient {
+            http: reqwest::Client::new(),
+            credentials: Some(Credential {
+                username: "alice".to_string(),
+                secret: "hunter2".to_string(),
+            }),
+        };
+        let challenge = BearerChallenge {
+            realm: format!("http://{addr}/token"),
+            service: Some("test".to_string()),
+            scope: Some("repository:foo/bar:pull".to_string()),
+        };
+
+        let token = client.fetch_bearer_token(&challenge).await.unwrap();
+        assert_eq!(token, "the-bearer-token");
+
+        let request = server.await.unwrap();
+        // base64("alice:hunter2") = YWxpY2U6aHVudGVyMg==
+        assert!(
+            request.contains("Authorization: Basic YWxpY2U6aHVudGVyMg==")
+                || request.contains("authorization: Basic YWxpY2U6aHVudGVyMg=="),
+            "realm GET should carry Basic auth header; got request:\n{request}"
+        );
+    }
+
+    /// Counterpart: anonymous mode (no credentials) sends NO
+    /// Authorization header on the realm GET. Guards against future
+    /// regressions where a default-credential leak could pin auth on
+    /// for everyone.
+    #[tokio::test]
+    async fn fetch_bearer_token_sends_no_auth_when_credential_absent() {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 4096];
+            let mut total = 0;
+            while total < buf.len() {
+                let n = stream.read(&mut buf[total..]).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                total += n;
+                if buf[..total].windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let request = String::from_utf8_lossy(&buf[..total]).into_owned();
+            let body = r#"{"token":"anon-token"}"#;
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(resp.as_bytes()).await.unwrap();
+            stream.flush().await.unwrap();
+            request
+        });
+
+        let client = RegistryClient {
+            http: reqwest::Client::new(),
+            credentials: None,
+        };
+        let challenge = BearerChallenge {
+            realm: format!("http://{addr}/token"),
+            service: None,
+            scope: None,
+        };
+
+        let token = client.fetch_bearer_token(&challenge).await.unwrap();
+        assert_eq!(token, "anon-token");
+
+        let request = server.await.unwrap();
+        let has_auth = request
+            .lines()
+            .any(|l| l.to_ascii_lowercase().starts_with("authorization:"));
+        assert!(
+            !has_auth,
+            "anonymous realm GET must not carry Authorization header; got request:\n{request}"
         );
     }
 }

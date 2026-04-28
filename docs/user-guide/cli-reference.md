@@ -120,14 +120,21 @@ Walk a directory or extracted container image, produce a CycloneDX SBOM.
 ```bash
 mikebom sbom scan --path ~/.cargo/registry/cache --output cargo.cdx.json
 mikebom sbom scan --image alpine.tar --output alpine.cdx.json
+
+# With --features oci-registry: pull directly from the registry
+# (no `docker save` required)
+cargo install mikebom --features oci-registry
+mikebom sbom scan --image alpine:3.19 --output alpine.cdx.json
+mikebom sbom scan --image gcr.io/distroless/static-debian12:latest \
+    --output distroless.cdx.json
 ```
 
-Exactly one of **`--path <DIR>`** or **`--image <TAR>`** is required.
+Exactly one of **`--path <DIR>`** or **`--image <TAR_OR_REF>`** is required.
 
 | Flag | Default | Purpose |
 |---|---|---|
 | `--path <dir>` | — | Directory to walk recursively. Stream-hashes files with recognised package-artifact suffixes (`.deb`, `.crate`, `.whl`, `.tar.gz`, `.jar`, `.gem`, `.apk`, …). |
-| `--image <tar>` | — | `docker save` tarball. Extracted to a tempdir (OCI whiteouts honoured), then scanned like `--path`. |
+| `--image <tar-or-ref>` | — | Either (a) a `docker save` tarball path on disk, or (b) when built with `--features oci-registry`, an OCI image reference like `alpine:3.19` or `gcr.io/foo/bar@sha256:...`. mikebom auto-detects which based on whether the path exists. Refs are pulled from the registry, layers decompressed, and the resulting tarball is extracted to a tempdir (OCI whiteouts honoured) before being scanned like `--path`. Multi-arch image indexes resolve to `linux/<host-arch>` automatically. Currently anonymous public registries only — auth (Docker keychain + cred helpers) and the `--image-platform <linux/arch>` flag for cross-arch selection are deferred to follow-on milestones (031.x / 031.y). |
 | `--output <[FMT=]PATH>` | per-format default (`mikebom.cdx.json`, `mikebom.spdx.json`, …) | Output path override. Two forms: bare `--output <path>` (applies to the single requested format — rejected with multiple formats) and per-format `--output <fmt>=<path>` (repeatable; each entry retargets one format). The special key `openvex` retargets the OpenVEX sidecar that SPDX emission co-produces when VEX is present — legal only alongside an SPDX format. |
 | `--format <fmt>` | `cyclonedx-json` | See [output formats](#output-formats). Comma-separated list + repeatable flag: `--format cyclonedx-json,spdx-2.3-json` produces both from a single scan. Duplicates dedupe silently. |
 | `--max-file-size <bytes>` | `268435456` (256 MB) | Skip hashing files larger than this |

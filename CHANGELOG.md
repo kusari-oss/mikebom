@@ -8,6 +8,41 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 ## [Unreleased]
 
 ### Added
+- **Milestone 026 — curated version-string scanner expansion (easy-4
+  cohort).** Extends `version_strings.rs`'s curated scanner from 7 to
+  **11 self-identifying native libraries**. Four new detectors with
+  clean self-identifying signatures in the binary's read-only string
+  region:
+  - **GnuTLS** (`GnuTLS X.Y.Z`) — common in curl-with-GnuTLS, wget,
+    GnuPG, GNU-stack tools.
+  - **LibreSSL** (`LibreSSL X.Y.Z`) — macOS system tools (system curl
+    was LibreSSL-backed for years), OpenBSD-derived utilities.
+  - **LLVM** (`LLVM version X.Y.Z`) — strict prefix; bare `LLVM ` is
+    too noisy (matches `LLVM ERROR:`, `LLVM IR ...` etc.).
+  - **OpenJDK** — two-scheme parser handling both modern JEP 322
+    (`21.0.1+12`) and legacy Java 8 (`8u362-b09`).
+
+  Each match emits a `pkg:generic/<library>@<version>` component with
+  `mikebom:evidence-kind = "embedded-version-string"` and
+  `mikebom:confidence = "heuristic"`, flowing through the existing
+  `version_match_to_entry` machinery (no downstream wiring change).
+  9 new inline tests cover positive + negative cases per library
+  plus a `libressl_distinct_from_openssl` cross-validation test.
+
+  Three additional libraries from the original wishlist (glibc, musl,
+  V8) are deferred to a 026.x research-and-attempt follow-on because
+  they don't have clean self-identifying strings in `string_region` —
+  glibc's `GLIBC_X.Y` lives in the `.gnu.version_r` ELF section, musl
+  rarely self-identifies in compiled output, and V8's version strings
+  are buried in stack-trace formatting code. Tracked via
+  `TODO(milestone-026.x)` in `version_strings.rs` and the
+  "Deferred backlog" section of `docs/design-notes.md`. See
+  `specs/026-version-string-library-expansion/spec.md`.
+
+  Note: this milestone is **not** a `extra_annotations` bag consumer —
+  it produces new components rather than annotations on existing
+  components. The bag-amortization streak from 023/024/025/028 stays
+  at four; 026 is purely scanner coverage breadth.
 - **Milestone 028 — PE binary identity.** Every Windows-binary scan
   now surfaces three identity signals via `object` 0.36's typed PE
   accessors: `mikebom:pe-pdb-id` (the `<guid-hex-lowercase>:<age>`

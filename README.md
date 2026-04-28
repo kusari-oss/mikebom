@@ -90,6 +90,26 @@ build a proper CycloneDX with:
   `mikebom:go-vcs-modified` on the main-module entry. Same data
   `go version -m` shows, baked into the SBOM so consumers don't have
   to shell out.
+- **Curated embedded-version-string detection** for **11
+  high-CVE-volume native libraries** statically-linked into compiled
+  binaries — the heuristic-tier counterpart to source-tree manifest
+  parsing. mikebom walks the binary's read-only string region
+  (`.rodata` / `__TEXT,__cstring` / `.rdata` — never the full image,
+  to bound the false-positive surface) and recognises each library's
+  canonical version banner anchored at a NUL boundary:
+  - **Crypto / TLS:** OpenSSL, BoringSSL, LibreSSL, GnuTLS
+  - **Compression / data:** zlib, SQLite
+  - **Networking:** curl
+  - **Regex:** PCRE, PCRE2
+  - **Compiler / runtime:** LLVM, OpenJDK (handles both modern JEP-322
+    `21.0.1+12` and legacy Java-8 `8u362-b09`)
+
+  Each detection emits a `pkg:generic/<library>@<version>` component
+  with `mikebom:evidence-kind = "embedded-version-string"` and
+  `mikebom:confidence = "heuristic"`, so downstream CVE matchers
+  (Vex / OSV / NVD / Kusari Inspector) have pre-resolved coordinates
+  to query against — no need to know in advance which libraries a
+  binary statically links.
 
 On top of scan-mode, mikebom adds:
 

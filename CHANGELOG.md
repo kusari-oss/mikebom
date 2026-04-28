@@ -8,6 +8,30 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 ## [Unreleased]
 
 ### Added
+- **Milestone 034 (031.x) — Authenticated OCI registry pulls.**
+  `mikebom sbom scan --image <ref>` now supports private registries
+  via the standard Docker keychain — the same `~/.docker/config.json`
+  (or `$DOCKER_CONFIG/config.json`) that `docker pull` uses. All four
+  documented credential sources resolve in Docker's documented
+  precedence order: per-registry `credHelpers` > registry-wide
+  `credsStore` > direct `auths.<reg>.auth` (base64 user:password) >
+  `auths.<reg>.identitytoken`. Credential helpers are invoked as
+  subprocesses (`docker-credential-<helper> get`) per the published
+  protocol — covers ECR (`docker-credential-ecr-login`), Google
+  Artifact Registry (`docker-credential-gcloud`), macOS keychain,
+  Windows credential store, GNOME Secret Service, and `pass`. When
+  credentials resolve, they're sent as Basic auth on the
+  bearer-token realm GET; the resulting bearer token authorizes the
+  manifest + blob fetches. Anonymous fallback is preserved: no
+  config.json + public image works exactly as it did in milestone
+  031. Credentials never leak to stdout, stderr, `--verbose` output,
+  or `RUST_LOG=debug` traces — `Credential::Debug` redacts both
+  fields and the helper subprocess's stderr is dropped to /dev/null.
+  No new top-level dependencies; the
+  `no_c_dependencies_in_oci_registry_feature_tree` regression test
+  still passes. See `specs/034-authenticated-registry-pulls/spec.md`
+  and the new ["Authenticating to private registries"](docs/user-guide/cli-reference.md#authenticating-to-private-registries)
+  section in the user guide. Closes #66.
 - **Milestone 030 — Mach-O codesign metadata.** Every Mach-O scan
   now extracts three identity-flavored signals from the
   `LC_CODE_SIGNATURE` (cmd `0x1D`) SuperBlob's CodeDirectory blob:

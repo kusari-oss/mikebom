@@ -72,12 +72,16 @@ ebpf-tracing = [
 # build (e.g., embedding mikebom in another tool that only scans
 # local trees / pre-extracted tarballs).
 #
-# Anonymous public registries only. Auth (Docker keychain + cred
-# helpers) deferred to 031.x (#66); multi-platform flag deferred to
+# Anonymous + authenticated pulls (Docker keychain — milestone 034 /
+# 031.x, #66). Both anonymous and credentialed flows go through the
+# same bearer-token retry path; credentials (when resolved from
+# ~/.docker/config.json / $DOCKER_CONFIG/config.json) are applied as
+# Basic auth on the realm token GET. Multi-platform flag deferred to
 # 031.y (#67); layer caching deferred to 031.z (#68). See
-# `specs/031-oci-registry-image-scan/spec.md` for the full contract
-# and `specs/032-oci-spec-migration/spec.md` for the substrate
-# rationale.
+# `specs/031-oci-registry-image-scan/spec.md` for the original
+# contract, `specs/032-oci-spec-migration/spec.md` for the substrate
+# rationale, and `specs/034-authenticated-registry-pulls/spec.md` for
+# the auth design.
 oci-registry = [
     "dep:oci-spec",
 ]

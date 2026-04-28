@@ -81,14 +81,31 @@ After implementation:
 
 **Scenario 1: Apple-signed system binary** (`/bin/ls` on macOS)
 ```
-Given: a macOS Mach-O binary with LC_CODE_SIGNATURE pointing to a
-       SuperBlob containing a CodeDirectory v2.0.5 with
-       identifier = "com.apple.ls", team_id = "EQHXZ8M8AV", flags
-       = 0x10000 (hardened-runtime)
+Given: a macOS Mach-O binary signed by Apple's "Software Signing"
+       root (every system binary in /bin, /usr/bin, /System/...) —
+       LC_CODE_SIGNATURE points at a SuperBlob containing a
+       CodeDirectory v2.0.4 with identifier = "com.apple.ls",
+       teamOffset = 0 (system binaries don't carry a team-id —
+       `codesign -dvv` reports `TeamIdentifier=not set`), flags
+       = 0x0 (system binaries don't enable hardened-runtime —
+       that's a third-party developer / notarization signal)
 When:  mikebom scans it
-Then:  the file-level component carries:
-       mikebom:macho-codesign-identifier = "com.apple.ls"
-       mikebom:macho-codesign-team-id    = "EQHXZ8M8AV"
+Then:  the file-level component carries
+       mikebom:macho-codesign-identifier = "com.apple.ls". The
+       team-id and flags annotations do NOT emit (skip-on-empty
+       contract — system binaries genuinely lack those fields).
+```
+
+**Scenario 1a: Third-party developer-signed binary**
+```
+Given: a developer-signed macOS app binary — CodeDirectory v2.0.5+
+       with identifier = "com.example.myapp", teamOffset →
+       "ABC1234XYZ" (10-char Apple Team ID), flags = 0x10000
+       (hardened-runtime, required for App Store / notarization)
+When:  mikebom scans it
+Then:  all three annotations emit:
+       mikebom:macho-codesign-identifier = "com.example.myapp"
+       mikebom:macho-codesign-team-id    = "ABC1234XYZ"
        mikebom:macho-codesign-flags      = ["hardened-runtime"]
 ```
 
@@ -293,9 +310,18 @@ Then:  no codesign annotations emit. No panic. tracing::warn!
   - `cargo +stable test -p mikebom --test sbom_format_mapping_coverage` green.
 
 - **SC-002**: macOS CI lane: `/bin/ls` scan emits
-  `mikebom:macho-codesign-identifier = "com.apple.ls"` AND
-  `mikebom:macho-codesign-team-id = "EQHXZ8M8AV"` AND flags
-  contains `"hardened-runtime"`.
+  `mikebom:macho-codesign-identifier` starting with
+  `"com.apple."` (every Apple system binary follows this
+  convention). Team-id + flags are NOT asserted on `/bin/ls`
+  — `codesign -dvv /bin/ls` reports `TeamIdentifier=not set`
+  and `flags=0x0` for system binaries (Apple system binaries
+  are signed by the "Software Signing" root, not a developer
+  team-id, and don't enable hardened-runtime). The team-id +
+  flags + multi-flag decoder paths are covered by inline
+  synthetic-fixture tests in `macho.rs::tests`. Developer-
+  signed binaries (Scenario 1a) exercise the team-id and
+  flags paths in real-world scans but those binaries aren't
+  available on the CI lane; the inline tests cover them.
 
 - **SC-003**: `git diff main..HEAD --
   mikebom-cli/src/scan_fs/binary/{elf,pe,version_strings,cargo_auditable,linkage,packer,predicates,jdk_collapse,python_collapse}.rs`

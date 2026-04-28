@@ -40,15 +40,12 @@ const LC_VERSION_MIN_IPHONEOS: u32 = 0x25;
 const LC_VERSION_MIN_TVOS: u32 = 0x2f;
 const LC_VERSION_MIN_WATCHOS: u32 = 0x30;
 const LC_BUILD_VERSION: u32 = 0x32;
-#[allow(dead_code)] // wired in commit 2 (030/wire-up-bag)
 const LC_CODE_SIGNATURE: u32 = 0x1d;
 
 /// SuperBlob magic — embedded codesign signature container.
-#[allow(dead_code)] // wired in commit 2 (030/wire-up-bag)
 const CSMAGIC_EMBEDDED_SIGNATURE: u32 = 0xfade_0cc0;
 /// CodeDirectory blob magic — the entry inside the SuperBlob carrying
 /// identifier, flags, and team ID.
-#[allow(dead_code)] // wired in commit 2 (030/wire-up-bag)
 const CSMAGIC_CODEDIRECTORY: u32 = 0xfade_0c02;
 
 const PLATFORM_MACOS: u32 = 1;
@@ -285,7 +282,6 @@ fn decode_packed_version(packed: u32) -> String {
 /// 8-byte SuperBlob index entry header). Returns `None` for binaries
 /// without LC_CODE_SIGNATURE, malformed SuperBlob magic, or absence
 /// of a CodeDirectory blob in the index.
-#[allow(dead_code)] // wired in commit 2 (030/wire-up-bag)
 fn parse_codesign_codedirectory(bytes: &[u8]) -> Option<&[u8]> {
     let header = decode_header(bytes)?;
     // Find LC_CODE_SIGNATURE; payload is a LinkeditDataCommand —
@@ -344,7 +340,6 @@ fn parse_codesign_codedirectory(bytes: &[u8]) -> Option<&[u8]> {
 /// Read a NUL-terminated UTF-8 string starting at `off` within a
 /// CodeDirectory blob. Returns `None` for out-of-range offsets,
 /// missing NUL terminator, or non-UTF-8 bytes.
-#[allow(dead_code)] // wired in commit 2 (030/wire-up-bag)
 fn read_cd_cstring(cd: &[u8], off: usize) -> Option<String> {
     if off == 0 || off >= cd.len() {
         return None;
@@ -362,7 +357,6 @@ fn read_cd_cstring(cd: &[u8], off: usize) -> Option<String> {
 /// basename for ad-hoc-signed binaries. Returns `None` when no
 /// LC_CODE_SIGNATURE is present, the SuperBlob is malformed, or
 /// the identifier offset doesn't resolve to a valid string.
-#[allow(dead_code)] // wired in commit 2 (030/wire-up-bag)
 pub fn parse_codesign_identifier(bytes: &[u8]) -> Option<String> {
     let cd = parse_codesign_codedirectory(bytes)?;
     // CodeDirectory.identOffset is at byte offset 20 (BE u32).
@@ -374,7 +368,6 @@ pub fn parse_codesign_identifier(bytes: &[u8]) -> Option<String> {
 /// human-readable JSON-array-of-names representation. Returns an
 /// empty Vec when no LC_CODE_SIGNATURE / malformed SuperBlob /
 /// flags == 0. Always alphabetically sorted for determinism.
-#[allow(dead_code)] // wired in commit 2 (030/wire-up-bag)
 pub fn parse_codesign_flags(bytes: &[u8]) -> Vec<String> {
     let Some(cd) = parse_codesign_codedirectory(bytes) else {
         return Vec::new();
@@ -393,7 +386,6 @@ pub fn parse_codesign_flags(bytes: &[u8]) -> Vec<String> {
 /// binaries; absent for ad-hoc signatures). The team-id field
 /// requires CodeDirectory version ≥ `0x20200`; older CDs return
 /// `None` here.
-#[allow(dead_code)] // wired in commit 2 (030/wire-up-bag)
 pub fn parse_codesign_team_id(bytes: &[u8]) -> Option<String> {
     let cd = parse_codesign_codedirectory(bytes)?;
     let cd_version = read_u32(cd, 8, false)?;
@@ -412,7 +404,6 @@ pub fn parse_codesign_team_id(bytes: &[u8]) -> Option<String> {
 ///
 /// Bit names sourced from Apple's Security project
 /// (`cs_blobs.h` / `cscdefs.h.auto.html`).
-#[allow(dead_code)] // wired in commit 2 (030/wire-up-bag)
 fn decode_codesign_flags(value: u32) -> Vec<String> {
     let known: &[(u32, &str)] = &[
         (0x0000_0001, "host"),

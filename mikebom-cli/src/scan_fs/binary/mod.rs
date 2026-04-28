@@ -16,14 +16,15 @@
 //! end of `read()` so cross-binary dedup happens before results leave
 //! this module.
 
+pub mod cargo_auditable;
 pub mod elf;
 pub mod jdk_collapse;
 pub mod linkage;
-pub mod macho; // stub
+pub mod macho;
 pub mod packer; // stub
-pub mod pe; // stub
+pub mod pe;
 pub mod python_collapse;
-pub mod version_strings; // stub
+pub mod version_strings;
 
 use std::path::Path;
 

@@ -64,6 +64,7 @@ ebpf-tracing = [
 # transitive deps live ONLY in the feature-gated graph.
 oci-registry = [
     "dep:oci-client",
+    "dep:oci-spec",
 ]
 
 [dependencies]
@@ -142,6 +143,14 @@ tracing-subscriber.workspace = true
 # PR time via `cargo tree -p mikebom --features oci-registry` to
 # verify no `*-sys` transitive deps surface.
 oci-client = { version = "0.12", default-features = false, features = ["rustls-tls"], optional = true }
+
+# Milestone 032 — OCI distribution-spec + image-spec types for the
+# milestone-031 registry pull path. Replaces oci-client's full-stack
+# (types + HTTP + auth + crypto) with: oci-spec (types-only,
+# pure-Rust) + workspace reqwest 0.12 + a small thin HTTP client in
+# scan_fs/oci_pull/registry.rs. See specs/032-oci-spec-migration/
+# spec.md for the durability rationale.
+oci-spec = { version = "0.9", default-features = false, features = ["distribution", "image"], optional = true }
 
 [dev-dependencies]
 serde_json.workspace = true

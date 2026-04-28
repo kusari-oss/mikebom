@@ -22,21 +22,32 @@ use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
 
-use oci_client::client::{ImageData, ImageLayer};
-use oci_client::manifest::{
-    IMAGE_DOCKER_LAYER_GZIP_MEDIA_TYPE, IMAGE_DOCKER_LAYER_TAR_MEDIA_TYPE,
-    IMAGE_LAYER_GZIP_MEDIA_TYPE, IMAGE_LAYER_MEDIA_TYPE,
-};
+// Layer media-type constants (no longer pulled from oci-client; we
+// own these values directly since they're stable wire-format strings
+// per the OCI distribution-spec).
+const OCI_LAYER_MEDIA_TYPE: &str = "application/vnd.oci.image.layer.v1.tar";
+const OCI_LAYER_GZIP_MEDIA_TYPE: &str = "application/vnd.oci.image.layer.v1.tar+gzip";
+const DOCKER_LAYER_TAR_MEDIA_TYPE: &str = "application/vnd.docker.image.rootfs.diff.tar";
+const DOCKER_LAYER_GZIP_MEDIA_TYPE: &str = "application/vnd.docker.image.rootfs.diff.tar.gzip";
+
+/// One layer's bytes-as-fetched-from-the-registry plus its
+/// declared media type. Used to feed
+/// [`assemble_docker_save_tarball`] without coupling to any
+/// specific OCI client crate's types.
+pub(super) struct PulledLayer {
+    pub media_type: String,
+    pub bytes: Vec<u8>,
+}
 
 /// Reject layers we can't decompress. zstd is the main risk in
 /// modern OCI images.
-pub(super) fn assert_layers_supported(image: &ImageData) -> Result<()> {
-    for (idx, layer) in image.layers.iter().enumerate() {
+pub(super) fn assert_layers_supported(layers: &[PulledLayer]) -> Result<()> {
+    for (idx, layer) in layers.iter().enumerate() {
         match layer.media_type.as_str() {
             // Plain tar — no decompression needed.
-            IMAGE_LAYER_MEDIA_TYPE | IMAGE_DOCKER_LAYER_TAR_MEDIA_TYPE => {}
+            OCI_LAYER_MEDIA_TYPE | DOCKER_LAYER_TAR_MEDIA_TYPE => {}
             // Gzipped tar — handled by `flate2::read::GzDecoder`.
-            IMAGE_LAYER_GZIP_MEDIA_TYPE | IMAGE_DOCKER_LAYER_GZIP_MEDIA_TYPE => {}
+            OCI_LAYER_GZIP_MEDIA_TYPE | DOCKER_LAYER_GZIP_MEDIA_TYPE => {}
             other => {
                 return Err(anyhow!(
                     "image layer {idx} has unsupported media type `{other}`. \
@@ -53,7 +64,8 @@ pub(super) fn assert_layers_supported(image: &ImageData) -> Result<()> {
 /// pulled image data. Layer files are named by the SHA-256 of the
 /// UNCOMPRESSED tar bytes (matching `docker save`'s convention).
 pub(super) fn assemble_docker_save_tarball(
-    image: &ImageData,
+    config_bytes: &[u8],
+    layers: &[PulledLayer],
     image_ref: &str,
     out_path: &Path,
 ) -> Result<()> {
@@ -63,7 +75,7 @@ pub(super) fn assemble_docker_save_tarball(
 
     let mut layer_paths_for_manifest: Vec<String> = Vec::new();
     let mut staged_layers: Vec<(String, Vec<u8>)> = Vec::new();
-    for layer in &image.layers {
+    for layer in layers {
         let decompressed = decompress_layer(layer)?;
         let digest = sha256_hex(&decompressed);
         let layer_path_in_tarball = format!("{digest}/layer.tar");
@@ -71,7 +83,7 @@ pub(super) fn assemble_docker_save_tarball(
         staged_layers.push((layer_path_in_tarball, decompressed));
     }
 
-    let config_digest = sha256_hex(&image.config.data);
+    let config_digest = sha256_hex(config_bytes);
     let config_filename = format!("{config_digest}.json");
 
     let manifest_json = serde_json::json!([
@@ -85,7 +97,7 @@ pub(super) fn assemble_docker_save_tarball(
         .context("serializing manifest.json")?;
     append_tarball_entry(&mut builder, "manifest.json", &manifest_bytes)?;
 
-    append_tarball_entry(&mut builder, &config_filename, &image.config.data)?;
+    append_tarball_entry(&mut builder, &config_filename, config_bytes)?;
 
     for (layer_path, layer_bytes) in &staged_layers {
         append_tarball_entry(&mut builder, layer_path, layer_bytes)?;
@@ -117,11 +129,11 @@ fn append_tarball_entry<W: Write>(
     Ok(())
 }
 
-fn decompress_layer(layer: &ImageLayer) -> Result<Vec<u8>> {
+fn decompress_layer(layer: &PulledLayer) -> Result<Vec<u8>> {
     match layer.media_type.as_str() {
-        IMAGE_LAYER_MEDIA_TYPE | IMAGE_DOCKER_LAYER_TAR_MEDIA_TYPE => Ok(layer.data.clone()),
-        IMAGE_LAYER_GZIP_MEDIA_TYPE | IMAGE_DOCKER_LAYER_GZIP_MEDIA_TYPE => {
-            let mut decoder = flate2::read::GzDecoder::new(layer.data.as_slice());
+        OCI_LAYER_MEDIA_TYPE | DOCKER_LAYER_TAR_MEDIA_TYPE => Ok(layer.bytes.clone()),
+        OCI_LAYER_GZIP_MEDIA_TYPE | DOCKER_LAYER_GZIP_MEDIA_TYPE => {
+            let mut decoder = flate2::read::GzDecoder::new(layer.bytes.as_slice());
             let mut out = Vec::new();
             decoder
                 .read_to_end(&mut out)
@@ -145,12 +157,11 @@ fn sha256_hex(bytes: &[u8]) -> String {
 #[cfg_attr(test, allow(clippy::unwrap_used))]
 mod tests {
     use super::*;
-    use oci_client::client::{Config, ImageLayer};
-    use oci_client::manifest::IMAGE_CONFIG_MEDIA_TYPE;
 
     /// Hand-build fake layers + config, run the assembly, verify
     /// `docker_image::extract` round-trips and the rootfs has the
-    /// expected file. Preserved from milestone-031 oci_pull.rs.
+    /// expected file. Preserved from milestone-031 oci_pull.rs;
+    /// updated to use the new primitive `PulledLayer` shape.
     #[test]
     fn assemble_docker_save_tarball_round_trips_via_extract() {
         use crate::scan_fs::docker_image;
@@ -176,26 +187,16 @@ mod tests {
             encoder.finish().unwrap()
         };
 
-        let config_data = b"{\"architecture\":\"amd64\",\"os\":\"linux\"}".to_vec();
+        let config_bytes = b"{\"architecture\":\"amd64\",\"os\":\"linux\"}".to_vec();
 
-        let image = ImageData {
-            layers: vec![ImageLayer {
-                data: layer_compressed,
-                media_type: IMAGE_LAYER_GZIP_MEDIA_TYPE.to_string(),
-                annotations: None,
-            }],
-            digest: Some("sha256:fake".to_string()),
-            config: Config {
-                data: config_data,
-                media_type: IMAGE_CONFIG_MEDIA_TYPE.to_string(),
-                annotations: None,
-            },
-            manifest: None,
-        };
+        let layers = vec![PulledLayer {
+            bytes: layer_compressed,
+            media_type: OCI_LAYER_GZIP_MEDIA_TYPE.to_string(),
+        }];
 
         let tempdir = tempfile::tempdir().unwrap();
         let tarball = tempdir.path().join("image.tar");
-        assemble_docker_save_tarball(&image, "test/sample:latest", &tarball)
+        assemble_docker_save_tarball(&config_bytes, &layers, "test/sample:latest", &tarball)
             .expect("tarball assembly should succeed");
         assert!(tarball.exists(), "tarball file was not created");
 
@@ -218,21 +219,11 @@ mod tests {
 
     #[test]
     fn assert_layers_supported_rejects_zstd() {
-        let image = ImageData {
-            layers: vec![ImageLayer {
-                data: vec![0u8; 16],
-                media_type: "application/vnd.oci.image.layer.v1.tar+zstd".to_string(),
-                annotations: None,
-            }],
-            digest: None,
-            config: Config {
-                data: Vec::new(),
-                media_type: IMAGE_CONFIG_MEDIA_TYPE.to_string(),
-                annotations: None,
-            },
-            manifest: None,
-        };
-        let err = assert_layers_supported(&image).unwrap_err();
+        let layers = vec![PulledLayer {
+            bytes: vec![0u8; 16],
+            media_type: "application/vnd.oci.image.layer.v1.tar+zstd".to_string(),
+        }];
+        let err = assert_layers_supported(&layers).unwrap_err();
         assert!(
             err.to_string().contains("zstd")
                 || err.to_string().contains("unsupported media type"),

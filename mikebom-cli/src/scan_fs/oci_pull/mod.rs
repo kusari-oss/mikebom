@@ -34,21 +34,15 @@
 
 mod platform;
 mod reference;
+mod registry;
 mod tarball;
 
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 
-use oci_client::client::{ClientConfig, ImageData};
-use oci_client::manifest::{
-    ImageIndexEntry, IMAGE_CONFIG_MEDIA_TYPE, IMAGE_DOCKER_CONFIG_MEDIA_TYPE,
-    IMAGE_DOCKER_LAYER_GZIP_MEDIA_TYPE, IMAGE_DOCKER_LAYER_TAR_MEDIA_TYPE,
-    IMAGE_LAYER_GZIP_MEDIA_TYPE, IMAGE_LAYER_MEDIA_TYPE, IMAGE_MANIFEST_MEDIA_TYPE,
-    OCI_IMAGE_MEDIA_TYPE,
-};
-use oci_client::secrets::RegistryAuth;
-use oci_client::{Client, Reference};
+use registry::{ManifestOrIndex, RegistryClient};
+use tarball::PulledLayer;
 
 /// Pull an OCI image reference and write a docker-save-format
 /// tarball to a tempdir. Returns the TempDir handle so the
@@ -56,82 +50,99 @@ use oci_client::{Client, Reference};
 /// `docker_image::extract` call. The tarball lives at
 /// `<tempdir>/image.tar`.
 ///
-/// Multi-arch image indexes resolve to `linux/<host-arch>` via
-/// a custom platform resolver (mikebom only scans Linux
-/// containers regardless of the host OS — the default oci-client
-/// resolver would mismatch on macOS/Windows hosts).
+/// Multi-arch image indexes resolve to `linux/<host-arch>`. mikebom
+/// only scans Linux containers regardless of the host OS.
 ///
 /// Anonymous pulls only in milestone 031. Auth handling lives in
-/// the deferred 031.x follow-on.
+/// the deferred 031.x follow-on (#66).
 ///
 /// Async by design — mikebom's CLI is `#[tokio::main]`-bootstrapped,
 /// so callers `.await` this directly without bridging.
 pub async fn pull_to_tarball(image_ref: &str) -> Result<tempfile::TempDir> {
-    let reference: Reference = image_ref
-        .parse()
+    let mut reference = reference::parse_reference(image_ref)
         .with_context(|| format!("parsing OCI image reference `{image_ref}`"))?;
     tracing::info!(
-        registry = %reference.resolve_registry(),
-        repository = %reference.repository(),
-        tag = ?reference.tag(),
-        digest = ?reference.digest(),
+        registry = %reference.registry,
+        repository = %reference.repository,
+        tag = ?reference.tag,
+        digest = ?reference.digest,
         "pulling OCI image"
     );
 
     let host_arch = host_oci_arch()
         .context("mapping host architecture to OCI platform name")?;
-    let config = ClientConfig {
-        platform_resolver: Some(Box::new(move |entries: &[ImageIndexEntry]| {
-            // Adapter from oci-client's ImageIndexEntry shape to
-            // platform.rs's borrowed-view type. Lets the resolver
-            // stay decoupled from any specific crate's types.
-            let mapped: Vec<platform::ManifestListEntry<'_>> = entries
+    let client = RegistryClient::new()?;
+
+    // Step 1: fetch the manifest. If it's an image index
+    // (manifest list), resolve the platform-specific manifest and
+    // re-fetch with the digest. Single-platform manifests are
+    // returned directly.
+    let manifest = match client.fetch_manifest(&reference).await? {
+        ManifestOrIndex::Manifest(m) => m,
+        ManifestOrIndex::Index(idx) => {
+            // oci-spec's Descriptor exposes platform / digest /
+            // architecture / os via getset accessors. `Arch` and
+            // `Os` are enums; convert via `Display` to OCI string
+            // form (`amd64`, `linux`, etc.) before handing to
+            // platform.rs.
+            let mapped: Vec<platform::ManifestListEntry> = idx
+                .manifests()
                 .iter()
-                .filter_map(|e| {
-                    let p = e.platform.as_ref()?;
+                .filter_map(|d| {
+                    let plat = d.platform().as_ref()?;
                     Some(platform::ManifestListEntry {
-                        digest: e.digest.as_str(),
-                        architecture: p.architecture.as_str(),
-                        os: p.os.as_str(),
+                        digest: d.digest().to_string(),
+                        architecture: plat.architecture().to_string(),
+                        os: plat.os().to_string(),
                     })
                 })
                 .collect();
-            platform::resolve_manifest_list_to_linux(mapped, host_arch).ok()
-        })),
-        ..ClientConfig::default()
+            let chosen_digest = platform::resolve_manifest_list_to_linux(mapped, host_arch)?;
+            // Re-fetch with the platform-specific digest.
+            reference.digest = Some(chosen_digest);
+            reference.tag = None;
+            match client.fetch_manifest(&reference).await? {
+                ManifestOrIndex::Manifest(m) => m,
+                ManifestOrIndex::Index(_) => {
+                    bail!("expected a single-platform manifest after resolving image index, got nested index")
+                }
+            }
+        }
     };
-    let client = Client::new(config);
-    let auth = RegistryAuth::Anonymous;
-    // Tell the registry which media types we accept. We accept
-    // both Docker v2 and OCI manifest types, plus tar and gzipped
-    // tar layer types. zstd-compressed layers (a separate OCI
-    // media type) are NOT accepted — registries that prefer
-    // those will return them anyway, in which case
-    // `tarball::assert_layers_supported` catches it with a clear
-    // "not yet supported" error.
-    let accepted = vec![
-        IMAGE_MANIFEST_MEDIA_TYPE,
-        OCI_IMAGE_MEDIA_TYPE,
-        IMAGE_LAYER_MEDIA_TYPE,
-        IMAGE_LAYER_GZIP_MEDIA_TYPE,
-        IMAGE_DOCKER_LAYER_TAR_MEDIA_TYPE,
-        IMAGE_DOCKER_LAYER_GZIP_MEDIA_TYPE,
-        IMAGE_CONFIG_MEDIA_TYPE,
-        IMAGE_DOCKER_CONFIG_MEDIA_TYPE,
-    ];
-    let image: ImageData = client
-        .pull(&reference, &auth, accepted)
+
+    // Step 2: fetch the config blob (sha256 verified by registry::fetch_blob).
+    let config_digest = manifest.config().digest().to_string();
+    let config_bytes = client
+        .fetch_blob(&reference, &config_digest)
         .await
-        .with_context(|| format!("pulling image `{image_ref}`"))?;
+        .with_context(|| format!("fetching config blob {config_digest}"))?;
 
-    tarball::assert_layers_supported(&image)?;
+    // Step 3: fetch each layer blob. Preserve order — layer
+    // index in the manifest is meaningful (layer 0 is base, layer N
+    // is top of stack).
+    let mut layers: Vec<PulledLayer> = Vec::with_capacity(manifest.layers().len());
+    for (idx, layer_desc) in manifest.layers().iter().enumerate() {
+        let digest = layer_desc.digest().to_string();
+        tracing::debug!(layer = idx, %digest, "fetching layer blob");
+        let bytes = client
+            .fetch_blob(&reference, &digest)
+            .await
+            .with_context(|| format!("fetching layer {idx} blob {digest}"))?;
+        layers.push(PulledLayer {
+            media_type: layer_desc.media_type().to_string(),
+            bytes,
+        });
+    }
 
+    tarball::assert_layers_supported(&layers)?;
+
+    // Step 4: assemble the docker-save-format tarball.
     let tempdir = tempfile::Builder::new()
         .prefix("mikebom-oci-pull-")
         .tempdir()
         .context("creating tempdir for OCI pull tarball")?;
     let tarball_path = tempdir.path().join("image.tar");
-    tarball::assemble_docker_save_tarball(&image, image_ref, &tarball_path)
+    tarball::assemble_docker_save_tarball(&config_bytes, &layers, image_ref, &tarball_path)
         .context("assembling docker-save-format tarball from pulled image")?;
     Ok(tempdir)
 }

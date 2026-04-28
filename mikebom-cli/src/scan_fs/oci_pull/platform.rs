@@ -15,19 +15,19 @@ use anyhow::{anyhow, Result};
 /// matches, listing the available platforms in the message so the
 /// user can see what they could pass with `--image-platform` once
 /// 031.y ships.
-pub(super) fn resolve_manifest_list_to_linux<'a, I>(
+pub(super) fn resolve_manifest_list_to_linux<I>(
     entries: I,
     target_arch: &str,
 ) -> Result<String>
 where
-    I: IntoIterator<Item = ManifestListEntry<'a>>,
+    I: IntoIterator<Item = ManifestListEntry>,
 {
-    let entries: Vec<ManifestListEntry<'a>> = entries.into_iter().collect();
+    let entries: Vec<ManifestListEntry> = entries.into_iter().collect();
     if let Some(entry) = entries
         .iter()
         .find(|e| e.os == "linux" && e.architecture == target_arch)
     {
-        return Ok(entry.digest.to_string());
+        return Ok(entry.digest.clone());
     }
     let available: Vec<String> = entries
         .iter()
@@ -41,16 +41,16 @@ where
     ))
 }
 
-/// Borrowed view of one entry in a manifest list / image index.
-/// Decoupled from any specific crate's type so this submodule
-/// works equally well with oci-client's
-/// `manifest::ImageIndexEntry` (milestone 031) and oci-spec's
-/// `image::Descriptor` (milestone 032+).
-#[derive(Clone, Copy, Debug)]
-pub(super) struct ManifestListEntry<'a> {
-    pub digest: &'a str,
-    pub architecture: &'a str,
-    pub os: &'a str,
+/// One entry in a manifest list / image index, in a form
+/// decoupled from any specific crate's types. Owned strings —
+/// the platform-resolver runs once per pull, so allocation cost
+/// is negligible vs. the borrowed-view variant that complicated
+/// the milestone-031 → 032 type-conversion path.
+#[derive(Clone, Debug)]
+pub(super) struct ManifestListEntry {
+    pub digest: String,
+    pub architecture: String,
+    pub os: String,
 }
 
 #[cfg(test)]
@@ -58,19 +58,19 @@ pub(super) struct ManifestListEntry<'a> {
 mod tests {
     use super::*;
 
+    fn entry(digest: &str, arch: &str, os: &str) -> ManifestListEntry {
+        ManifestListEntry {
+            digest: digest.to_string(),
+            architecture: arch.to_string(),
+            os: os.to_string(),
+        }
+    }
+
     #[test]
     fn picks_linux_amd64_when_present() {
         let entries = vec![
-            ManifestListEntry {
-                digest: "sha256:amd64",
-                architecture: "amd64",
-                os: "linux",
-            },
-            ManifestListEntry {
-                digest: "sha256:arm64",
-                architecture: "arm64",
-                os: "linux",
-            },
+            entry("sha256:amd64", "amd64", "linux"),
+            entry("sha256:arm64", "arm64", "linux"),
         ];
         let digest = resolve_manifest_list_to_linux(entries, "amd64").unwrap();
         assert_eq!(digest, "sha256:amd64");
@@ -78,21 +78,9 @@ mod tests {
 
     #[test]
     fn picks_first_matching_when_multiples() {
-        // OCI spec doesn't promise unique platforms, but the
-        // registry SHOULD only emit one per platform. If duplicates
-        // appear we just pick the first match (deterministic
-        // iteration over the input).
         let entries = vec![
-            ManifestListEntry {
-                digest: "sha256:first",
-                architecture: "amd64",
-                os: "linux",
-            },
-            ManifestListEntry {
-                digest: "sha256:second",
-                architecture: "amd64",
-                os: "linux",
-            },
+            entry("sha256:first", "amd64", "linux"),
+            entry("sha256:second", "amd64", "linux"),
         ];
         let digest = resolve_manifest_list_to_linux(entries, "amd64").unwrap();
         assert_eq!(digest, "sha256:first");
@@ -101,16 +89,8 @@ mod tests {
     #[test]
     fn errors_when_target_unavailable_and_lists_what_is() {
         let entries = vec![
-            ManifestListEntry {
-                digest: "sha256:arm64",
-                architecture: "arm64",
-                os: "linux",
-            },
-            ManifestListEntry {
-                digest: "sha256:s390x",
-                architecture: "s390x",
-                os: "linux",
-            },
+            entry("sha256:arm64", "arm64", "linux"),
+            entry("sha256:s390x", "s390x", "linux"),
         ];
         let err = resolve_manifest_list_to_linux(entries, "amd64").unwrap_err();
         let msg = err.to_string();
@@ -121,19 +101,9 @@ mod tests {
 
     #[test]
     fn skips_non_linux_os_entries() {
-        // darwin/arm64 entries (rare but possible in some indices)
-        // are correctly NOT matched even when target_arch matches.
         let entries = vec![
-            ManifestListEntry {
-                digest: "sha256:darwin-arm64",
-                architecture: "arm64",
-                os: "darwin",
-            },
-            ManifestListEntry {
-                digest: "sha256:linux-arm64",
-                architecture: "arm64",
-                os: "linux",
-            },
+            entry("sha256:darwin-arm64", "arm64", "darwin"),
+            entry("sha256:linux-arm64", "arm64", "linux"),
         ];
         let digest = resolve_manifest_list_to_linux(entries, "arm64").unwrap();
         assert_eq!(digest, "sha256:linux-arm64");

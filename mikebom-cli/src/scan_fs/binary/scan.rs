@@ -175,6 +175,20 @@ pub(super) fn scan_binary(path: &Path, bytes: &[u8]) -> Option<BinaryScan> {
         (None, Vec::new(), None)
     };
 
+    // Milestone 030 — Mach-O codesign metadata (LC_CODE_SIGNATURE
+    // SuperBlob → CodeDirectory). Identifier + flags bitfield +
+    // 10-char Apple Team ID. Non-Mach-O leaves all three at default.
+    let (macho_codesign_identifier, macho_codesign_flags, macho_codesign_team_id) =
+        if class == "macho" {
+            (
+                super::macho::parse_codesign_identifier(bytes),
+                super::macho::parse_codesign_flags(bytes),
+                super::macho::parse_codesign_team_id(bytes),
+            )
+        } else {
+            (None, Vec::new(), None)
+        };
+
     // Milestone 028 — PE identity signals (CodeView pdb-id, machine
     // type, subsystem) via `object` 0.36's typed accessors. ELF /
     // Mach-O leave all three at default. Bit-width (PE32 vs PE32+)
@@ -218,6 +232,9 @@ pub(super) fn scan_binary(path: &Path, bytes: &[u8]) -> Option<BinaryScan> {
         macho_uuid,
         macho_rpath,
         macho_min_os,
+        macho_codesign_identifier,
+        macho_codesign_flags,
+        macho_codesign_team_id,
         pe_pdb_id,
         pe_machine,
         pe_subsystem,
@@ -342,6 +359,11 @@ fn scan_fat_macho(path: &Path, bytes: &[u8]) -> Option<BinaryScan> {
     let macho_rpath = super::macho::parse_lc_rpath(first_slice);
     let macho_min_os = super::macho::parse_min_os_version(first_slice);
 
+    // Milestone 030 — codesign metadata, first-slice convention.
+    let macho_codesign_identifier = super::macho::parse_codesign_identifier(first_slice);
+    let macho_codesign_flags = super::macho::parse_codesign_flags(first_slice);
+    let macho_codesign_team_id = super::macho::parse_codesign_team_id(first_slice);
+
     // Milestone 029 — cargo-auditable manifest extraction (fat Mach-O).
     // Same first-slice convention as LC_UUID above. cargo-auditable's
     // `.dep-v0` section (Mach-O `__DATA,.dep-v0`) is whole-binary
@@ -367,6 +389,9 @@ fn scan_fat_macho(path: &Path, bytes: &[u8]) -> Option<BinaryScan> {
         macho_uuid,
         macho_rpath,
         macho_min_os,
+        macho_codesign_identifier,
+        macho_codesign_flags,
+        macho_codesign_team_id,
         pe_pdb_id: None, // milestone 028 — PE-only fields stay default
         pe_machine: None,
         pe_subsystem: None,

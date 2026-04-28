@@ -164,6 +164,20 @@ fn scan_system_binary_emits_file_level_and_linkage() {
                 && !s.starts_with(':') && !s.ends_with(':')),
             "expected non-empty mikebom:macho-min-os of shape <platform>:<version> on /bin/ls; got {min_os:?}"
         );
+
+        // Milestone 030 — codesign metadata. /bin/ls on macOS is
+        // Apple-signed by the "Software Signing" root, so only the
+        // identifier is universally populated. Apple system binaries
+        // do NOT carry a team-id (`TeamIdentifier=not set` per
+        // `codesign -dvv`) and ship with `flags=0x0(none)` (not
+        // hardened-runtime — that's a third-party-developer signal).
+        // The team-id + flags + multi-flag decoder paths are covered
+        // by the inline synthetic-fixture tests in macho.rs::tests.
+        let identifier = property_value(file_level, "mikebom:macho-codesign-identifier");
+        assert!(
+            identifier.as_deref().is_some_and(|s| s.starts_with("com.apple.")),
+            "expected mikebom:macho-codesign-identifier to start with `com.apple.` for /bin/ls; got {identifier:?}"
+        );
     }
 }
 

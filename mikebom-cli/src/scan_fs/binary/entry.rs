@@ -235,6 +235,24 @@ pub(crate) struct BinaryScan {
     /// Prefers `LC_BUILD_VERSION` (newer); falls back to
     /// `LC_VERSION_MIN_MACOSX` etc. when LC_BUILD_VERSION absent.
     pub macho_min_os: Option<String>,
+    /// Mach-O codesign identifier (milestone 030). From the
+    /// `LC_CODE_SIGNATURE` SuperBlob's `CodeDirectory.identOffset`
+    /// — typically the bundle ID (`com.apple.bash`) for app-signed
+    /// binaries or the basename for ad-hoc-signed ones. `None` for
+    /// non-Mach-O or unsigned binaries. Read from the FIRST slice
+    /// on fat binaries.
+    pub macho_codesign_identifier: Option<String>,
+    /// Mach-O codesign flags (milestone 030). Decoded names from
+    /// the `CodeDirectory.flags` u32 bitfield (e.g.
+    /// `["hardened-runtime", "library-validation"]`); unrecognized
+    /// bits surface as `unknown-0x<hex>`. Empty Vec for non-Mach-O
+    /// or unsigned binaries. Alphabetically sorted.
+    pub macho_codesign_flags: Vec<String>,
+    /// Mach-O codesign team ID (milestone 030). 10-char Apple
+    /// Team ID from `CodeDirectory.teamOffset` (CD version ≥
+    /// 0x20200). `None` for non-Mach-O, unsigned, or ad-hoc-signed
+    /// binaries.
+    pub macho_codesign_team_id: Option<String>,
     /// PE CodeView pdb-id (milestone 028). Format
     /// `<guid-hex-lowercase>:<age>` — the symbol-server identity
     /// pair from the `IMAGE_DIRECTORY_ENTRY_DEBUG` directory's
@@ -415,13 +433,17 @@ fn build_elf_identity_annotations(
     bag
 }
 
-/// Milestone 024: translate the three Mach-O identity fields on
-/// `BinaryScan` into bag entries. Same skip-on-empty contract as the
-/// ELF helper. Each annotation includes the source LC_* command in
-/// its key as a stable cross-format identity hint:
-/// - `mikebom:macho-uuid`   ← LC_UUID
-/// - `mikebom:macho-rpath`  ← LC_RPATH
-/// - `mikebom:macho-min-os` ← LC_BUILD_VERSION (or LC_VERSION_MIN_*)
+/// Milestone 024 + 030: translate the Mach-O identity + codesign
+/// fields on `BinaryScan` into bag entries. Same skip-on-empty
+/// contract as the ELF helper. Each annotation key names the source
+/// LC_* command as a stable cross-format identity hint:
+/// - `mikebom:macho-uuid` ← LC_UUID (milestone 024)
+/// - `mikebom:macho-rpath` ← LC_RPATH (024)
+/// - `mikebom:macho-min-os` ← LC_BUILD_VERSION or LC_VERSION_MIN_* (024)
+/// - `mikebom:macho-codesign-identifier` ← LC_CODE_SIGNATURE
+///   SuperBlob CodeDirectory.identOffset (milestone 030)
+/// - `mikebom:macho-codesign-flags` ← CodeDirectory.flags (030)
+/// - `mikebom:macho-codesign-team-id` ← CodeDirectory.teamOffset (030)
 fn build_macho_identity_annotations(
     scan: &BinaryScan,
 ) -> std::collections::BTreeMap<String, serde_json::Value> {
@@ -442,6 +464,24 @@ fn build_macho_identity_annotations(
         bag.insert(
             "mikebom:macho-min-os".to_string(),
             serde_json::Value::String(min_os.clone()),
+        );
+    }
+    if let Some(ref id) = scan.macho_codesign_identifier {
+        bag.insert(
+            "mikebom:macho-codesign-identifier".to_string(),
+            serde_json::Value::String(id.clone()),
+        );
+    }
+    if !scan.macho_codesign_flags.is_empty() {
+        bag.insert(
+            "mikebom:macho-codesign-flags".to_string(),
+            serde_json::json!(scan.macho_codesign_flags),
+        );
+    }
+    if let Some(ref team) = scan.macho_codesign_team_id {
+        bag.insert(
+            "mikebom:macho-codesign-team-id".to_string(),
+            serde_json::Value::String(team.clone()),
         );
     }
     bag
@@ -863,6 +903,9 @@ mod tests {
             macho_uuid: None,
             macho_rpath: Vec::new(),
             macho_min_os: None,
+            macho_codesign_identifier: None,
+            macho_codesign_flags: Vec::new(),
+            macho_codesign_team_id: None,
             pe_pdb_id: None,
             pe_machine: None,
             pe_subsystem: None,

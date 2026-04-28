@@ -12,6 +12,7 @@ use mikebom_common::types::hash::ContentHash;
 use mikebom_common::types::purl::Purl;
 use sha2::{Digest, Sha256};
 
+use super::cargo_auditable;
 use super::elf;
 use super::packer;
 use super::version_strings;
@@ -57,6 +58,143 @@ pub(super) fn version_match_to_entry(
         hashes: Vec::new(),
         extra_annotations: Default::default(),
     })
+}
+
+/// Convert a parsed cargo-auditable manifest into per-crate
+/// `PackageDbEntry` rows (milestone 029). Each manifest entry becomes
+/// a `pkg:cargo/<name>@<version>` component with
+/// `evidence-kind = "cargo-auditable"`, `confidence = "high"`, and
+/// `parent_purl` cross-linking back to the file-level binary
+/// component. Index-based `dependencies` resolve to PURL-keyed
+/// `depends` edges.
+///
+/// PURL qualifiers per source:
+/// * `registry` → no qualifier (crates.io is the implicit default).
+/// * `git` / `local` / `path` / `unknown` → `?source=<source>`
+///   marker so consumers can filter non-registry crates.
+///
+/// Output is deterministically ordered by `(name, version, source)`
+/// triple — matches the cargo lockfile reader's contract so the bytes
+/// are stable across scans.
+pub(super) fn cargo_auditable_packages_to_entries(
+    manifest: &cargo_auditable::CargoAuditableManifest,
+    file_level_purl: &Purl,
+    path: &Path,
+) -> Vec<PackageDbEntry> {
+    use mikebom_common::types::purl::encode_purl_segment;
+
+    // First pass: build parallel `Vec<Option<Purl>>` and
+    // `Vec<Option<String>>` (string form, used for the
+    // `Vec<String>`-typed `depends` edges and `Option<String>`-typed
+    // `parent_purl` field on PackageDbEntry).
+    let purls: Vec<Option<Purl>> = manifest
+        .packages
+        .iter()
+        .map(|p| {
+            let qualifier = match p.source.as_str() {
+                "registry" => String::new(),
+                other => format!("?source={}", encode_purl_segment(other)),
+            };
+            let purl_str = format!(
+                "pkg:cargo/{}@{}{}",
+                encode_purl_segment(&p.name),
+                encode_purl_segment(&p.version),
+                qualifier,
+            );
+            Purl::new(&purl_str).ok()
+        })
+        .collect();
+    let purl_strs: Vec<Option<String>> = purls
+        .iter()
+        .map(|p| p.as_ref().map(|x| x.as_str().to_string()))
+        .collect();
+
+    // Second pass: build the entries.
+    let mut entries: Vec<PackageDbEntry> = manifest
+        .packages
+        .iter()
+        .enumerate()
+        .filter_map(|(i, pkg)| {
+            let purl = purls[i].clone()?;
+            let depends: Vec<String> = {
+                let mut d: Vec<String> = pkg
+                    .dependencies
+                    .iter()
+                    .filter_map(|&idx| purl_strs.get(idx).and_then(|p| p.clone()))
+                    .collect();
+                d.sort();
+                d
+            };
+            let mut extra: std::collections::BTreeMap<String, serde_json::Value> =
+                Default::default();
+            // Only emit `kind` annotation when present and not the
+            // implied default ("runtime"). build/dev kinds are
+            // worth surfacing for downstream filtering.
+            if let Some(ref k) = pkg.kind {
+                if k != "runtime" {
+                    extra.insert(
+                        "mikebom:cargo-auditable-kind".to_string(),
+                        serde_json::Value::String(k.clone()),
+                    );
+                }
+            }
+            // Source annotation only when not "registry" (the
+            // crates.io default is implied by the bare PURL).
+            if pkg.source != "registry" {
+                extra.insert(
+                    "mikebom:cargo-auditable-source".to_string(),
+                    serde_json::Value::String(pkg.source.clone()),
+                );
+            }
+            Some(PackageDbEntry {
+                purl,
+                name: pkg.name.clone(),
+                version: pkg.version.clone(),
+                arch: None,
+                source_path: path.to_string_lossy().into_owned(),
+                depends,
+                maintainer: None,
+                licenses: vec![],
+                is_dev: None,
+                requirement_range: None,
+                source_type: None,
+                sbom_tier: Some("analyzed".to_string()),
+                shade_relocation: None,
+                buildinfo_status: None,
+                evidence_kind: Some("cargo-auditable".to_string()),
+                binary_class: None,
+                binary_stripped: None,
+                linkage_kind: None,
+                detected_go: None,
+                confidence: Some("high".to_string()),
+                binary_packed: None,
+                raw_version: None,
+                parent_purl: Some(file_level_purl.as_str().to_string()),
+                npm_role: None,
+                co_owned_by: None,
+                hashes: Vec::new(),
+                extra_annotations: extra,
+            })
+        })
+        .collect();
+
+    // Determinism: sort by (name, version, source) triple.
+    entries.sort_by(|a, b| {
+        let a_src = a
+            .extra_annotations
+            .get("mikebom:cargo-auditable-source")
+            .and_then(|v| v.as_str())
+            .unwrap_or("registry");
+        let b_src = b
+            .extra_annotations
+            .get("mikebom:cargo-auditable-source")
+            .and_then(|v| v.as_str())
+            .unwrap_or("registry");
+        (a.name.as_str(), a.version.as_str(), a_src)
+            .cmp(&(b.name.as_str(), b.version.as_str(), b_src))
+    });
+
+    entries
 }
 
 /// Cross-format scan result. Common fields populated from all three
@@ -112,6 +250,12 @@ pub(crate) struct BinaryScan {
     /// `"windows-gui"`, `"efi-application"`, `"unknown"`, etc.).
     /// `None` for non-PE binaries.
     pub pe_subsystem: Option<String>,
+    /// cargo-auditable manifest extracted from the binary's `.dep-v0`
+    /// linker section (milestone 029). Cross-format: ELF `.dep-v0`,
+    /// Mach-O `__DATA,.dep-v0`, PE `.dep-v0`. `None` for binaries
+    /// not built with `cargo auditable build`. Read from the FIRST
+    /// slice on fat Mach-O binaries.
+    pub cargo_auditable: Option<cargo_auditable::CargoAuditableManifest>,
     /// Concatenated read-only string-section bytes per FR-025 /
     /// research R6. Fed to the curated version-string scanner.
     /// Capped at 16 MB per binary.
@@ -203,14 +347,38 @@ pub(super) fn make_file_level_component(
 /// Merge per-format identity annotations into a single bag. ELF,
 /// Mach-O, and PE fields are mutually exclusive in practice (a
 /// `BinaryScan` has one binary_class), so the bags don't overlap; the
-/// merge is a simple extend. Three identity helpers contribute as of
-/// milestone 028.
+/// merge is a simple extend. Four identity-cohort helpers contribute
+/// as of milestone 029 (the three binary-format identity helpers
+/// plus the cross-format cargo-auditable cross-link annotation).
 fn build_binary_identity_annotations(
     scan: &BinaryScan,
 ) -> std::collections::BTreeMap<String, serde_json::Value> {
     let mut bag = build_elf_identity_annotations(scan);
     bag.extend(build_macho_identity_annotations(scan));
     bag.extend(build_pe_identity_annotations(scan));
+    bag.extend(build_cargo_auditable_cross_link(scan));
+    bag
+}
+
+/// Milestone 029: emit `mikebom:detected-cargo-auditable = true` when
+/// the binary carries a parsed cargo-auditable manifest. Cross-link
+/// annotation that lets consumers find the per-crate
+/// `pkg:cargo/<name>@<version>` components emitted by
+/// `cargo_auditable_packages_to_entries` without scanning every
+/// component. The Rust analog of `mikebom:detected-go = true` (set
+/// directly on `PackageDbEntry::detected_go` for Go binaries via the
+/// milestone-005 `detected_go` field — kept typed because Go support
+/// predates the bag).
+fn build_cargo_auditable_cross_link(
+    scan: &BinaryScan,
+) -> std::collections::BTreeMap<String, serde_json::Value> {
+    let mut bag = std::collections::BTreeMap::new();
+    if scan.cargo_auditable.is_some() {
+        bag.insert(
+            "mikebom:detected-cargo-auditable".to_string(),
+            serde_json::Value::Bool(true),
+        );
+    }
     bag
 }
 
@@ -698,6 +866,7 @@ mod tests {
             pe_pdb_id: None,
             pe_machine: None,
             pe_subsystem: None,
+            cargo_auditable: None,
             string_region: Vec::new(),
             packer: None,
         }
@@ -876,5 +1045,136 @@ mod tests {
             entry.extra_annotations.get("mikebom:pe-subsystem"),
             Some(&serde_json::Value::String("efi-application".to_string())),
         );
+    }
+
+    /// Milestone 029: a populated cargo-auditable manifest emits the
+    /// `mikebom:detected-cargo-auditable = true` cross-link annotation
+    /// on the file-level component.
+    #[test]
+    fn make_file_level_component_emits_detected_cargo_auditable_when_manifest_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("rust-binary");
+        std::fs::write(&path, b"sample").unwrap();
+
+        let mut scan = fake_binary_scan();
+        scan.cargo_auditable =
+            Some(cargo_auditable::CargoAuditableManifest { packages: Vec::new() });
+
+        let entry = make_file_level_component(&path, b"sample", &scan, false);
+        assert_eq!(
+            entry.extra_annotations.get("mikebom:detected-cargo-auditable"),
+            Some(&serde_json::Value::Bool(true)),
+        );
+    }
+
+    /// Milestone 029: when no manifest is present, the cross-link
+    /// annotation does NOT emit (no false-true).
+    #[test]
+    fn make_file_level_component_omits_detected_cargo_auditable_when_manifest_absent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("not-rust-binary");
+        std::fs::write(&path, b"plain").unwrap();
+
+        let scan = fake_binary_scan(); // cargo_auditable = None
+
+        let entry = make_file_level_component(&path, b"plain", &scan, false);
+        assert!(!entry
+            .extra_annotations
+            .contains_key("mikebom:detected-cargo-auditable"));
+    }
+
+    /// Milestone 029: a 3-crate manifest emits 3 per-crate
+    /// PackageDbEntry components with the expected fields, sorted
+    /// deterministically by `(name, version, source)` triple.
+    #[test]
+    fn cargo_auditable_packages_to_entries_emits_per_crate_components() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("rust-binary");
+        std::fs::write(&path, b"sample").unwrap();
+
+        let manifest = cargo_auditable::CargoAuditableManifest {
+            packages: vec![
+                cargo_auditable::CargoAuditablePackage {
+                    name: "myapp".to_string(),
+                    version: "1.2.3".to_string(),
+                    source: "local".to_string(),
+                    kind: Some("runtime".to_string()),
+                    dependencies: vec![1, 2],
+                    root: true,
+                },
+                cargo_auditable::CargoAuditablePackage {
+                    name: "serde".to_string(),
+                    version: "1.0.193".to_string(),
+                    source: "registry".to_string(),
+                    kind: Some("runtime".to_string()),
+                    dependencies: Vec::new(),
+                    root: false,
+                },
+                cargo_auditable::CargoAuditablePackage {
+                    name: "tokio".to_string(),
+                    version: "1.35.1".to_string(),
+                    source: "registry".to_string(),
+                    kind: Some("runtime".to_string()),
+                    dependencies: Vec::new(),
+                    root: false,
+                },
+            ],
+        };
+
+        let file_level_purl = mikebom_common::types::purl::Purl::new(
+            "pkg:generic/rust-binary?file-sha256=deadbeef",
+        )
+        .unwrap();
+
+        let entries =
+            cargo_auditable_packages_to_entries(&manifest, &file_level_purl, &path);
+
+        assert_eq!(entries.len(), 3);
+        // Sorted by (name, version, source) → myapp, serde, tokio.
+        assert_eq!(entries[0].name, "myapp");
+        assert_eq!(entries[1].name, "serde");
+        assert_eq!(entries[2].name, "tokio");
+
+        // myapp is `local`-sourced → ?source=local qualifier on PURL.
+        assert_eq!(
+            entries[0].purl.as_str(),
+            "pkg:cargo/myapp@1.2.3?source=local"
+        );
+        // serde + tokio are `registry`-sourced → no qualifier.
+        assert_eq!(entries[1].purl.as_str(), "pkg:cargo/serde@1.0.193");
+        assert_eq!(entries[2].purl.as_str(), "pkg:cargo/tokio@1.35.1");
+
+        // Every entry shares the contracted evidence-kind + confidence.
+        for e in &entries {
+            assert_eq!(e.evidence_kind.as_deref(), Some("cargo-auditable"));
+            assert_eq!(e.confidence.as_deref(), Some("high"));
+            assert_eq!(
+                e.parent_purl.as_deref(),
+                Some("pkg:generic/rust-binary?file-sha256=deadbeef"),
+            );
+        }
+
+        // myapp's `dependencies: [1, 2]` resolves to the serde+tokio
+        // PURLs in sorted order.
+        assert_eq!(
+            entries[0].depends,
+            vec![
+                "pkg:cargo/serde@1.0.193".to_string(),
+                "pkg:cargo/tokio@1.35.1".to_string()
+            ]
+        );
+
+        // myapp carries the `mikebom:cargo-auditable-source = "local"`
+        // annotation (non-registry sources surface). Runtime kind is
+        // suppressed (the implied default).
+        assert_eq!(
+            entries[0]
+                .extra_annotations
+                .get("mikebom:cargo-auditable-source"),
+            Some(&serde_json::Value::String("local".to_string())),
+        );
+        assert!(!entries[0]
+            .extra_annotations
+            .contains_key("mikebom:cargo-auditable-kind"));
     }
 }

@@ -37,7 +37,10 @@ mod predicates;
 mod scan;
 
 use discover::discover_binaries;
-use entry::{make_file_level_component, note_package_to_entry, version_match_to_entry};
+use entry::{
+    cargo_auditable_packages_to_entries, make_file_level_component, note_package_to_entry,
+    version_match_to_entry,
+};
 use predicates::{
     detect_rootfs_kind, has_rpmdb_at, is_host_system_path, is_os_managed_directory, RootfsKind,
 };
@@ -338,13 +341,22 @@ pub fn read(
             || collapsed_by_jdk;
         let skip_secondary_evidence = skip_file_level || go_in_linux;
 
+        // The file-level component's PURL is needed both for the
+        // skip_file_level==false push below AND for the milestone-029
+        // cargo-auditable per-crate components' parent_purl
+        // cross-link (which emits regardless of skip_file_level —
+        // those crates are real, even when the file-level component
+        // is shadowed by an authoritative package-db entry). Build
+        // it once outside the skip branch.
+        let file_level = make_file_level_component(&path, &bytes, &scan, go_in_linux);
+        let file_level_purl = file_level.purl.clone();
+
         if !skip_file_level {
             // File-level binary component. When `go_in_linux` is
             // true, the emitted entry carries `detected_go = Some(true)`
             // to cross-link it with the golang module component(s)
             // that `go_binary.rs` emits for the same bytes
             // (milestone 004 US2 R8 flat cross-link).
-            let file_level = make_file_level_component(&path, &bytes, &scan, go_in_linux);
             let parent_bom_ref = file_level.purl.as_str().to_string();
             out.push(file_level);
 
@@ -421,6 +433,24 @@ pub fn read(
                 if let Some(entry) = version_match_to_entry(&m, &path) {
                     out.push(entry);
                 }
+            }
+        }
+
+        // Milestone 029 — cargo-auditable per-crate components.
+        // Same `skip_secondary_evidence` gate as the version-string
+        // scanner: when the binary is already covered by an
+        // authoritative package-db entry (dpkg/rpm/etc.), don't
+        // double-emit `pkg:cargo/<crate>` shadows. Each emitted
+        // crate carries `parent_purl = file_level_purl` cross-
+        // linking back to the file-level binary component's identity.
+        if !skip_secondary_evidence {
+            if let Some(ref manifest) = scan.cargo_auditable {
+                let entries = cargo_auditable_packages_to_entries(
+                    manifest,
+                    &file_level_purl,
+                    &path,
+                );
+                out.extend(entries);
             }
         }
     }

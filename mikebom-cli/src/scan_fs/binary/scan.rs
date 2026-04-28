@@ -186,6 +186,17 @@ pub(super) fn scan_binary(path: &Path, bytes: &[u8]) -> Option<BinaryScan> {
         (None, None, None)
     };
 
+    // Milestone 029 — cargo-auditable manifest extraction. The
+    // `.dep-v0` linker section name is universal across ELF / Mach-O
+    // (where `object::section_by_name_bytes` matches the `__DATA,`
+    // segment-prefixed name) / PE. The wire format is zlib-compressed
+    // JSON; `cargo_auditable::parse_dep_v0` returns None on any
+    // malformed input.
+    let cargo_auditable = file
+        .section_by_name_bytes(b".dep-v0")
+        .and_then(|s| s.data().ok())
+        .and_then(super::cargo_auditable::parse_dep_v0);
+
     // Read-only string region per FR-025 / Q4 — format-appropriate
     // sections only. Used by the curated version-string scanner.
     let string_region = collect_string_region(&file, class);
@@ -210,6 +221,7 @@ pub(super) fn scan_binary(path: &Path, bytes: &[u8]) -> Option<BinaryScan> {
         pe_pdb_id,
         pe_machine,
         pe_subsystem,
+        cargo_auditable,
         string_region,
         packer: packer_kind,
     })
@@ -330,6 +342,19 @@ fn scan_fat_macho(path: &Path, bytes: &[u8]) -> Option<BinaryScan> {
     let macho_rpath = super::macho::parse_lc_rpath(first_slice);
     let macho_min_os = super::macho::parse_min_os_version(first_slice);
 
+    // Milestone 029 — cargo-auditable manifest extraction (fat Mach-O).
+    // Same first-slice convention as LC_UUID above. cargo-auditable's
+    // `.dep-v0` section (Mach-O `__DATA,.dep-v0`) is whole-binary
+    // metadata and not arch-specific in practice, so reading from the
+    // first slice is sufficient.
+    let cargo_auditable = {
+        use object::Object;
+        object::read::File::parse(first_slice)
+            .ok()
+            .and_then(|f| f.section_by_name_bytes(b".dep-v0").and_then(|s| s.data().ok()))
+            .and_then(super::cargo_auditable::parse_dep_v0)
+    };
+
     Some(BinaryScan {
         binary_class: "macho",
         imports,
@@ -345,6 +370,7 @@ fn scan_fat_macho(path: &Path, bytes: &[u8]) -> Option<BinaryScan> {
         pe_pdb_id: None, // milestone 028 — PE-only fields stay default
         pe_machine: None,
         pe_subsystem: None,
+        cargo_auditable,
         string_region,
         packer: packer::detect(bytes),
     })

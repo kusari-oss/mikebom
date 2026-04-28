@@ -52,8 +52,6 @@
 //! on any failure (malformed zlib, malformed JSON, schema mismatch).
 //! No panics.
 
-#![allow(dead_code)] // wired in commit 2 (029/wire-up-bag-and-entries)
-
 use std::io::Read;
 
 /// The full extracted cargo-auditable manifest.

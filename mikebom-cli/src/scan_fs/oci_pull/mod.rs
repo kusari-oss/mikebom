@@ -44,6 +44,10 @@
 //! regression test in `mikebom-cli/tests/no_c_dependencies.rs`
 //! locks the substrate decision in.
 
+// `auth` is wired into `registry` in milestone 034 commit 2; this commit
+// only adds the module and its inline tests so it can land independently.
+#[allow(dead_code)]
+mod auth;
 mod platform;
 mod reference;
 mod registry;

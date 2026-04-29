@@ -100,7 +100,7 @@ impl RegistryClient {
         reference: &ImageReference,
     ) -> Result<ManifestOrIndex> {
         let url = manifest_url(reference);
-        let body = self.fetch_with_bearer_retry(&url, MANIFEST_MEDIA_TYPES).await?;
+        let body = self.fetch_with_auth_retry(&url, MANIFEST_MEDIA_TYPES).await?;
         let content_type = body.content_type;
         let bytes = body.bytes;
 
@@ -137,7 +137,7 @@ impl RegistryClient {
         }
         let url = blob_url(reference, digest);
         // Blob endpoint accepts any media type; we send `*/*`.
-        let body = self.fetch_with_bearer_retry(&url, &["*/*"]).await?;
+        let body = self.fetch_with_auth_retry(&url, &["*/*"]).await?;
         verify_sha256(&body.bytes, digest)
             .with_context(|| format!("verifying blob {digest} from {url}"))?;
         if let Some(cache) = self.cache.as_ref() {
@@ -153,9 +153,11 @@ impl RegistryClient {
     }
 
     /// GET `url` with the supplied Accept media types. Handles
-    /// 401 → bearer-token-fetch → retry. Returns the body bytes
-    /// + the Content-Type header so the caller can dispatch.
-    async fn fetch_with_bearer_retry(
+    /// 401 → auth-challenge → retry for both `Bearer` (token-realm
+    /// flow) and `Basic` (direct-credentials flow, used by ECR).
+    /// Returns the body bytes + the Content-Type header so the
+    /// caller can dispatch.
+    async fn fetch_with_auth_retry(
         &self,
         url: &str,
         accept: &[&str],
@@ -173,7 +175,6 @@ impl RegistryClient {
             return ResponseBody::from_response(first).await;
         }
         if status.as_u16() == 401 {
-            // Parse the bearer challenge, fetch a token, retry.
             let www_auth = first
                 .headers()
                 .get(reqwest::header::WWW_AUTHENTICATE)
@@ -183,30 +184,59 @@ impl RegistryClient {
                 .to_str()
                 .context("WWW-Authenticate is not valid UTF-8")?
                 .to_string();
-            let challenge = parse_bearer_challenge(&www_auth)?;
-            let token = self.fetch_bearer_token(&challenge).await?;
-            let retry = self
-                .http
-                .get(url)
-                .header("Accept", &accept_header)
-                .bearer_auth(&token)
-                .send()
-                .await
-                .with_context(|| format!("retrying GET {url} with bearer token"))?;
+            let challenge = parse_auth_challenge(&www_auth)?;
+            let retry = match challenge {
+                AuthChallenge::Bearer(bearer) => {
+                    let token = self.fetch_bearer_token(&bearer).await?;
+                    self.http
+                        .get(url)
+                        .header("Accept", &accept_header)
+                        .bearer_auth(&token)
+                        .send()
+                        .await
+                        .with_context(|| format!("retrying GET {url} with bearer token"))?
+                }
+                AuthChallenge::Basic { realm } => {
+                    tracing::debug!(
+                        url,
+                        %realm,
+                        "registry sent Basic auth challenge; applying cached docker credentials"
+                    );
+                    let creds = self.credentials.as_ref().ok_or_else(|| {
+                        anyhow!(
+                            "registry returned 401 with Basic auth challenge for GET {url}, \
+                             but no credentials are configured for this registry. \
+                             Run `docker login <registry>` (or for AWS ECR, \
+                             `aws ecr get-login-password | docker login --username AWS \
+                             --password-stdin <registry>`) so the credentials land in \
+                             ~/.docker/config.json."
+                        )
+                    })?;
+                    self.http
+                        .get(url)
+                        .header("Accept", &accept_header)
+                        .basic_auth(&creds.username, Some(&creds.secret))
+                        .send()
+                        .await
+                        .with_context(|| {
+                            format!("retrying GET {url} with Basic auth")
+                        })?
+                }
+            };
             if retry.status().is_success() {
                 return ResponseBody::from_response(retry).await;
             }
             if self.credentials.is_some() {
                 bail!(
                     "registry authentication failed for GET {url} \
-                     (got {} after bearer-token retry). Verify credentials \
+                     (got {} after auth retry). Verify credentials \
                      in ~/.docker/config.json or your credential helper.",
                     retry.status()
                 );
             }
             bail!(
                 "registry returned {} for GET {url} after anonymous \
-                 bearer-token retry. For private registries, configure \
+                 auth retry. For private registries, configure \
                  ~/.docker/config.json (`auth` or `identitytoken` field) \
                  or a credential helper.",
                 retry.status()
@@ -266,46 +296,82 @@ impl RegistryClient {
 /// The `WWW-Authenticate: Bearer realm="...",service="...",scope="..."`
 /// challenge fields. realm is required; service and scope are
 /// optional (some registries emit only realm).
+#[derive(Debug)]
 struct BearerChallenge {
     realm: String,
     service: Option<String>,
     scope: Option<String>,
 }
 
-/// Parse a `WWW-Authenticate: Bearer realm="...",service="...",scope="..."`
-/// header value into its fields.
-fn parse_bearer_challenge(value: &str) -> Result<BearerChallenge> {
-    // Strip the `Bearer ` prefix (case-insensitive).
-    let trimmed = value.trim_start();
-    let after_scheme = if trimmed.len() >= 7
-        && trimmed[..7].eq_ignore_ascii_case("Bearer ")
-    {
-        &trimmed[7..]
-    } else {
-        bail!("WWW-Authenticate is not a Bearer challenge: {value}");
-    };
+/// Parsed `WWW-Authenticate` challenge. Two schemes matter for OCI
+/// distribution-spec implementations in the wild:
+///
+/// - `Bearer`: standard distribution-spec auth (Docker Hub, GHCR,
+///   gcr.io, …) — fetch a token from the realm endpoint, retry the
+///   request with `Authorization: Bearer <token>`.
+/// - `Basic`: AWS ECR's flavor — apply `Authorization: Basic
+///   <base64(user:secret)>` directly on the original request from
+///   the credentials cached in `~/.docker/config.json` (populated
+///   by `aws ecr get-login-password | docker login`). No realm
+///   round-trip.
+#[derive(Debug)]
+enum AuthChallenge {
+    Bearer(BearerChallenge),
+    Basic { realm: String },
+}
 
-    // Split on commas at the top level. Values may contain commas
-    // inside double-quotes; we respect that.
-    let mut realm: Option<String> = None;
-    let mut service: Option<String> = None;
-    let mut scope: Option<String> = None;
-    for (k, v) in iter_kv_pairs(after_scheme) {
-        match k.as_str() {
-            "realm" => realm = Some(v),
-            "service" => service = Some(v),
-            "scope" => scope = Some(v),
-            _ => {}
+/// Parse a `WWW-Authenticate: <scheme> ...` header value. Supports
+/// both `Bearer` (token-realm flow) and `Basic` (direct cred apply)
+/// schemes. Anything else errors out.
+fn parse_auth_challenge(value: &str) -> Result<AuthChallenge> {
+    let trimmed = value.trim_start();
+    if trimmed.len() >= 7 && trimmed[..7].eq_ignore_ascii_case("Bearer ") {
+        let after = &trimmed[7..];
+        let mut realm: Option<String> = None;
+        let mut service: Option<String> = None;
+        let mut scope: Option<String> = None;
+        for (k, v) in iter_kv_pairs(after) {
+            match k.as_str() {
+                "realm" => realm = Some(v),
+                "service" => service = Some(v),
+                "scope" => scope = Some(v),
+                _ => {}
+            }
         }
+        let realm = realm.ok_or_else(|| {
+            anyhow!("WWW-Authenticate Bearer challenge missing `realm`: {value}")
+        })?;
+        return Ok(AuthChallenge::Bearer(BearerChallenge {
+            realm,
+            service,
+            scope,
+        }));
     }
-    let realm = realm.ok_or_else(|| {
-        anyhow!("WWW-Authenticate Bearer challenge missing `realm`: {value}")
-    })?;
-    Ok(BearerChallenge {
-        realm,
-        service,
-        scope,
-    })
+    // Match `Basic` followed by either whitespace (parameters
+    // present) or end-of-string (bare scheme token). RFC 7617
+    // requires `realm`; we accept its absence defensively (some
+    // non-conforming registries may omit it) and store an empty
+    // string. The `realm` value is purely diagnostic for this
+    // scheme — the credentials apply regardless.
+    let lower = trimmed.to_ascii_lowercase();
+    let basic_match = lower == "basic" || lower.starts_with("basic ");
+    if basic_match {
+        let after = if trimmed.len() > 5 {
+            &trimmed[5..]
+        } else {
+            ""
+        };
+        let mut realm: Option<String> = None;
+        for (k, v) in iter_kv_pairs(after) {
+            if k == "realm" {
+                realm = Some(v);
+            }
+        }
+        return Ok(AuthChallenge::Basic {
+            realm: realm.unwrap_or_default(),
+        });
+    }
+    bail!("WWW-Authenticate uses an unsupported scheme (mikebom understands Bearer and Basic): {value}")
 }
 
 /// Iterate `key="value"` pairs respecting double-quoted values
@@ -419,6 +485,7 @@ fn verify_sha256(bytes: &[u8], expected_digest: &str) -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug)]
 struct ResponseBody {
     bytes: Vec<u8>,
     content_type: String,
@@ -449,51 +516,93 @@ impl ResponseBody {
 mod tests {
     use super::*;
 
+    fn parse_bearer_for_test(value: &str) -> Result<BearerChallenge> {
+        match parse_auth_challenge(value)? {
+            AuthChallenge::Bearer(b) => Ok(b),
+            AuthChallenge::Basic { .. } => {
+                bail!("expected Bearer challenge, got Basic")
+            }
+        }
+    }
+
     #[test]
-    fn parse_bearer_challenge_extracts_realm_service_scope() {
+    fn parse_auth_challenge_extracts_realm_service_scope() {
         // Docker Hub's actual challenge format.
         let v = r#"Bearer realm="https://auth.docker.io/token",service="registry.docker.io",scope="repository:library/alpine:pull""#;
-        let c = parse_bearer_challenge(v).unwrap();
+        let c = parse_bearer_for_test(v).unwrap();
         assert_eq!(c.realm, "https://auth.docker.io/token");
         assert_eq!(c.service.as_deref(), Some("registry.docker.io"));
         assert_eq!(c.scope.as_deref(), Some("repository:library/alpine:pull"));
     }
 
     #[test]
-    fn parse_bearer_challenge_handles_realm_only() {
+    fn parse_auth_challenge_handles_realm_only() {
         let v = r#"Bearer realm="https://example.com/token""#;
-        let c = parse_bearer_challenge(v).unwrap();
+        let c = parse_bearer_for_test(v).unwrap();
         assert_eq!(c.realm, "https://example.com/token");
         assert_eq!(c.service, None);
         assert_eq!(c.scope, None);
     }
 
     #[test]
-    fn parse_bearer_challenge_handles_unquoted_values() {
+    fn parse_auth_challenge_handles_unquoted_values() {
         // RFC 7235 allows token-style values without quotes.
         let v = "Bearer realm=https://example.com/token,service=example.com";
-        let c = parse_bearer_challenge(v).unwrap();
+        let c = parse_bearer_for_test(v).unwrap();
         assert_eq!(c.realm, "https://example.com/token");
         assert_eq!(c.service.as_deref(), Some("example.com"));
     }
 
     #[test]
-    fn parse_bearer_challenge_rejects_basic_scheme() {
-        let v = r#"Basic realm="x""#;
-        assert!(parse_bearer_challenge(v).is_err());
+    fn parse_auth_challenge_recognizes_basic_scheme() {
+        // ECR's WWW-Authenticate response shape.
+        let v = r#"Basic realm="https://767397973649.dkr.ecr.us-east-1.amazonaws.com/",service="ecr.amazonaws.com""#;
+        let c = parse_auth_challenge(v).unwrap();
+        match c {
+            AuthChallenge::Basic { realm } => {
+                assert_eq!(
+                    realm,
+                    "https://767397973649.dkr.ecr.us-east-1.amazonaws.com/"
+                );
+            }
+            AuthChallenge::Bearer(_) => panic!("expected Basic challenge"),
+        }
     }
 
     #[test]
-    fn parse_bearer_challenge_rejects_missing_realm() {
+    fn parse_auth_challenge_basic_without_realm_succeeds_with_empty() {
+        let v = "Basic";
+        let c = parse_auth_challenge(v).unwrap();
+        match c {
+            AuthChallenge::Basic { realm } => assert_eq!(realm, ""),
+            AuthChallenge::Bearer(_) => panic!("expected Basic challenge"),
+        }
+    }
+
+    #[test]
+    fn parse_auth_challenge_rejects_unknown_scheme() {
+        let v = r#"Digest realm="x""#;
+        let err = parse_auth_challenge(v).unwrap_err().to_string();
+        assert!(
+            err.contains("unsupported scheme"),
+            "expected error mentioning unsupported scheme, got: {err}"
+        );
+    }
+
+    #[test]
+    fn parse_auth_challenge_rejects_missing_realm_on_bearer() {
         let v = r#"Bearer service="x",scope="y""#;
-        assert!(parse_bearer_challenge(v).is_err());
+        assert!(parse_auth_challenge(v).is_err());
     }
 
     #[test]
-    fn parse_bearer_challenge_handles_case_insensitive_scheme() {
+    fn parse_auth_challenge_handles_case_insensitive_scheme() {
         let v = r#"bearer realm="https://example.com/token""#;
-        let c = parse_bearer_challenge(v).unwrap();
+        let c = parse_bearer_for_test(v).unwrap();
         assert_eq!(c.realm, "https://example.com/token");
+        let v2 = r#"basic realm="x""#;
+        let c2 = parse_auth_challenge(v2).unwrap();
+        assert!(matches!(c2, AuthChallenge::Basic { .. }));
     }
 
     #[test]
@@ -705,6 +814,162 @@ mod tests {
             !has_auth,
             "anonymous realm GET must not carry Authorization header; got request:\n{request}"
         );
+    }
+
+    /// End-to-end Basic-auth wire-up test (milestone 044 commit 2):
+    /// when a registry returns 401 with `WWW-Authenticate: Basic
+    /// realm="..."` (ECR's flavor) and the `RegistryClient` has
+    /// credentials, the retry carries `Authorization: Basic
+    /// <b64(user:secret)>` directly on the original URL — no realm
+    /// round-trip.
+    ///
+    /// We spin up a TCP listener that speaks two HTTP request/response
+    /// pairs over a single connection: first the unauthenticated
+    /// challenge, then the authenticated retry that returns the
+    /// manifest body.
+    #[tokio::test]
+    async fn fetch_with_auth_retry_handles_basic_challenge_with_credentials() {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            // Connection 1: unauthenticated GET → 401 Basic challenge.
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 4096];
+            let mut total = 0;
+            while total < buf.len() {
+                let n = stream.read(&mut buf[total..]).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                total += n;
+                if buf[..total].windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let req1 = String::from_utf8_lossy(&buf[..total]).into_owned();
+            let resp1 = "HTTP/1.1 401 Unauthorized\r\n\
+                         WWW-Authenticate: Basic realm=\"https://registry.example/\",service=\"ecr.amazonaws.com\"\r\n\
+                         Content-Length: 0\r\n\
+                         Connection: close\r\n\r\n";
+            stream.write_all(resp1.as_bytes()).await.unwrap();
+            stream.flush().await.unwrap();
+            drop(stream);
+
+            // Connection 2: authenticated retry → 200 with body.
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 4096];
+            let mut total = 0;
+            while total < buf.len() {
+                let n = stream.read(&mut buf[total..]).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                total += n;
+                if buf[..total].windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let req2 = String::from_utf8_lossy(&buf[..total]).into_owned();
+            let body = r#"{"hello":"world"}"#;
+            let resp2 = format!(
+                "HTTP/1.1 200 OK\r\n\
+                 Content-Type: application/json\r\n\
+                 Content-Length: {}\r\n\
+                 Connection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(resp2.as_bytes()).await.unwrap();
+            stream.flush().await.unwrap();
+            (req1, req2)
+        });
+
+        let client = RegistryClient {
+            http: reqwest::Client::new(),
+            credentials: Some(Credential {
+                username: "AWS".to_string(),
+                secret: "ecr-token-d34db33f".to_string(),
+            }),
+            cache: None,
+        };
+
+        let url = format!("http://{addr}/v2/foo/bar/manifests/latest");
+        let body = client
+            .fetch_with_auth_retry(&url, &["application/json"])
+            .await
+            .unwrap();
+        assert_eq!(body.bytes, br#"{"hello":"world"}"#.to_vec());
+
+        let (req1, req2) = server.await.unwrap();
+        let lower1 = req1.to_ascii_lowercase();
+        assert!(
+            !lower1
+                .lines()
+                .any(|l| l.starts_with("authorization:")),
+            "first GET must be unauthenticated; got:\n{req1}"
+        );
+        // base64("AWS:ecr-token-d34db33f") = QVdTOmVjci10b2tlbi1kMzRkYjMzZg==
+        assert!(
+            req2.contains("Authorization: Basic QVdTOmVjci10b2tlbi1kMzRkYjMzZg==")
+                || req2.contains("authorization: Basic QVdTOmVjci10b2tlbi1kMzRkYjMzZg=="),
+            "retry must carry Basic auth header; got:\n{req2}"
+        );
+    }
+
+    /// Counterpart: when the registry sends a Basic challenge but
+    /// `RegistryClient` has NO credentials, the error message
+    /// guides the user to `docker login` (or
+    /// `aws ecr get-login-password | docker login` for ECR).
+    #[tokio::test]
+    async fn fetch_with_auth_retry_basic_without_credentials_errors_helpfully() {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 4096];
+            let mut total = 0;
+            while total < buf.len() {
+                let n = stream.read(&mut buf[total..]).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                total += n;
+                if buf[..total].windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let resp = "HTTP/1.1 401 Unauthorized\r\n\
+                        WWW-Authenticate: Basic realm=\"https://registry.example/\"\r\n\
+                        Content-Length: 0\r\n\
+                        Connection: close\r\n\r\n";
+            stream.write_all(resp.as_bytes()).await.unwrap();
+            stream.flush().await.unwrap();
+        });
+
+        let client = RegistryClient {
+            http: reqwest::Client::new(),
+            credentials: None,
+            cache: None,
+        };
+
+        let url = format!("http://{addr}/v2/foo/bar/manifests/latest");
+        let err = client
+            .fetch_with_auth_retry(&url, &["application/json"])
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("Basic auth challenge")
+                && err.contains("docker login"),
+            "expected error to guide the user toward `docker login`; got: {err}"
+        );
+
+        server.await.unwrap();
     }
 
     /// End-to-end cache wire-up test (milestone 036 commit 2): when

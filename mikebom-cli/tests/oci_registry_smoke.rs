@@ -98,6 +98,43 @@ fn pulls_alpine_3_19_and_emits_apk_components() {
         "alpine:3.19 should yield at least one pkg:apk/alpine/* PURL; got components: {}",
         serde_json::to_string_pretty(&components).unwrap_or_default()
     );
+
+    // Milestone 039: per-file evidence MUST be populated for apk
+    // components (mirrors the milestone-038 deb assertion). Pre-039
+    // this was always 0 because file_hashes.rs was dpkg-only.
+    let mut total_occurrences = 0usize;
+    let mut sha256_seen = false;
+    for c in components {
+        let occs = c["evidence"]["occurrences"]
+            .as_array()
+            .map(|a| a.as_slice())
+            .unwrap_or(&[]);
+        total_occurrences += occs.len();
+        for o in occs {
+            let Some(ctx_str) = o["additionalContext"].as_str() else {
+                continue;
+            };
+            let Ok(ctx) = serde_json::from_str::<serde_json::Value>(ctx_str) else {
+                continue;
+            };
+            if let Some(s) = ctx["sha256"].as_str() {
+                if s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit()) {
+                    sha256_seen = true;
+                }
+            }
+        }
+    }
+    assert!(
+        total_occurrences > 0,
+        "milestone 039 (apk per-file evidence) should populate \
+         evidence.occurrences[]; got 0 across {} components — has \
+         hash_apk_package_files regressed?",
+        components.len()
+    );
+    assert!(
+        sha256_seen,
+        "at least one apk occurrence should carry a 64-hex SHA-256 in additionalContext; got none"
+    );
 }
 
 #[test]

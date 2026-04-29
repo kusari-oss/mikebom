@@ -115,7 +115,6 @@ pub fn collect_claimed_paths(
 /// directory tracking. Files declared without a current `F:` (which
 /// shouldn't happen in well-formed databases) are silently skipped
 /// to match the `collect_claimed_paths` posture.
-#[allow(dead_code)] // wired up in milestone 039 commit 3 (`hash-and-wire`).
 pub fn read_file_lists(
     rootfs: &Path,
 ) -> std::collections::HashMap<String, Vec<String>> {

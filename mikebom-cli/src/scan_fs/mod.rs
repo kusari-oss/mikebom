@@ -360,6 +360,15 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
             );
         }
 
+        // Milestone 039: build the apk per-package file-list map
+        // once per scan. apk's installed-db carries file ownership
+        // inline (F:/R: lines); we extract it here so the per-entry
+        // loop can do per-package deep-hashing without re-parsing
+        // the database. Returns an empty map for non-apk images
+        // (file-not-found short-circuits cheaply) — the unconditional
+        // call is fine.
+        let apk_file_lists = package_db::apk::read_file_lists(root);
+
         for entry in &db_entries {
             let purl_str = entry.purl.as_str().to_string();
             let ecosystem = entry.purl.ecosystem().to_string();
@@ -368,6 +377,10 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
             // db at varying quality (apk-license extraction is its own
             // follow-up). Detect the dpkg case via the source_path.
             let is_dpkg = entry.source_path.contains("dpkg/status");
+            // Milestone 039: apk per-file deep-hashing — same shape
+            // as the dpkg path. Detected via the standard apk
+            // installed-db source_path.
+            let is_apk = entry.source_path.contains("apk/db/installed");
             // dpkg licenses live out-of-band in /usr/share/doc/<pkg>/
             // copyright; other sources (e.g. Python dist-info METADATA)
             // embed them directly on the entry.
@@ -383,6 +396,9 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
             // capturing the dpkg-recorded MD5 per file for cross-ref.
             // The fast path SHA-256s the dpkg `.md5sums` file content
             // as a per-package fingerprint with no per-file occurrences.
+            //
+            // Milestone 039: apk gets the parallel treatment via
+            // hash_apk_package_files (deep) / hash_apk_db_only (fast).
             let (occurrences, mut component_hashes) = if is_dpkg {
                 if deep_hash {
                     let (occs, root_hash) = package_db::file_hashes::hash_package_files(
@@ -397,6 +413,19 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
                         &entry.name,
                         entry.arch.as_deref(),
                     );
+                    (Vec::new(), h.into_iter().collect::<Vec<_>>())
+                }
+            } else if is_apk {
+                if deep_hash {
+                    let files: &[String] = apk_file_lists
+                        .get(&entry.name)
+                        .map(|v| v.as_slice())
+                        .unwrap_or(&[]);
+                    let (occs, root_hash) =
+                        package_db::file_hashes::hash_apk_package_files(root, files);
+                    (occs, root_hash.into_iter().collect::<Vec<_>>())
+                } else {
+                    let h = package_db::file_hashes::hash_apk_db_only(root, &entry.name);
                     (Vec::new(), h.into_iter().collect::<Vec<_>>())
                 }
             } else {

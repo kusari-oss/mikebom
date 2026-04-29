@@ -71,6 +71,43 @@ pub fn read(
     out
 }
 
+/// Walk the rpmdb once and build a per-package file-list map for
+/// the milestone-040 deep-hash path. Mirrors
+/// `apk::read_file_lists` and the milestone-038-era
+/// dpkg-info-derived list — the consumer is the deep-hash
+/// dispatcher in `scan_fs::mod`.
+///
+/// Returns a map keyed on package name with each value being a
+/// `Vec<String>` of rootfs-relative paths the package's
+/// HeaderBlob `BASENAMES` / `DIRNAMES` / `DIRINDEXES` triple
+/// claims. Paths preserve the rpm-on-disk absolute form (e.g.
+/// `/usr/bin/bash`) — the consumer (`hash_rpm_package_files`)
+/// strips the leading `/` before joining onto the rootfs.
+///
+/// Returns an empty map when the rpmdb is absent (typical for
+/// non-rpm rootfs) or unreadable; never errors.
+///
+/// `iter_rpmdb` already handles the SQLite-vs-BDB selection,
+/// the `WAL` / `-shm` diagnostics, and BASENAMES/DIRNAMES/
+/// DIRINDEXES decoding via mikebom's HeaderBlob reader.
+pub fn read_file_lists(
+    rootfs: &Path,
+) -> std::collections::HashMap<String, Vec<String>> {
+    let mut out: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    iter_rpmdb(rootfs, None, |entry, paths| {
+        if paths.is_empty() {
+            return;
+        }
+        let strings: Vec<String> = paths
+            .into_iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        out.insert(entry.name.clone(), strings);
+    });
+    out
+}
+
 /// Milestone 005 Phase B: feed rpm-owned file paths into the shared
 /// `claimed` / `claimed_inodes` sets so the binary walker can skip
 /// file-level + linkage emissions for binaries the rpmdb already

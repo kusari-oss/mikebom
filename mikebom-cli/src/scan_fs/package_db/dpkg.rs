@@ -17,8 +17,17 @@ use mikebom_common::types::purl::Purl;
 
 use super::PackageDbEntry;
 
-/// The dpkg status path relative to a rootfs.
+/// The dpkg status path relative to a rootfs (legacy single-file
+/// layout, written by a real dpkg daemon).
 const DPKG_STATUS_PATH: &str = "var/lib/dpkg/status";
+
+/// Per-package status directory used by minimal-image builds
+/// (rules-distroless, chainguard apko, Bazel-shaped images that
+/// don't include a real dpkg daemon). Each `<pkgname>` file is
+/// exactly one stanza in the same RFC-822-style format the legacy
+/// `status` file uses; `<pkgname>.md5sums` and other companions
+/// also live here but parse as no-ops.
+const DPKG_STATUS_D_DIR: &str = "var/lib/dpkg/status.d";
 
 /// Read and parse the dpkg status file beneath `rootfs`. Returns an
 /// empty vector when the file is absent; returns an error only when
@@ -39,14 +48,112 @@ pub fn read(
     namespace: &str,
     distro_version: Option<&str>,
 ) -> Result<Vec<PackageDbEntry>> {
+    // Two metadata sources, processed in priority order:
+    //   1. /var/lib/dpkg/status — the legacy single-file layout
+    //      (full dpkg-managed images: debian:*, ubuntu:*, etc.)
+    //   2. /var/lib/dpkg/status.d/<pkg> — per-package files used
+    //      by minimal-image builds (distroless, chainguard apko,
+    //      rules-distroless, etc.)
+    //
+    // Real-world images use ONE or the OTHER, never both — but we
+    // dedup defensively. When both sources contribute an entry for
+    // the same purl, the status.d/ entry wins (FR-003): the modern
+    // per-package layout is the source-of-truth in pathological
+    // mixed images.
     let status_path = rootfs.join(DPKG_STATUS_PATH);
-    if !status_path.is_file() {
-        return Ok(Vec::new());
+    let mut from_status: Vec<PackageDbEntry> = if status_path.is_file() {
+        let text = std::fs::read_to_string(&status_path)
+            .with_context(|| format!("reading {}", status_path.display()))?;
+        let source = status_path.to_string_lossy().into_owned();
+        parse(&text, &source, namespace, distro_version)
+    } else {
+        Vec::new()
+    };
+    let from_status_d = read_status_d_dir(rootfs, namespace, distro_version);
+
+    if from_status_d.is_empty() {
+        return Ok(from_status);
     }
-    let text = std::fs::read_to_string(&status_path)
-        .with_context(|| format!("reading {}", status_path.display()))?;
-    let source = status_path.to_string_lossy().into_owned();
-    Ok(parse(&text, &source, namespace, distro_version))
+    if from_status.is_empty() {
+        return Ok(from_status_d);
+    }
+
+    // Dedup: drop any status entry whose purl also appears in
+    // status.d/. status.d/ wins.
+    let status_d_purls: std::collections::HashSet<&str> =
+        from_status_d.iter().map(|e| e.purl.as_str()).collect();
+    from_status.retain(|e| !status_d_purls.contains(e.purl.as_str()));
+    drop(status_d_purls);
+    from_status.extend(from_status_d);
+    Ok(from_status)
+}
+
+/// Walk `<rootfs>/var/lib/dpkg/status.d/` and return one
+/// [`PackageDbEntry`] per file that parses as a single dpkg
+/// stanza marked `install ok installed`.
+///
+/// Files are processed in sorted-by-name order so the output is
+/// deterministic across runs (read_dir's order is filesystem-
+/// dependent). Files that don't parse — including the documented
+/// companion files like `<pkg>.md5sums`, `<pkg>.conffiles`, etc.
+/// — produce zero entries and are silently skipped, since
+/// `parse_stanza` only returns `Some` for files matching the
+/// dpkg-stanza grammar with `Status: install ok installed`.
+///
+/// IO errors per-file log at `tracing::debug` and skip the
+/// affected file; this never propagates an error. Same posture as
+/// [`collect_claimed_paths`] — a malformed status.d/ shouldn't
+/// fail the whole scan.
+fn read_status_d_dir(
+    rootfs: &Path,
+    namespace: &str,
+    distro_version: Option<&str>,
+) -> Vec<PackageDbEntry> {
+    let dir = rootfs.join(DPKG_STATUS_D_DIR);
+    let read_dir = match std::fs::read_dir(&dir) {
+        Ok(rd) => rd,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+        Err(e) => {
+            tracing::debug!(
+                dir = %dir.display(),
+                error = %e,
+                "could not read dpkg status.d/ directory; treating as empty"
+            );
+            return Vec::new();
+        }
+    };
+
+    // Collect file paths first, then sort, then process — gives
+    // stable output order across filesystems.
+    let mut paths: Vec<std::path::PathBuf> = Vec::new();
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        let is_file = entry.file_type().map(|t| t.is_file()).unwrap_or(false);
+        if !is_file {
+            continue;
+        }
+        paths.push(path);
+    }
+    paths.sort();
+
+    let mut out = Vec::new();
+    for path in paths {
+        let text = match std::fs::read_to_string(&path) {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::debug!(
+                    path = %path.display(),
+                    error = %e,
+                    "skipping unreadable file in dpkg status.d/"
+                );
+                continue;
+            }
+        };
+        let source = path.to_string_lossy().into_owned();
+        let entries = parse(&text, &source, namespace, distro_version);
+        out.extend(entries);
+    }
+    out
 }
 
 /// Iterate every `<pkg>.list` under `<rootfs>/var/lib/dpkg/info/` and
@@ -546,6 +653,179 @@ Architecture: arm64
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].name, "curl");
         assert!(out[0].source_path.ends_with("/var/lib/dpkg/status"));
+    }
+
+    // ---- Milestone 037: status.d/ per-package layout ---------------------
+
+    /// Helper: write a single dpkg stanza to <rootfs>/var/lib/dpkg/status.d/<name>.
+    fn write_status_d_stanza(rootfs: &std::path::Path, name: &str, stanza: &str) {
+        let dir = rootfs.join("var/lib/dpkg/status.d");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(name), stanza).unwrap();
+    }
+
+    /// FR-005 case 1: status.d/-only layout (distroless / chainguard).
+    /// `read()` must discover both stanzas.
+    #[test]
+    fn parses_status_d_only_layout() {
+        let dir = tempfile::tempdir().unwrap();
+        write_status_d_stanza(
+            dir.path(),
+            "foo",
+            "Package: foo\n\
+             Status: install ok installed\n\
+             Version: 1.0\n\
+             Architecture: amd64\n",
+        );
+        write_status_d_stanza(
+            dir.path(),
+            "bar",
+            "Package: bar\n\
+             Status: install ok installed\n\
+             Version: 2.0\n\
+             Architecture: amd64\n",
+        );
+        let out = read(dir.path(), "debian", Some("12")).unwrap();
+        let names: std::collections::BTreeSet<&str> =
+            out.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(out.len(), 2);
+        assert!(names.contains("foo"));
+        assert!(names.contains("bar"));
+        // source_path must point at the per-package file, not the
+        // monolithic status file.
+        for e in &out {
+            assert!(
+                e.source_path.contains("/status.d/"),
+                "expected status.d/ provenance, got {}",
+                e.source_path
+            );
+        }
+    }
+
+    /// FR-005 case 2: mixed status + status.d/. Both contribute.
+    #[test]
+    fn parses_mixed_status_and_status_d() {
+        let dir = tempfile::tempdir().unwrap();
+        // Legacy status file with pkg-a.
+        let status_path = dir.path().join(DPKG_STATUS_PATH);
+        std::fs::create_dir_all(status_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &status_path,
+            "Package: pkg-a\n\
+             Status: install ok installed\n\
+             Version: 1.0\n\
+             Architecture: amd64\n",
+        )
+        .unwrap();
+        // status.d/ with pkg-b.
+        write_status_d_stanza(
+            dir.path(),
+            "pkg-b",
+            "Package: pkg-b\n\
+             Status: install ok installed\n\
+             Version: 2.0\n\
+             Architecture: amd64\n",
+        );
+        let out = read(dir.path(), "debian", Some("12")).unwrap();
+        let names: std::collections::BTreeSet<&str> =
+            out.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(out.len(), 2);
+        assert!(names.contains("pkg-a"));
+        assert!(names.contains("pkg-b"));
+    }
+
+    /// FR-005 case 3: Status filter applies to status.d/ entries too.
+    /// A `deinstall ok config-files` stanza must NOT appear.
+    #[test]
+    fn status_d_filters_non_installed() {
+        let dir = tempfile::tempdir().unwrap();
+        write_status_d_stanza(
+            dir.path(),
+            "keep",
+            "Package: keep\n\
+             Status: install ok installed\n\
+             Version: 1.0\n\
+             Architecture: amd64\n",
+        );
+        write_status_d_stanza(
+            dir.path(),
+            "drop",
+            "Package: drop\n\
+             Status: deinstall ok config-files\n\
+             Version: 0.9\n\
+             Architecture: amd64\n",
+        );
+        let out = read(dir.path(), "debian", Some("12")).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].name, "keep");
+    }
+
+    /// FR-005 case 4: companion files (`<pkg>.md5sums`) parse as
+    /// no-ops. The package file alongside still produces an entry.
+    #[test]
+    fn status_d_skips_companion_files() {
+        let dir = tempfile::tempdir().unwrap();
+        write_status_d_stanza(
+            dir.path(),
+            "real-pkg",
+            "Package: real-pkg\n\
+             Status: install ok installed\n\
+             Version: 1.0\n\
+             Architecture: amd64\n",
+        );
+        // Drop a non-stanza companion file alongside (md5sums-style).
+        std::fs::write(
+            dir.path().join("var/lib/dpkg/status.d/real-pkg.md5sums"),
+            "abc123  /usr/bin/real-pkg\n",
+        )
+        .unwrap();
+        let out = read(dir.path(), "debian", Some("12")).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].name, "real-pkg");
+    }
+
+    /// FR-005 case 5: empty status.d/ directory yields zero entries
+    /// without erroring.
+    #[test]
+    fn status_d_empty_dir_returns_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("var/lib/dpkg/status.d")).unwrap();
+        let out = read(dir.path(), "debian", Some("12")).unwrap();
+        assert!(out.is_empty());
+    }
+
+    /// FR-003: when both sources contribute the same purl, the
+    /// status.d/ entry wins (defensive against pathological mixed
+    /// images).
+    #[test]
+    fn status_d_wins_over_status_on_purl_collision() {
+        let dir = tempfile::tempdir().unwrap();
+        // Both sources mention `colliding 1.0 amd64` → same PURL.
+        let status_path = dir.path().join(DPKG_STATUS_PATH);
+        std::fs::create_dir_all(status_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &status_path,
+            "Package: colliding\n\
+             Status: install ok installed\n\
+             Version: 1.0\n\
+             Architecture: amd64\n",
+        )
+        .unwrap();
+        write_status_d_stanza(
+            dir.path(),
+            "colliding",
+            "Package: colliding\n\
+             Status: install ok installed\n\
+             Version: 1.0\n\
+             Architecture: amd64\n",
+        );
+        let out = read(dir.path(), "debian", Some("12")).unwrap();
+        assert_eq!(out.len(), 1, "duplicate purls should dedup");
+        assert!(
+            out[0].source_path.contains("/status.d/"),
+            "status.d/ should win; got source {}",
+            out[0].source_path
+        );
     }
 
     // ---- Feature 005 US2/US3 --------------------------------------------

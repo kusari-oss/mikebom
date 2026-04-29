@@ -101,7 +101,7 @@ fn pulls_alpine_3_19_and_emits_apk_components() {
 }
 
 #[test]
-fn pulls_distroless_static_and_emits_well_formed_sbom_with_zero_components() {
+fn pulls_distroless_static_and_emits_dpkg_status_d_components() {
     if !network_tests_enabled() {
         eprintln!(
             "skipping: set MIKEBOM_OCI_NETWORK_TESTS=1 to run network-gated smoke tests"
@@ -109,11 +109,12 @@ fn pulls_distroless_static_and_emits_well_formed_sbom_with_zero_components() {
         return;
     }
 
-    // distroless static images intentionally ship with NO package
-    // manager metadata. mikebom should produce a well-formed SBOM
-    // with zero components — that's the correct behavior, not a
-    // bug. Anything else (panic, error, hallucinated components)
-    // is a regression.
+    // distroless static-debian12 ships per-package metadata at
+    // `/var/lib/dpkg/status.d/<pkg>` files (no monolithic
+    // `/var/lib/dpkg/status` daemon-managed file). Milestone 037
+    // / #64 closed the previous "0 components" gap; mikebom now
+    // surfaces the 4 documented packages: base-files, media-types,
+    // netbase, tzdata.
     let tmp = tempfile::tempdir().expect("tempdir");
     let out_path = tmp.path().join("distroless.cdx.json");
     let output = Command::new(env!("CARGO_BIN_EXE_mikebom"))
@@ -146,12 +147,24 @@ fn pulls_distroless_static_and_emits_well_formed_sbom_with_zero_components() {
         sbom["serialNumber"].as_str().is_some(),
         "missing serialNumber"
     );
-    // Zero components is the correct outcome here.
-    let components = sbom["components"].as_array().map(|c| c.len()).unwrap_or(0);
-    assert_eq!(
-        components, 0,
-        "distroless static image should yield 0 components (it ships no package metadata); got {components}"
+    let components = sbom["components"].as_array().expect("components array");
+    assert!(
+        components.len() >= 4,
+        "distroless static image should yield at least 4 components (base-files, \
+         media-types, netbase, tzdata); got {} — is the dpkg status.d/ reader \
+         (#64) regressing?",
+        components.len()
     );
+    let names: std::collections::BTreeSet<&str> = components
+        .iter()
+        .filter_map(|c| c["name"].as_str())
+        .collect();
+    for expected in ["base-files", "media-types", "netbase", "tzdata"] {
+        assert!(
+            names.contains(expected),
+            "distroless image should contain `{expected}`; got {names:?}"
+        );
+    }
 }
 
 /// Warm-cache speedup smoke test (milestone 036 / 031.z).

@@ -133,11 +133,11 @@ A separate finding surfaced during T017: per-file `evidence.occurrences[]` is **
 
 **Purpose**: User-facing docs, CHANGELOG, PR.
 
-- [ ] T024 Update `docs/user-guide/cli-reference.md` to mention that distroless / chainguard / Bazel-built images now produce per-file evidence (one paragraph in the Behaviour notes section under `mikebom sbom scan`)
-- [ ] T025 Add a `CHANGELOG.md` Unreleased entry summarizing milestone 038, naming both US1 (deb status.d/ deep-hash) and US2 (apko coverage outcome — confirmed-or-extended)
-- [ ] T026 Run `./scripts/pre-pr.sh` one final time and confirm clean
-- [ ] T027 Push the branch and open a PR titled `feat(038): per-file evidence for distroless / chainguard / Bazel-built minimal images`. PR body lists the closed gap, both user stories' outcomes, and the success-criteria evidence (component count, occurrences count, zero golden drift, no new top-level deps)
-- [ ] T028 Verify all 3 CI lanes green (Linux default + Linux ebpf + macOS) per the established 5-min CI cadence; report PR URL
+- [X] T024 Updated `docs/user-guide/cli-reference.md` Behaviour notes with a minimal-image-coverage paragraph (deb status.d/ + apk-evidence-tracked-as-#75).
+- [X] T025 Added CHANGELOG Unreleased entry summarizing US1 (deb status.d/ deep-hash with the parse_relaxed in-flight discovery) and US2 (apk evidence-gap finding tracked as #75).
+- [X] T026 `./scripts/pre-pr.sh` clean.
+- [ ] T027 Push the branch and open a PR.
+- [ ] T028 Verify all 3 CI lanes green.
 
 ---
 

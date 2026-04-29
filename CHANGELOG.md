@@ -8,6 +8,34 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 ## [Unreleased]
 
 ### Added
+- **Milestone 038 — Per-file evidence for distroless /
+  Bazel-built minimal-image deb scans.** Closes the deferred
+  milestone-037 item: distroless deb images
+  (`gcr.io/distroless/*`, rules-distroless, similar Bazel-built
+  minimal images) now produce populated
+  `evidence.occurrences[]` blocks with per-file paths and
+  SHA-256 + MD5 hashes — matching the evidence quality
+  full-fat-image scans have produced since the early
+  milestones. Implementation: extended
+  `file_hashes.rs::read_info_file{,_bytes}` lookup chain to
+  fall back to `var/lib/dpkg/status.d/<pkg>.<ext>` after the
+  legacy `info/` paths, and synthesized the path list from the
+  second column of `<pkg>.md5sums` when `<pkg>.list` is absent.
+  Stanzas in this layout legitimately omit the `Status:` field
+  (no dpkg daemon manages install state in the image), so a
+  relaxed parse path was added that treats the stanza file's
+  existence as the installation marker; strict filtering is
+  preserved for the legacy `status` file source. Verified
+  end-to-end: `gcr.io/distroless/static-debian12:latest` now
+  produces 4 components with 938 total file occurrences (was
+  0). 27 byte-identity goldens regen with zero diff.
+  Out-of-scope concurrent finding: apk per-file evidence is
+  empty for both `alpine:3.19` and chainguard apko/wolfi
+  images — mikebom's `file_hashes.rs` is dpkg-only. Filed as
+  follow-on issue
+  [#75](https://github.com/kusari-sandbox/mikebom/issues/75)
+  for a future milestone. See
+  `specs/038-minimal-image-deep-hash/spec.md`.
 - **Milestone 037 — distroless / chainguard / Bazel minimal-image
   dpkg coverage.** mikebom now reads per-package metadata from
   `/var/lib/dpkg/status.d/<pkgname>` files in addition to the

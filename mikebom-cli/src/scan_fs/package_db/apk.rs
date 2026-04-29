@@ -100,6 +100,67 @@ pub fn collect_claimed_paths(
     }
 }
 
+/// Walk `<rootfs>/lib/apk/db/installed` once and build a per-package
+/// file-list map. Used by milestone 039's deep-hash path: the apk
+/// stanza format encodes file ownership inline via interleaved
+/// `F:<dir>` (directory) and `R:<basename>` (regular file) lines —
+/// no companion files like dpkg's `info/<pkg>.list`.
+///
+/// Returns a map keyed on package name with each value being the
+/// rootfs-relative file paths the package's stanza claims. Returns
+/// an empty map when the file is absent (typical for Debian/Ubuntu
+/// rootfs) or unreadable; never errors.
+///
+/// Stanza boundaries (blank lines) reset the current package and
+/// directory tracking. Files declared without a current `F:` (which
+/// shouldn't happen in well-formed databases) are silently skipped
+/// to match the `collect_claimed_paths` posture.
+#[allow(dead_code)] // wired up in milestone 039 commit 3 (`hash-and-wire`).
+pub fn read_file_lists(
+    rootfs: &Path,
+) -> std::collections::HashMap<String, Vec<String>> {
+    let path = rootfs.join(APK_INSTALLED_PATH);
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return std::collections::HashMap::new();
+    };
+    let mut out: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    let mut current_pkg: Option<String> = None;
+    let mut current_dir: Option<String> = None;
+    for line in text.lines() {
+        if line.is_empty() {
+            current_pkg = None;
+            current_dir = None;
+            continue;
+        }
+        if line.len() < 2 || line.as_bytes()[1] != b':' {
+            continue;
+        }
+        match line.as_bytes()[0] {
+            b'P' => {
+                current_pkg = Some(line[2..].to_string());
+                current_dir = None;
+            }
+            b'F' => {
+                current_dir = Some(line[2..].to_string());
+            }
+            b'R' => {
+                let basename = &line[2..];
+                if let (Some(pkg), Some(dir)) = (&current_pkg, &current_dir) {
+                    let rel = if dir.is_empty() {
+                        basename.to_string()
+                    } else {
+                        format!("{dir}/{basename}")
+                    };
+                    out.entry(pkg.clone()).or_default().push(rel);
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 fn parse(text: &str, source_path: &str, distro_version: Option<&str>) -> Vec<PackageDbEntry> {
     let mut out = Vec::new();
     for stanza in text.split("\n\n") {
@@ -442,5 +503,102 @@ D:so:libc.musl-aarch64.so.1
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].name, "zlib");
         assert!(out[0].source_path.ends_with("/lib/apk/db/installed"));
+    }
+
+    // ---- Milestone 039: per-package file-list extraction ----------------
+
+    /// Helper: write a synthetic apk installed-db at the rootfs-
+    /// relative path used in production.
+    fn write_installed_db(rootfs: &std::path::Path, body: &str) {
+        let p = rootfs.join(APK_INSTALLED_PATH);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, body).unwrap();
+    }
+
+    #[test]
+    fn read_file_lists_extracts_per_package_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        // Two packages, each owning two files. apk stanza format:
+        // P: package, V: version, F: directory, R: basename.
+        write_installed_db(
+            dir.path(),
+            "P:foo\n\
+             V:1.0\n\
+             F:usr/bin\n\
+             R:foo\n\
+             F:etc\n\
+             R:foo.conf\n\
+             \n\
+             P:bar\n\
+             V:2.0\n\
+             F:usr/lib\n\
+             R:libbar.so.1\n\
+             R:libbar.so\n",
+        );
+        let map = read_file_lists(dir.path());
+        assert_eq!(map.len(), 2);
+
+        let foo = map.get("foo").expect("foo entry");
+        assert_eq!(foo.len(), 2);
+        assert!(foo.contains(&"usr/bin/foo".to_string()));
+        assert!(foo.contains(&"etc/foo.conf".to_string()));
+
+        let bar = map.get("bar").expect("bar entry");
+        assert_eq!(bar.len(), 2);
+        assert!(bar.contains(&"usr/lib/libbar.so.1".to_string()));
+        assert!(bar.contains(&"usr/lib/libbar.so".to_string()));
+    }
+
+    #[test]
+    fn read_file_lists_handles_empty_dir_for_root_level_files() {
+        // Some packages (e.g. baselayout-data) have F: with empty
+        // value followed by R: lines for files at the rootfs root.
+        let dir = tempfile::tempdir().unwrap();
+        write_installed_db(
+            dir.path(),
+            "P:baselayout-data\n\
+             V:0.1\n\
+             F:\n\
+             R:.profile\n",
+        );
+        let map = read_file_lists(dir.path());
+        let entries = map.get("baselayout-data").expect("entry");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0], ".profile");
+    }
+
+    #[test]
+    fn read_file_lists_returns_empty_when_db_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        // No installed-db file at all.
+        let map = read_file_lists(dir.path());
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn read_file_lists_resets_state_on_blank_line_between_stanzas() {
+        // If state-reset is broken, baz's R: would attribute to foo
+        // because no F: was seen for baz before blank-line boundary.
+        let dir = tempfile::tempdir().unwrap();
+        write_installed_db(
+            dir.path(),
+            "P:foo\n\
+             V:1.0\n\
+             F:usr/bin\n\
+             R:foo\n\
+             \n\
+             P:baz\n\
+             V:1.0\n\
+             R:orphan\n",
+        );
+        let map = read_file_lists(dir.path());
+        // foo should have its 1 file. baz has no F: before R:, so the
+        // R: line is silently dropped — same posture as
+        // `collect_claimed_paths`.
+        assert_eq!(map.get("foo").map(|v| v.len()), Some(1));
+        assert!(
+            !map.contains_key("baz") || map.get("baz").is_none_or(|v| v.is_empty()),
+            "orphan R: without preceding F: should be skipped"
+        );
     }
 }

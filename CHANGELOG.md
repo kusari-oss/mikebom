@@ -8,6 +8,28 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 ## [Unreleased]
 
 ### Added
+- **Milestone 039 — Per-file evidence for apk components
+  (alpine + chainguard apko + Wolfi).** Closes the asymmetry
+  surfaced during milestone 038's recon (#75): apk-based images
+  now produce per-file `evidence.occurrences[]` blocks at the
+  same quality as deb-based images. Implementation mirrors the
+  dpkg deep-hash path: a new `apk::read_file_lists` extracts
+  per-package paths from the `F:` (directory) and `R:` (regular
+  file) lines that the apk installed-db carries inline; a new
+  `hash_apk_package_files` walks those paths, opens each file,
+  and SHA-256s the content (same 256 MB cap as the dpkg path).
+  A parallel `--no-deep-hash` fast path
+  (`hash_apk_db_only`) hashes the package's stanza bytes
+  in-place. Verified end-to-end:
+  `alpine:3.19` produces 79 file occurrences across 15
+  components (was 0); `cgr.dev/chainguard/static:latest`
+  produces 1217 occurrences across 3 components (was 0). 27
+  byte-identity goldens regen with zero diff (those goldens use
+  `--no-deep-hash` so they're insulated from the deep-hash path
+  by design). Apk-side `additionalContext` carries SHA-256 only;
+  the apk-provided SHA-1 (`Z:` lines) is a future extension. No
+  new top-level dependencies. Closes #75. See
+  `specs/039-apk-deep-hash/spec.md`.
 - **Milestone 038 — Per-file evidence for distroless /
   Bazel-built minimal-image deb scans.** Closes the deferred
   milestone-037 item: distroless deb images

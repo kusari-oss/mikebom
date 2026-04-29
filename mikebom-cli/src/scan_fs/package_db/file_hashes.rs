@@ -217,6 +217,152 @@ fn read_info_file_bytes(
     None
 }
 
+// ---- Milestone 039: apk per-file deep-hashing -------------------------
+
+/// Deep-hash every file the apk installed-db claims `pkg_name` owns.
+/// Returns the per-file occurrences and a component-level Merkle
+/// root over them — matching the shape produced by
+/// [`hash_package_files`] for dpkg components, so downstream emitters
+/// don't have to discriminate.
+///
+/// `files` is the rootfs-relative path list extracted by
+/// [`super::apk::read_file_lists`] for this package. apk paths come
+/// in unprefixed (`usr/bin/foo`); we resolve to absolute form
+/// (`/usr/bin/foo`) for `FileOccurrence.location` to match the
+/// legacy convention used by the dpkg path.
+///
+/// Files that disappear between install and scan time are silently
+/// skipped (rare; would typically indicate config files removed
+/// during image build). Oversized files (> [`MAX_PER_FILE_BYTES`])
+/// are skipped with a debug log.
+///
+/// Unlike the dpkg path, no MD5 cross-reference is emitted —
+/// apk's analogous `Z:` line carries SHA-1, which is OUT OF SCOPE
+/// for this milestone (could be added later via a follow-on).
+pub fn hash_apk_package_files(
+    rootfs: &Path,
+    files: &[String],
+) -> (Vec<FileOccurrence>, Option<ContentHash>) {
+    let mut occurrences: Vec<FileOccurrence> = Vec::new();
+    for rel in files {
+        let rel = rel.trim_start_matches('/');
+        if rel.is_empty() {
+            continue;
+        }
+        let abs = rootfs.join(rel);
+        let Ok(meta) = abs.symlink_metadata() else {
+            continue;
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        if meta.len() > MAX_PER_FILE_BYTES {
+            tracing::debug!(
+                path = %abs.display(),
+                size = meta.len(),
+                "skipping oversized file in apk deep hash"
+            );
+            continue;
+        }
+        let sha256 = match sha256_file_hex(&abs, MAX_PER_FILE_BYTES) {
+            Ok(h) => h,
+            Err(e) => {
+                tracing::debug!(path = %abs.display(), error = %e, "could not hash apk file");
+                continue;
+            }
+        };
+        // Store the absolute deployed-filesystem path (matches the
+        // legacy convention used on the dpkg side — keeps SBOM
+        // consumers from having to detect ecosystem-specific
+        // location prefixes).
+        occurrences.push(FileOccurrence {
+            location: format!("/{rel}"),
+            sha256,
+            md5_legacy: None,
+        });
+    }
+
+    let root = compute_merkle_root(&occurrences);
+    (occurrences, root)
+}
+
+/// `--no-deep-hash` fast path for apk. SHA-256s the bytes of the
+/// package's stanza extracted from `<rootfs>/lib/apk/db/installed`.
+/// Returns `None` if the installed-db is absent OR the package
+/// isn't found within it. Mirrors the role
+/// [`hash_md5sums_only`] plays for dpkg.
+///
+/// The stanza-extraction is a small embedded scan: walk the file,
+/// detect the `P:<pkg_name>` line, accumulate bytes until the
+/// next blank-line stanza boundary.
+pub fn hash_apk_db_only(rootfs: &Path, pkg_name: &str) -> Option<ContentHash> {
+    let path = rootfs.join("lib/apk/db/installed");
+    let bytes = std::fs::read(&path).ok()?;
+    let stanza = extract_apk_stanza(&bytes, pkg_name)?;
+    let hex = sha256_hex(stanza);
+    ContentHash::sha256(&hex).ok()
+}
+
+/// Find the first stanza in `db_bytes` whose `P:` line names
+/// `pkg_name`, and return that stanza's bytes (a contiguous slice).
+/// Stanzas are separated by `\n\n`; the package-name line is the
+/// authoritative identifier (the apk `P:` field). Linear scan.
+fn extract_apk_stanza<'a>(
+    db_bytes: &'a [u8],
+    pkg_name: &str,
+) -> Option<&'a [u8]> {
+    let needle = format!("P:{pkg_name}\n");
+    let needle_bytes = needle.as_bytes();
+    let mut start = 0usize;
+    while start < db_bytes.len() {
+        let stanza_end = find_blank_line(db_bytes, start);
+        let stanza_slice = &db_bytes[start..stanza_end];
+        if window_starts_with_or_contains_line(stanza_slice, needle_bytes) {
+            return Some(stanza_slice);
+        }
+        // Advance past the blank-line boundary (or to EOF).
+        if stanza_end >= db_bytes.len() {
+            return None;
+        }
+        start = stanza_end + 2; // skip "\n\n"
+    }
+    None
+}
+
+/// Return the byte offset of the next blank line ("\n\n") at or
+/// after `from`, or `db_bytes.len()` if there's no blank line
+/// (last stanza in the file).
+fn find_blank_line(db_bytes: &[u8], from: usize) -> usize {
+    let mut i = from;
+    while i + 1 < db_bytes.len() {
+        if db_bytes[i] == b'\n' && db_bytes[i + 1] == b'\n' {
+            return i;
+        }
+        i += 1;
+    }
+    db_bytes.len()
+}
+
+/// Whether `stanza` contains a line exactly equal to `needle_line`.
+/// `needle_line` ends with `\n`; the match must be at the start of
+/// the stanza or immediately after a `\n` boundary, and consume
+/// the trailing newline.
+fn window_starts_with_or_contains_line(stanza: &[u8], needle_line: &[u8]) -> bool {
+    if stanza.starts_with(needle_line) {
+        return true;
+    }
+    let mut i = 0usize;
+    while i + needle_line.len() <= stanza.len() {
+        if stanza[i] == b'\n' && stanza[i + 1..].starts_with(needle_line) {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+// ----------------------------------------------------------------------
+
 /// Read `<pkg>[:<arch>].md5sums` into a `path -> md5` map. Lines are
 /// `<32-hex-md5>  <relative-path>` (two spaces between the two fields,
 /// per dpkg convention). Missing file → empty map.
@@ -622,5 +768,108 @@ mod tests {
         // Stable across calls (deterministic over the same input bytes).
         let h2 = hash_md5sums_only(dir.path(), "tzdata", None).expect("again");
         assert_eq!(h.value.as_str(), h2.value.as_str());
+    }
+
+    // ---- Milestone 039: apk per-file deep-hashing -----------------------
+
+    fn write_apk_db(rootfs: &std::path::Path, body: &str) {
+        let p = rootfs.join("lib/apk/db/installed");
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(&p, body).unwrap();
+    }
+
+    /// Helper: build a tempdir-rooted fake apk rootfs with the given
+    /// files actually present on disk.
+    fn place_files(rootfs: &std::path::Path, files: &[(&str, &[u8])]) {
+        for (rel, content) in files {
+            let abs = rootfs.join(rel.trim_start_matches('/'));
+            fs::create_dir_all(abs.parent().unwrap()).unwrap();
+            fs::write(&abs, content).unwrap();
+        }
+    }
+
+    #[test]
+    fn hash_apk_package_files_round_trips_files() {
+        let dir = tempfile::tempdir().unwrap();
+        place_files(
+            dir.path(),
+            &[("usr/bin/foo", b"foo-bytes"), ("etc/foo.conf", b"conf=1\n")],
+        );
+        let files = vec!["usr/bin/foo".to_string(), "etc/foo.conf".to_string()];
+        let (occs, root) = hash_apk_package_files(dir.path(), &files);
+        assert_eq!(occs.len(), 2);
+        assert!(root.is_some(), "must produce a per-component Merkle root");
+        for o in &occs {
+            assert_eq!(o.sha256.len(), 64);
+            assert!(
+                o.location.starts_with('/'),
+                "apk occurrence locations must be absolute, got `{}`",
+                o.location
+            );
+            assert!(
+                o.md5_legacy.is_none(),
+                "apk path emits no MD5 cross-ref (Z: lines out of scope)"
+            );
+        }
+    }
+
+    #[test]
+    fn hash_apk_package_files_skips_absent_files() {
+        let dir = tempfile::tempdir().unwrap();
+        place_files(dir.path(), &[("usr/bin/exists", b"on-disk")]);
+        // Only one of the two listed files actually exists on disk.
+        let files = vec!["usr/bin/exists".to_string(), "usr/bin/missing".to_string()];
+        let (occs, root) = hash_apk_package_files(dir.path(), &files);
+        assert_eq!(occs.len(), 1, "absent file must be skipped");
+        assert_eq!(occs[0].location, "/usr/bin/exists");
+        assert!(root.is_some());
+    }
+
+    #[test]
+    fn hash_apk_package_files_returns_empty_for_empty_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let (occs, root) = hash_apk_package_files(dir.path(), &[]);
+        assert!(occs.is_empty());
+        assert!(root.is_none());
+    }
+
+    #[test]
+    fn hash_apk_db_only_finds_named_stanza() {
+        let dir = tempfile::tempdir().unwrap();
+        write_apk_db(
+            dir.path(),
+            "P:foo\n\
+             V:1.0\n\
+             A:x86_64\n\
+             \n\
+             P:bar\n\
+             V:2.0\n\
+             A:x86_64\n",
+        );
+        let h_foo = hash_apk_db_only(dir.path(), "foo")
+            .expect("foo stanza should resolve");
+        let h_bar = hash_apk_db_only(dir.path(), "bar")
+            .expect("bar stanza should resolve");
+        assert_ne!(
+            h_foo.value.as_str(),
+            h_bar.value.as_str(),
+            "different stanzas must hash differently"
+        );
+        // Stable across calls.
+        let h_foo2 = hash_apk_db_only(dir.path(), "foo").expect("again");
+        assert_eq!(h_foo.value.as_str(), h_foo2.value.as_str());
+    }
+
+    #[test]
+    fn hash_apk_db_only_returns_none_for_missing_package() {
+        let dir = tempfile::tempdir().unwrap();
+        write_apk_db(dir.path(), "P:foo\nV:1.0\n");
+        assert!(hash_apk_db_only(dir.path(), "ghost").is_none());
+    }
+
+    #[test]
+    fn hash_apk_db_only_returns_none_when_db_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(hash_apk_db_only(dir.path(), "foo").is_none());
     }
 }

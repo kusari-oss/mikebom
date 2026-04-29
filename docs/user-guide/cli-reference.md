@@ -121,11 +121,20 @@ Walk a directory or extracted container image, produce a CycloneDX SBOM.
 mikebom sbom scan --path ~/.cargo/registry/cache --output cargo.cdx.json
 mikebom sbom scan --image alpine.tar --output alpine.cdx.json
 
-# Pull directly from the registry — no `docker save` required.
-# `oci-registry` is on by default as of milestone 033.
+# OCI reference — checks the local docker daemon first, falls back
+# to a registry pull on miss. No `docker save` required.
 mikebom sbom scan --image alpine:3.19 --output alpine.cdx.json
 mikebom sbom scan --image gcr.io/distroless/static-debian12:latest \
     --output distroless.cdx.json
+
+# Force a fresh registry fetch (skip the local docker cache).
+mikebom sbom scan --image alpine:3.19 --image-src remote \
+    --output alpine.cdx.json
+
+# Local-only — fail if the image isn't already in the docker daemon
+# (no network access, useful in air-gapped CI lanes).
+mikebom sbom scan --image my-private-image:latest --image-src docker \
+    --output app.cdx.json
 ```
 
 Exactly one of **`--path <DIR>`** or **`--image <TAR_OR_REF>`** is required.
@@ -133,7 +142,8 @@ Exactly one of **`--path <DIR>`** or **`--image <TAR_OR_REF>`** is required.
 | Flag | Default | Purpose |
 |---|---|---|
 | `--path <dir>` | — | Directory to walk recursively. Stream-hashes files with recognised package-artifact suffixes (`.deb`, `.crate`, `.whl`, `.tar.gz`, `.jar`, `.gem`, `.apk`, …). |
-| `--image <tar-or-ref>` | — | Either (a) a `docker save` tarball path on disk, or (b) an OCI image reference like `alpine:3.19` or `gcr.io/foo/bar@sha256:...`. mikebom auto-detects which based on whether the path exists. Refs are pulled from the registry, layers decompressed, and the resulting tarball is extracted to a tempdir (OCI whiteouts honoured) before being scanned like `--path`. Multi-arch image indexes resolve to `linux/<host-arch>` by default — pass `--image-platform <linux/ARCH[/VARIANT]>` to pick a different platform from a multi-arch index. Both anonymous and authenticated pulls are supported — for private registries, configure `~/.docker/config.json` (the same keychain `docker pull` uses; see ["Authenticating to private registries"](#authenticating-to-private-registries) below). Disable the registry-pull capability with `cargo install mikebom --no-default-features` if you want a minimal-deps build for embedded use; tarball-extraction still works. |
+| `--image <tar-or-ref>` | — | Either (a) a `docker save` tarball path on disk, or (b) an OCI image reference like `alpine:3.19` or `gcr.io/foo/bar@sha256:...`. mikebom auto-detects which based on whether the path exists. **For OCI references, mikebom checks the local docker daemon's cache first and falls back to a registry pull on miss** — matching `docker run` semantics and the trivy / syft default. Override the source resolution order with `--image-src` (see the row below). Once mikebom has the image bytes (from local docker, registry, or tarball), layers are decompressed and the rootfs is extracted to a tempdir (OCI whiteouts honoured) before being scanned like `--path`. Multi-arch image indexes resolve to `linux/<host-arch>` by default — pass `--image-platform <linux/ARCH[/VARIANT]>` to pick a different platform from a multi-arch index. Both anonymous and authenticated registry pulls are supported — for private registries, configure `~/.docker/config.json` (the same keychain `docker pull` uses; see ["Authenticating to private registries"](#authenticating-to-private-registries) below). Disable the registry-pull capability with `cargo install mikebom --no-default-features` if you want a minimal-deps build for embedded use; tarball-extraction and docker-daemon source still work. |
+| `--image-src <docker\|remote>[,<...>]` | `docker,remote` | Comma-separated list of image sources to try, in order. `docker` consults the local docker daemon (shells out to `docker image inspect` to probe, then `docker save` to materialize a tarball — honors `DOCKER_HOST` and contexts implicitly). `remote` performs an OCI distribution-spec registry pull. Default `docker,remote` matches trivy / syft's auto-detection: prefer the locally-cached copy, fall back to a fresh registry fetch on miss. Common overrides: `--image-src remote` to force a fresh fetch (e.g. after a tag was rebuilt and you want the latest); `--image-src docker` to forbid network access and fail if the image isn't already cached locally (CI lanes without registry credentials, air-gapped environments). When `--image` resolves to an existing tarball file on disk, this flag is ignored — the file is loaded directly. |
 | `--image-platform <linux/ARCH[/VARIANT]>` | host-arch | Override the platform that's resolved from a multi-arch image index. Only meaningful with a registry `--image <ref>` — for tarballs the platform is fixed by what `docker save` already wrote (passed alongside a tarball, the flag errors). Only `linux` is supported as the OS — mikebom's package-database readers (dpkg / apk / rpm) are linux-rootfs-shaped, so non-Linux containers aren't a meaningful scan target. Common values: `linux/amd64`, `linux/arm64`, `linux/arm/v7`, `linux/386`, `linux/ppc64le`, `linux/s390x`. Use case: a macOS arm64 dev machine scanning a `linux/amd64` image deployed to AWS, or Linux x86_64 CI scanning an `arm64` image deployed to Graviton. When the index doesn't contain a matching entry, the error lists the available platforms. |
 | `--no-oci-cache` | off | Disable the on-disk OCI blob cache for registry pulls. Equivalent to `MIKEBOM_OCI_CACHE=0`. When set, every blob is fetched from the registry on every scan; existing cache files on disk are not touched. Use case: CI lanes that want pure one-shot semantics, or debugging a registry-side regression. See ["OCI layer caching"](#oci-layer-caching) below. |
 | `--oci-cache-size <BYTES>` | 10 GB | Cap (in bytes) for the on-disk OCI blob cache. When the cache exceeds this size after an insert, oldest-mtime entries are evicted until the total drops below the cap. Equivalent env var: `MIKEBOM_OCI_CACHE_SIZE=<bytes>`. See ["OCI layer caching"](#oci-layer-caching) below. |

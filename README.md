@@ -20,7 +20,7 @@ A toolkit for working with software bills of materials end-to-end:
   workflows (license backfill, supplier resolution, VEX merging) are
   on the roadmap.
 
-> **Status: 0.1.0-alpha.3, pre-1.0. Source-only; no crates.io release
+> **Status: 0.1.0-alpha.6, pre-1.0. Source-only; no crates.io release
 > yet.**
 >
 > - **Stable** — `mikebom sbom scan` (filesystem, container image,

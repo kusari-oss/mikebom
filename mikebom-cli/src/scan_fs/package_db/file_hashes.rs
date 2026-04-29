@@ -47,7 +47,38 @@ pub fn hash_package_files(
     pkg_name: &str,
     arch: Option<&str>,
 ) -> (Vec<FileOccurrence>, Option<ContentHash>) {
-    let Some(list_text) = read_info_file(rootfs, pkg_name, arch, "list") else {
+    // Path-list source priority (milestone 038):
+    //   1. <pkg>.list (legacy dpkg layout — preferred when available)
+    //   2. paths derived from <pkg>.md5sums second column
+    //      (status.d/ layout for distroless / chainguard / Bazel-built
+    //      minimal images; .md5sums lines are `<32-hex>  <relpath>`).
+    // If neither yields a non-empty list, return early with no
+    // occurrences — same posture as before milestone 038.
+    let list_text: String = if let Some(text) = read_info_file(rootfs, pkg_name, arch, "list") {
+        text
+    } else if let Some(text) = read_info_file(rootfs, pkg_name, arch, "md5sums") {
+        // Synthesize a list-shaped string by stripping the leading md5
+        // hash and whitespace from each line. dpkg's `.md5sums` uses
+        // relative paths (no leading `/`); legacy `.list` uses absolute
+        // paths. Prepend `/` so the resulting `FileOccurrence.location`
+        // matches the legacy convention regardless of which source
+        // produced it — keeps SBOM output stable across layouts.
+        text.lines()
+            .filter_map(|line| {
+                let mut parts = line.splitn(2, char::is_whitespace);
+                parts.next()?; // discard the md5 hex
+                let rest = parts.next()?.trim_start();
+                if rest.is_empty() {
+                    None
+                } else if rest.starts_with('/') {
+                    Some(rest.to_string())
+                } else {
+                    Some(format!("/{rest}"))
+                }
+            })
+            .collect::<Vec<String>>()
+            .join("\n")
+    } else {
         return (Vec::new(), None);
     };
 
@@ -117,9 +148,21 @@ pub fn hash_md5sums_only(
     ContentHash::sha256(&hex).ok()
 }
 
-/// Read a `var/lib/dpkg/info/<pkg>[:<arch>].<ext>` file as UTF-8.
-/// Tries the plain `<pkg>.<ext>` first, then falls back to
-/// `<pkg>:<arch>.<ext>` when an `arch` is supplied.
+/// Read a `<pkg>[:<arch>].<ext>` companion file as UTF-8.
+///
+/// Lookup chain (milestone 038):
+///
+/// 1. `var/lib/dpkg/info/<pkg>.<ext>` — legacy single-file dpkg layout.
+/// 2. `var/lib/dpkg/info/<pkg>:<arch>.<ext>` — multi-arch dpkg variant.
+/// 3. `var/lib/dpkg/status.d/<pkg>.<ext>` — per-package layout used by
+///    distroless / chainguard / Bazel-built minimal images. The
+///    `status.d/` directory ships `<pkg>.md5sums` companion files
+///    alongside the per-package stanza files; this fallback lets the
+///    same code path consume them.
+///
+/// Returns `None` if no candidate exists. Legacy paths take priority
+/// over `status.d/` to keep mixed-layout images deterministic per
+/// research.md R5.
 fn read_info_file(
     rootfs: &Path,
     pkg_name: &str,
@@ -137,11 +180,17 @@ fn read_info_file(
             return Some(text);
         }
     }
+    let status_d = rootfs
+        .join("var/lib/dpkg/status.d")
+        .join(format!("{pkg_name}.{ext}"));
+    if let Ok(text) = std::fs::read_to_string(&status_d) {
+        return Some(text);
+    }
     None
 }
 
 /// Raw-bytes variant of [`read_info_file`] for files we hash directly
-/// (`.md5sums` on the fast path).
+/// (`.md5sums` on the fast path). Same lookup chain.
 fn read_info_file_bytes(
     rootfs: &Path,
     pkg_name: &str,
@@ -158,6 +207,12 @@ fn read_info_file_bytes(
         if let Ok(bytes) = std::fs::read(&archy) {
             return Some(bytes);
         }
+    }
+    let status_d = rootfs
+        .join("var/lib/dpkg/status.d")
+        .join(format!("{pkg_name}.{ext}"));
+    if let Ok(bytes) = std::fs::read(&status_d) {
+        return Some(bytes);
     }
     None
 }
@@ -407,5 +462,165 @@ mod tests {
             hash_md5sums_only(dir.path(), "libc6", None).is_none(),
             "plain lookup on fast path must not match the arch-suffixed file"
         );
+    }
+
+    // ---- Milestone 038: status.d/ deep-hash for minimal images -------------
+
+    /// Build a minimal-image-shaped rootfs at `<tmp>/` with one
+    /// `status.d/<pkg>` stanza file, optionally a `<pkg>.md5sums`
+    /// companion, and the listed files actually present on disk.
+    /// Returns the tempdir handle.
+    fn make_status_d_rootfs(
+        pkg_name: &str,
+        files: &[(&str, &[u8])],
+        write_md5sums: bool,
+    ) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let status_d = dir.path().join("var/lib/dpkg/status.d");
+        fs::create_dir_all(&status_d).unwrap();
+
+        // Stanza file (mirrors what dpkg.rs::read_status_d_dir consumes).
+        let stanza = format!(
+            "Package: {pkg_name}\n\
+             Status: install ok installed\n\
+             Version: 1.0\n\
+             Architecture: amd64\n",
+        );
+        fs::write(status_d.join(pkg_name), stanza).unwrap();
+
+        if write_md5sums {
+            let mut md5_text = String::new();
+            for (p, content) in files {
+                let mut md5 = md5_like_string(content);
+                md5.truncate(32);
+                let rel = p.trim_start_matches('/');
+                md5_text.push_str(&format!("{md5}  {rel}\n"));
+            }
+            fs::write(status_d.join(format!("{pkg_name}.md5sums")), md5_text).unwrap();
+        }
+
+        for (p, content) in files {
+            let abs = dir.path().join(p.trim_start_matches('/'));
+            fs::create_dir_all(abs.parent().unwrap()).unwrap();
+            fs::write(&abs, content).unwrap();
+        }
+        dir
+    }
+
+    /// T006 — `read_info_file` falls back to
+    /// `var/lib/dpkg/status.d/<pkg>.<ext>` when neither
+    /// `info/<pkg>.<ext>` nor `info/<pkg>:<arch>.<ext>` exists.
+    #[test]
+    fn read_info_file_falls_back_to_status_d() {
+        let dir = tempfile::tempdir().unwrap();
+        let status_d = dir.path().join("var/lib/dpkg/status.d");
+        fs::create_dir_all(&status_d).unwrap();
+        // Synthetic .md5sums content; the value is opaque to the
+        // function under test, which just reads the file as UTF-8.
+        let body =
+            "abcdef0123456789abcdef0123456789  usr/bin/foo\n\
+             0123456789abcdef0123456789abcdef  etc/foo.conf\n";
+        fs::write(status_d.join("foo.md5sums"), body).unwrap();
+
+        let got = read_info_file(dir.path(), "foo", None, "md5sums");
+        assert_eq!(got.as_deref(), Some(body));
+    }
+
+    /// T007 — when both legacy `info/<pkg>.md5sums` AND
+    /// `status.d/<pkg>.md5sums` exist, the legacy file wins (R5
+    /// precedence: more complete data takes priority on collision).
+    #[test]
+    fn read_info_file_legacy_wins_over_status_d() {
+        let dir = tempfile::tempdir().unwrap();
+        let info = dir.path().join("var/lib/dpkg/info");
+        let status_d = dir.path().join("var/lib/dpkg/status.d");
+        fs::create_dir_all(&info).unwrap();
+        fs::create_dir_all(&status_d).unwrap();
+        fs::write(info.join("foo.md5sums"), "from-info\n").unwrap();
+        fs::write(status_d.join("foo.md5sums"), "from-status-d\n").unwrap();
+
+        let got = read_info_file(dir.path(), "foo", None, "md5sums");
+        assert_eq!(
+            got.as_deref(),
+            Some("from-info\n"),
+            "legacy info/ source must take priority over status.d/"
+        );
+    }
+
+    /// T008 — `hash_package_files` synthesizes the path list from
+    /// `<pkg>.md5sums` when no `<pkg>.list` exists. The 2 files
+    /// listed in the synthesized .list resolve to actual rootfs
+    /// files and produce 2 occurrences with computed SHA-256 values.
+    #[test]
+    fn hash_package_files_synthesizes_list_from_md5sums() {
+        let dir = make_status_d_rootfs(
+            "base-files",
+            &[
+                ("usr/share/base-files/info", b"image release info"),
+                ("etc/debian_version", b"12.0\n"),
+            ],
+            true,
+        );
+        let (occs, root) = hash_package_files(dir.path(), "base-files", None);
+        assert_eq!(occs.len(), 2, "both md5sums-listed files should occur");
+        assert!(root.is_some(), "must produce a per-component Merkle root");
+        for o in &occs {
+            assert_eq!(o.sha256.len(), 64, "each occurrence carries a sha256");
+            assert!(
+                o.location.starts_with('/'),
+                "synthesized location must be absolute (matches legacy convention); \
+                 got `{}`",
+                o.location
+            );
+            // md5_legacy lookup uses the same .md5sums file → cross-
+            // referenced and present.
+            assert!(
+                o.md5_legacy.is_some(),
+                "md5sums cross-reference must resolve in status.d/ layout too"
+            );
+        }
+    }
+
+    /// T009 — when only the stanza file exists (no `.md5sums`
+    /// companion), `hash_package_files` returns empty occurrences
+    /// rather than failing. Matches FR-004's graceful incomplete-
+    /// metadata handling.
+    #[test]
+    fn hash_package_files_returns_empty_when_no_list_or_md5sums() {
+        let dir = tempfile::tempdir().unwrap();
+        let status_d = dir.path().join("var/lib/dpkg/status.d");
+        fs::create_dir_all(&status_d).unwrap();
+        // Stanza only — no .list, no .md5sums.
+        fs::write(
+            status_d.join("orphan"),
+            "Package: orphan\n\
+             Status: install ok installed\n\
+             Version: 0.1\n\
+             Architecture: amd64\n",
+        )
+        .unwrap();
+
+        let (occs, root) = hash_package_files(dir.path(), "orphan", None);
+        assert!(occs.is_empty(), "no metadata source → no occurrences");
+        assert!(root.is_none(), "no occurrences → no Merkle root");
+    }
+
+    /// T010 — the `--no-deep-hash` fast path (`hash_md5sums_only`)
+    /// finds `status.d/<pkg>.md5sums` via the same lookup-chain
+    /// extension. Per FR-003, fast-hash never produces per-file
+    /// evidence, but the package-level identity hash MUST still
+    /// resolve for status.d/ images.
+    #[test]
+    fn hash_md5sums_only_finds_status_d_md5sums() {
+        let dir = make_status_d_rootfs(
+            "tzdata",
+            &[("usr/share/zoneinfo/UTC", b"utc")],
+            true,
+        );
+        let h = hash_md5sums_only(dir.path(), "tzdata", None)
+            .expect("md5sums-only must resolve under status.d/ layout");
+        // Stable across calls (deterministic over the same input bytes).
+        let h2 = hash_md5sums_only(dir.path(), "tzdata", None).expect("again");
+        assert_eq!(h.value.as_str(), h2.value.as_str());
     }
 }

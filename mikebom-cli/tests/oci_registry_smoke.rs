@@ -165,6 +165,51 @@ fn pulls_distroless_static_and_emits_dpkg_status_d_components() {
             "distroless image should contain `{expected}`; got {names:?}"
         );
     }
+
+    // Milestone 038: per-file evidence MUST be populated for
+    // status.d/-layout deb components. Pre-038, this count was 0;
+    // post-038 the .md5sums-derived path-list synthesis populates
+    // evidence.occurrences[] for each component.
+    //
+    // CDX shape per mikebom-cli/src/generate/cyclonedx/evidence.rs:
+    //   evidence.occurrences[] = [{ location, additionalContext }]
+    // where additionalContext is a JSON-string-encoded map carrying
+    // sha256 + optionally md5. We parse it back to verify the
+    // SHA-256 surfaced.
+    let mut total_occurrences = 0usize;
+    let mut sha256_seen = false;
+    for c in components {
+        let occs = c["evidence"]["occurrences"]
+            .as_array()
+            .map(|a| a.as_slice())
+            .unwrap_or(&[]);
+        total_occurrences += occs.len();
+        for o in occs {
+            let Some(ctx_str) = o["additionalContext"].as_str() else {
+                continue;
+            };
+            let Ok(ctx) = serde_json::from_str::<serde_json::Value>(ctx_str) else {
+                continue;
+            };
+            if let Some(s) = ctx["sha256"].as_str() {
+                if s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit()) {
+                    sha256_seen = true;
+                }
+            }
+        }
+    }
+    assert!(
+        total_occurrences > 0,
+        "milestone 038 (per-file evidence for status.d/ images) should populate \
+         evidence.occurrences[]; got 0 occurrences across {} components — has \
+         the .md5sums-derived path-list synthesis regressed?",
+        components.len()
+    );
+    assert!(
+        sha256_seen,
+        "at least one occurrence should carry a 64-hex SHA-256 in \
+         additionalContext; got none"
+    );
 }
 
 /// Warm-cache speedup smoke test (milestone 036 / 031.z).

@@ -8,6 +8,22 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 ## [Unreleased]
 
 ### Added
+- **Milestone 037 — distroless / chainguard / Bazel minimal-image
+  dpkg coverage.** mikebom now reads per-package metadata from
+  `/var/lib/dpkg/status.d/<pkgname>` files in addition to the
+  legacy single-file `/var/lib/dpkg/status`. Closes the
+  milestone-031-surfaced gap where mikebom reported 0 deb
+  components for `gcr.io/distroless/static-debian12:latest` and
+  similar minimal images that ship per-package metadata files
+  instead of the monolithic dpkg-daemon-managed `status` file.
+  Same coverage syft and trivy already provided. Filtering uses
+  parse-success-or-skip so companion files (`<pkg>.md5sums`,
+  `.conffiles`, etc.) naturally drop out without breaking on
+  package names that contain dots (`python3.11`). When both
+  layouts are present (defensive — never seen in practice), the
+  `status.d/` source wins. No new dependencies, no SBOM-shape
+  changes, no parity-catalog impact. Closes #64. See
+  `specs/037-dpkg-status-d/spec.md`.
 - **Milestone 036 (031.z) — On-disk cache for pulled OCI image blobs.**
   Repeat-scans of the same image now skip the network fetch and
   read from a SHA-256-content-addressed cache on disk, completing

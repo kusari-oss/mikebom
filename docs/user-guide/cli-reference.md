@@ -179,10 +179,15 @@ Behaviour notes:
   per-file MD5s. Stanza files in this layout legitimately omit the
   `Status:` field (no dpkg daemon manages install state in the image);
   mikebom treats the file's existence as the installation marker.
-  Apk-based minimal images (chainguard apko / Wolfi) get correct
-  component metadata today; per-file evidence for apk components is
-  tracked separately in
-  [#75](https://github.com/kusari-sandbox/mikebom/issues/75).
+- **Apk per-file evidence** (alpine / chainguard apko / Wolfi):
+  per-file `evidence.occurrences[]` is populated for apk-based images
+  too — including both full-fat `alpine:*` scans and minimal apko-built
+  images like `cgr.dev/chainguard/*`. mikebom reads the per-package
+  file list inline from each stanza's `F:` (directory) and `R:`
+  (regular file) lines in `/lib/apk/db/installed`, walks the rootfs,
+  and emits SHA-256 per file. apk-side `additionalContext` carries
+  SHA-256 only (no MD5 cross-ref, as apk doesn't ship one; the
+  apk-provided SHA-1 from `Z:` lines is a future extension).
 
 ### Authenticating to private registries
 

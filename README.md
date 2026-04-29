@@ -10,17 +10,16 @@ A toolkit for working with software bills of materials end-to-end:
   + real dependency relationships. On Linux, optionally captures build-
   time provenance via eBPF.
 - **Analyzes SBOMs** — verifies DSSE-signed attestations against keys /
-  Fulcio identities / in-toto layouts, and (new in milestone 013)
-  cross-checks already-emitted CycloneDX / SPDX 2.3 / SPDX 3.0.1
-  outputs for per-datum × per-format coverage parity via
-  `mikebom sbom parity-check`.
+  Fulcio identities / in-toto layouts, and cross-checks already-emitted
+  CycloneDX / SPDX 2.3 / SPDX 3.0.1 outputs for per-datum × per-format
+  coverage parity via `mikebom sbom parity-check`.
 - **Modifies and enriches SBOMs** — today, `mikebom sbom enrich`
   applies RFC 6902 JSON Patches with provenance metadata recorded as
   `mikebom:enrichment-patch[N]` properties. Richer modification
   workflows (license backfill, supplier resolution, VEX merging) are
   on the roadmap.
 
-> **Status: 0.1.0-alpha.3, pre-1.0. Source-only; no crates.io release
+> **Status: 0.1.0-alpha.6, pre-1.0. Source-only; no crates.io release
 > yet.**
 >
 > - **Stable** — `mikebom sbom scan` (filesystem, container image,
@@ -221,14 +220,36 @@ dep graph. `--path` defaults to *manifest scope*
 mikebom sbom scan --path ./my-project --output project.cdx.json
 ```
 
-**2. Scan a container-image tarball.** Defaults to *artifact scope*
+**2. Scan a container image.** Defaults to *artifact scope*
 (on-disk presence required). Pass `--include-declared-deps` for the
-manifest view.
+manifest view. `--image` accepts either an OCI reference (`alpine:3.19`,
+`gcr.io/distroless/static-debian12:latest`, or any other registry path)
+or a `docker save` tarball on disk; mikebom auto-detects which.
+
+For OCI references, mikebom checks the **local docker daemon's cache
+first** and falls back to a registry pull on miss — matching `docker
+run` semantics and the trivy / syft default. So if you've already
+done `docker pull alpine:3.19` (or are scanning an image you just
+built locally), no network round-trip happens.
 
 ```bash
+# OCI ref — local docker first, registry fallback.
+mikebom sbom scan --image alpine:3.19 --output alpine.cdx.json
+
+# Force a fresh registry fetch (skip the local docker cache):
+mikebom sbom scan --image alpine:3.19 --image-src remote \
+    --output alpine.cdx.json
+
+# Pre-extracted tarball still works.
 docker save alpine:3.19 -o alpine.tar
 mikebom sbom scan --image alpine.tar --output alpine.cdx.json
 ```
+
+Authenticated registries are supported via `~/.docker/config.json`
+(both `Bearer`-style — Docker Hub, GHCR, gcr.io — and `Basic`-style
+— AWS ECR — challenges). Run `docker login <registry>` (or
+`aws ecr get-login-password | docker login --username AWS …` for ECR)
+once and mikebom picks up the credentials.
 
 **3. Scan a package cache.** Treats cached bytes as present-on-disk;
 useful for CI cache audits.

@@ -64,6 +64,13 @@ pub fn build_evidence(
                 if let Some(ref md5) = o.md5_legacy {
                     ctx.insert("md5".to_string(), json!(md5));
                 }
+                // Milestone 040 US2: apk-provided per-file SHA-1
+                // cross-ref (`Z:` line in the package's stanza).
+                // Surfaced for deb-/apk-/rpm-uniform consumers; deb
+                // and rpm occurrences leave this field None.
+                if let Some(ref sha1) = o.apk_sha1 {
+                    ctx.insert("sha1".to_string(), json!(sha1));
+                }
                 json!({
                     "location": o.location,
                     "additionalContext": serde_json::to_string(&ctx)
@@ -279,11 +286,13 @@ mod tests {
                 location: "/usr/bin/jq".to_string(),
                 sha256: "a".repeat(64),
                 md5_legacy: Some("b".repeat(32)),
+                apk_sha1: None,
             },
             FileOccurrence {
                 location: "/usr/share/doc/jq/copyright".to_string(),
                 sha256: "c".repeat(64),
                 md5_legacy: None,
+                apk_sha1: None,
             },
         ];
         let result = build_evidence(&ev, &occs);

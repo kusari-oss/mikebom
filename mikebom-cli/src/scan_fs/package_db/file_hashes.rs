@@ -127,6 +127,7 @@ pub fn hash_package_files(
             location: path_in_pkg.to_string(),
             sha256,
             md5_legacy,
+            apk_sha1: None,
         });
     }
 
@@ -237,15 +238,20 @@ fn read_info_file_bytes(
 /// are skipped with a debug log.
 ///
 /// Unlike the dpkg path, no MD5 cross-reference is emitted —
-/// apk's analogous `Z:` line carries SHA-1, which is OUT OF SCOPE
-/// for this milestone (could be added later via a follow-on).
+/// apk's analogous `Z:` line carries SHA-1; that cross-reference
+/// is plumbed through alongside the SHA-256 (milestone 040 US2).
+/// Each [`ApkFileEntry`] passed in carries an optional SHA-1 from
+/// the package's stanza; when present, it surfaces as
+/// `apk_sha1` on the resulting [`FileOccurrence`] (and from there
+/// into the per-occurrence `additionalContext` JSON-string at
+/// emission time).
 pub fn hash_apk_package_files(
     rootfs: &Path,
-    files: &[String],
+    files: &[super::apk::ApkFileEntry],
 ) -> (Vec<FileOccurrence>, Option<ContentHash>) {
     let mut occurrences: Vec<FileOccurrence> = Vec::new();
-    for rel in files {
-        let rel = rel.trim_start_matches('/');
+    for entry in files {
+        let rel = entry.path.trim_start_matches('/');
         if rel.is_empty() {
             continue;
         }
@@ -279,6 +285,7 @@ pub fn hash_apk_package_files(
             location: format!("/{rel}"),
             sha256,
             md5_legacy: None,
+            apk_sha1: entry.sha1.clone(),
         });
     }
 
@@ -795,7 +802,16 @@ mod tests {
             dir.path(),
             &[("usr/bin/foo", b"foo-bytes"), ("etc/foo.conf", b"conf=1\n")],
         );
-        let files = vec!["usr/bin/foo".to_string(), "etc/foo.conf".to_string()];
+        let files = vec![
+            super::super::apk::ApkFileEntry {
+                path: "usr/bin/foo".to_string(),
+                sha1: None,
+            },
+            super::super::apk::ApkFileEntry {
+                path: "etc/foo.conf".to_string(),
+                sha1: None,
+            },
+        ];
         let (occs, root) = hash_apk_package_files(dir.path(), &files);
         assert_eq!(occs.len(), 2);
         assert!(root.is_some(), "must produce a per-component Merkle root");
@@ -808,9 +824,33 @@ mod tests {
             );
             assert!(
                 o.md5_legacy.is_none(),
-                "apk path emits no MD5 cross-ref (Z: lines out of scope)"
+                "apk path never carries MD5 cross-ref"
+            );
+            assert!(
+                o.apk_sha1.is_none(),
+                "no Z: data was passed in this test, so apk_sha1 must be None"
             );
         }
+    }
+
+    /// Milestone 040 US2: Z:-line SHA-1 surfaces on the resulting
+    /// occurrence's `apk_sha1` field when the input ApkFileEntry
+    /// carries one.
+    #[test]
+    fn hash_apk_package_files_threads_sha1_when_provided() {
+        let dir = tempfile::tempdir().unwrap();
+        place_files(dir.path(), &[("usr/bin/foo", b"foo-bytes")]);
+        let files = vec![super::super::apk::ApkFileEntry {
+            path: "usr/bin/foo".to_string(),
+            sha1: Some("aabbccddeeff00112233445566778899aabbccdd".to_string()),
+        }];
+        let (occs, _root) = hash_apk_package_files(dir.path(), &files);
+        assert_eq!(occs.len(), 1);
+        assert_eq!(
+            occs[0].apk_sha1.as_deref(),
+            Some("aabbccddeeff00112233445566778899aabbccdd"),
+            "apk_sha1 must thread from input entry to output occurrence"
+        );
     }
 
     #[test]
@@ -818,7 +858,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         place_files(dir.path(), &[("usr/bin/exists", b"on-disk")]);
         // Only one of the two listed files actually exists on disk.
-        let files = vec!["usr/bin/exists".to_string(), "usr/bin/missing".to_string()];
+        let files = vec![
+            super::super::apk::ApkFileEntry {
+                path: "usr/bin/exists".to_string(),
+                sha1: None,
+            },
+            super::super::apk::ApkFileEntry {
+                path: "usr/bin/missing".to_string(),
+                sha1: None,
+            },
+        ];
         let (occs, root) = hash_apk_package_files(dir.path(), &files);
         assert_eq!(occs.len(), 1, "absent file must be skipped");
         assert_eq!(occs[0].location, "/usr/bin/exists");

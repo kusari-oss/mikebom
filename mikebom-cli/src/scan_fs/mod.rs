@@ -417,7 +417,7 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
                 }
             } else if is_apk {
                 if deep_hash {
-                    let files: &[String] = apk_file_lists
+                    let files: &[package_db::apk::ApkFileEntry] = apk_file_lists
                         .get(&entry.name)
                         .map(|v| v.as_slice())
                         .unwrap_or(&[]);

@@ -7,6 +7,49 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+(Nothing yet. Land changes here, then cut a release per the
+`release.yml` workflow trigger documented in
+`docs/contributing/release.md`.)
+
+## [0.1.0-alpha.5] — 2026-04-29
+
+Cuts a new pre-release covering everything merged since
+alpha.3 (the alpha.4 tag was a CHANGELOG-less mechanical
+bump). Ships milestones 010, 023–030, and 034–042 together.
+Highlights:
+
+- **Container per-file evidence trilogy** (037 → 040 → 041):
+  deb, apk, and rpm components all carry populated
+  `evidence.occurrences[]` blocks now, plus matching
+  upstream-cross-ref checksums (`md5` / `sha1` /
+  `rpm_filedigest`) in `additionalContext`.
+- **Direct OCI registry image scanning** (034 → 036):
+  `mikebom sbom scan --image alpine:3.19` now pulls from
+  registries directly, including authenticated private pulls
+  via the standard Docker keychain, cross-arch selection via
+  `--image-platform`, and SHA-256-content-addressed disk
+  caching for fast repeat scans.
+- **Distroless / chainguard / Bazel-built minimal-image
+  coverage** (037 → 038): the per-package
+  `/var/lib/dpkg/status.d/` layout and its `.md5sums`
+  companion files are now read; deb minimal images go from
+  zero components to a full SBOM with per-file evidence.
+- **Mach-O binary identity + codesign + Go VCS metadata**
+  (024 → 025 → 030): macOS and Apple-platform binaries now
+  emit `LC_UUID`, `LC_RPATH`, codesign identifier / flags /
+  team-id, and Go-binary VCS commit-SHA + build-time
+  metadata.
+- **Maven sidecar Debian layout** (042): in addition to
+  Fedora's `/usr/share/maven-poms/`, mikebom now reads
+  Debian's `/usr/share/maven-repo/` GAV-tree layout, so
+  `lib*-java`-installed JARs surface as
+  `pkg:maven/<group>/<artifact>@<version>` PURLs.
+- **Two cross-ref-symmetry milestones** (040 US2 and 041)
+  bring apk and rpm to parity with deb's longstanding `md5`
+  cross-ref carrier on per-file occurrences.
+
+Detailed entries below.
+
 ### Added
 - **Milestone 042 — Post-041 small follow-ons.** Two unrelated
   legacy-deferral items closed:

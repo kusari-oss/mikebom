@@ -5,15 +5,15 @@
       "@id": "_:creation-info",
       "created": "1970-01-01T00:00:00Z",
       "createdBy": [
-        "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/tool/mikebom"
+        "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/tool/mikebom"
       ],
       "specVersion": "3.0.1",
       "type": "CreationInfo"
     },
     {
       "creationInfo": "_:creation-info",
-      "name": "mikebom-0.1.0-alpha.4",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/tool/mikebom",
+      "name": "mikebom-0.1.0-alpha.5",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/tool/mikebom",
       "type": "Tool"
     },
     {
@@ -21,9 +21,9 @@
       "dataLicense": "https://spdx.org/licenses/CC0-1.0",
       "name": "lockfile-v3",
       "rootElement": [
-        "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-root-H5VPHAIRCLACRQYQ"
+        "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-root-H5VPHAIRCLACRQYQ"
       ],
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS",
       "type": "SpdxDocument"
     },
     {
@@ -43,7 +43,7 @@
       "name": "lockfile-v3",
       "software_packageUrl": "pkg:generic/lockfile-v3@0.0.0",
       "software_packageVersion": "0.0.0",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-root-H5VPHAIRCLACRQYQ",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-root-H5VPHAIRCLACRQYQ",
       "type": "software_Package"
     },
     {
@@ -63,7 +63,7 @@
       "name": "quote",
       "software_packageUrl": "pkg:cargo/quote@1.0.35",
       "software_packageVersion": "1.0.35",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-7QZEBQB7QRFNI5M5",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-7QZEBQB7QRFNI5M5",
       "type": "software_Package"
     },
     {
@@ -83,7 +83,7 @@
       "name": "my-fork",
       "software_packageUrl": "pkg:cargo/my-fork@0.1.0",
       "software_packageVersion": "0.1.0",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-AMQQ7AE3OQIQRIZH",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-AMQQ7AE3OQIQRIZH",
       "type": "software_Package"
     },
     {
@@ -103,7 +103,7 @@
       "name": "syn",
       "software_packageUrl": "pkg:cargo/syn@2.0.48",
       "software_packageVersion": "2.0.48",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-BKMD7Y4M3VJPWGQM",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-BKMD7Y4M3VJPWGQM",
       "type": "software_Package"
     },
     {
@@ -123,7 +123,7 @@
       "name": "serde_derive",
       "software_packageUrl": "pkg:cargo/serde_derive@1.0.197",
       "software_packageVersion": "1.0.197",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-CDE3XEXSDOGUXIZT",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-CDE3XEXSDOGUXIZT",
       "type": "software_Package"
     },
     {
@@ -143,7 +143,7 @@
       "name": "unicode-ident",
       "software_packageUrl": "pkg:cargo/unicode-ident@1.0.12",
       "software_packageVersion": "1.0.12",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-E3KDPHV32PPHGGT4",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-E3KDPHV32PPHGGT4",
       "type": "software_Package"
     },
     {
@@ -163,7 +163,7 @@
       "name": "anyhow",
       "software_packageUrl": "pkg:cargo/anyhow@1.0.80",
       "software_packageVersion": "1.0.80",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-IYTSKXZIE4RF3PSV",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-IYTSKXZIE4RF3PSV",
       "type": "software_Package"
     },
     {
@@ -183,7 +183,7 @@
       "name": "serde",
       "software_packageUrl": "pkg:cargo/serde@1.0.197",
       "software_packageVersion": "1.0.197",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-UFXHU3P5DZAY42HF",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-UFXHU3P5DZAY42HF",
       "type": "software_Package"
     },
     {
@@ -203,353 +203,353 @@
       "name": "proc-macro2",
       "software_packageUrl": "pkg:cargo/proc-macro2@1.0.76",
       "software_packageVersion": "1.0.76",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-Z72PVEYDZTEVUFVQ",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-Z72PVEYDZTEVUFVQ",
       "type": "software_Package"
     },
     {
       "creationInfo": "_:creation-info",
-      "from": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-BKMD7Y4M3VJPWGQM",
+      "from": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-BKMD7Y4M3VJPWGQM",
       "relationshipType": "dependsOn",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/rel-2UZJH6TYQ33F6J2J",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/rel-3CYIH22TNDKJSQBU",
       "to": [
-        "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-Z72PVEYDZTEVUFVQ"
+        "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-Z72PVEYDZTEVUFVQ"
       ],
       "type": "Relationship"
     },
     {
       "creationInfo": "_:creation-info",
-      "from": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-UFXHU3P5DZAY42HF",
+      "from": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-UFXHU3P5DZAY42HF",
       "relationshipType": "dependsOn",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/rel-3MNOOS6MQT45KVET",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/rel-AVWC63LR6NXWKHQU",
       "to": [
-        "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-CDE3XEXSDOGUXIZT"
+        "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-CDE3XEXSDOGUXIZT"
       ],
       "type": "Relationship"
     },
     {
       "creationInfo": "_:creation-info",
-      "from": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-BKMD7Y4M3VJPWGQM",
+      "from": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-7QZEBQB7QRFNI5M5",
       "relationshipType": "dependsOn",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/rel-4GBTYKCA73JRYVX7",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/rel-HEJS4U6TDJUACOPI",
       "to": [
-        "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-7QZEBQB7QRFNI5M5"
+        "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-Z72PVEYDZTEVUFVQ"
       ],
       "type": "Relationship"
     },
     {
       "creationInfo": "_:creation-info",
-      "from": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-BKMD7Y4M3VJPWGQM",
+      "from": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-CDE3XEXSDOGUXIZT",
       "relationshipType": "dependsOn",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/rel-5AA2TI3Q4LICOMKD",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/rel-MOFT3DIWNQKQOZ4W",
       "to": [
-        "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-E3KDPHV32PPHGGT4"
+        "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-BKMD7Y4M3VJPWGQM"
       ],
       "type": "Relationship"
     },
     {
       "creationInfo": "_:creation-info",
-      "from": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-CDE3XEXSDOGUXIZT",
+      "from": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-CDE3XEXSDOGUXIZT",
       "relationshipType": "dependsOn",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/rel-GRC3HOVG6XFNGTUT",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/rel-O3Q7V4B5HZUV6DRL",
       "to": [
-        "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-Z72PVEYDZTEVUFVQ"
+        "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-Z72PVEYDZTEVUFVQ"
       ],
       "type": "Relationship"
     },
     {
       "creationInfo": "_:creation-info",
-      "from": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-CDE3XEXSDOGUXIZT",
+      "from": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-BKMD7Y4M3VJPWGQM",
       "relationshipType": "dependsOn",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/rel-KD6BPCS6YQ27RBIU",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/rel-RGGMEKCHSG3RYKLH",
       "to": [
-        "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-7QZEBQB7QRFNI5M5"
+        "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-7QZEBQB7QRFNI5M5"
       ],
       "type": "Relationship"
     },
     {
       "creationInfo": "_:creation-info",
-      "from": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-Z72PVEYDZTEVUFVQ",
+      "from": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-Z72PVEYDZTEVUFVQ",
       "relationshipType": "dependsOn",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/rel-SOJQSCDX6LSF2X4Z",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/rel-USLG5B755B4CICNT",
       "to": [
-        "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-E3KDPHV32PPHGGT4"
+        "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-E3KDPHV32PPHGGT4"
       ],
       "type": "Relationship"
     },
     {
       "creationInfo": "_:creation-info",
-      "from": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-CDE3XEXSDOGUXIZT",
+      "from": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-BKMD7Y4M3VJPWGQM",
       "relationshipType": "dependsOn",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/rel-WHCJG3DVMJ42MJDN",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/rel-WDRYPMZNIRQEQVJT",
       "to": [
-        "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-BKMD7Y4M3VJPWGQM"
+        "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-E3KDPHV32PPHGGT4"
       ],
       "type": "Relationship"
     },
     {
       "creationInfo": "_:creation-info",
-      "from": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-7QZEBQB7QRFNI5M5",
+      "from": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-CDE3XEXSDOGUXIZT",
       "relationshipType": "dependsOn",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/rel-ZIQ2KJSCYP2FN3J5",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/rel-XDGZQSQNYRIW5IDU",
       "to": [
-        "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-Z72PVEYDZTEVUFVQ"
+        "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-7QZEBQB7QRFNI5M5"
       ],
       "type": "Relationship"
     },
     {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-23NPYLD5EDAQQVAU",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-33H4B6MVWIXFF35R",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.identity\",\"value\":{\"confidence\":0.85,\"technique\":\"package-database\"}}",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-BKMD7Y4M3VJPWGQM",
+      "type": "Annotation"
+    },
+    {
+      "annotationType": "other",
+      "creationInfo": "_:creation-info",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-34ZX2FGSM7F56HOQ",
       "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:generation-context\",\"value\":\"filesystem-scan\"}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS",
       "type": "Annotation"
     },
     {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-2UNNGUM3GR7DEXKQ",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:sbom-tier\",\"value\":\"source\"}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-AMQQ7AE3OQIQRIZH",
-      "type": "Annotation"
-    },
-    {
-      "annotationType": "other",
-      "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-3YBRU4RBBPYS5LSK",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.identity\",\"value\":{\"confidence\":0.85,\"technique\":\"package-database\"}}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-7QZEBQB7QRFNI5M5",
-      "type": "Annotation"
-    },
-    {
-      "annotationType": "other",
-      "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-5JZ4G5E5NOD23FGG",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-ring-buffer-overflows\",\"value\":0}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM",
-      "type": "Annotation"
-    },
-    {
-      "annotationType": "other",
-      "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-7A63YN2SVVYLUMUF",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.identity\",\"value\":{\"confidence\":0.85,\"technique\":\"package-database\"}}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-CDE3XEXSDOGUXIZT",
-      "type": "Annotation"
-    },
-    {
-      "annotationType": "other",
-      "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-7Q4335HY2MYRLS5K",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-CDE3XEXSDOGUXIZT",
-      "type": "Annotation"
-    },
-    {
-      "annotationType": "other",
-      "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-7YKU2DZ52NVLR45Y",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-IYTSKXZIE4RF3PSV",
-      "type": "Annotation"
-    },
-    {
-      "annotationType": "other",
-      "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-7YUEF3C45HARPYI7",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-BKMD7Y4M3VJPWGQM",
-      "type": "Annotation"
-    },
-    {
-      "annotationType": "other",
-      "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-BI4NMCNPZOP2FAEW",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-type\",\"value\":\"git\"}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-AMQQ7AE3OQIQRIZH",
-      "type": "Annotation"
-    },
-    {
-      "annotationType": "other",
-      "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-CYX2F2VMKHSUUQSU",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:sbom-tier\",\"value\":\"source\"}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-UFXHU3P5DZAY42HF",
-      "type": "Annotation"
-    },
-    {
-      "annotationType": "other",
-      "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-DLATOAEW7QBB6CO5",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:sbom-tier\",\"value\":\"source\"}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-IYTSKXZIE4RF3PSV",
-      "type": "Annotation"
-    },
-    {
-      "annotationType": "other",
-      "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-ERWHYJ4Y2MFCEBER",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.identity\",\"value\":{\"confidence\":0.85,\"technique\":\"package-database\"}}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-IYTSKXZIE4RF3PSV",
-      "type": "Annotation"
-    },
-    {
-      "annotationType": "other",
-      "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-F73O4E6QZAJBZFW5",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-4EJPYDQKVAELJVXR",
       "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-events-dropped\",\"value\":0}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS",
       "type": "Annotation"
     },
     {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-FJGRZVPNWUQZ5MM5",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-4WBFEETLEYTTIVII",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-BKMD7Y4M3VJPWGQM",
+      "type": "Annotation"
+    },
+    {
+      "annotationType": "other",
+      "creationInfo": "_:creation-info",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-6BB3RP3RKYZPUMAS",
       "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:sbom-tier\",\"value\":\"source\"}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-E3KDPHV32PPHGGT4",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-BKMD7Y4M3VJPWGQM",
       "type": "Annotation"
     },
     {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-HBJXDSY5LDZBWKK2",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-6PSGVYLEGAFYTYVC",
       "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-7QZEBQB7QRFNI5M5",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-Z72PVEYDZTEVUFVQ",
       "type": "Annotation"
     },
     {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-IEEMNA4ELEBENO57",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"compositions\",\"value\":{\"complete_ecosystems\":[\"cargo\"]}}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-6VGY6HNSHQBYR642",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-type\",\"value\":\"git\"}",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-AMQQ7AE3OQIQRIZH",
       "type": "Annotation"
     },
     {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-JUE4UIMFRBREPUGA",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-752OCVK7TMKSIFRY",
       "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-E3KDPHV32PPHGGT4",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-CDE3XEXSDOGUXIZT",
       "type": "Annotation"
     },
     {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-K2KSWATFVI5WDQ37",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-ADVW2MUBUJLMDJM6",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:sbom-tier\",\"value\":\"source\"}",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-UFXHU3P5DZAY42HF",
+      "type": "Annotation"
+    },
+    {
+      "annotationType": "other",
+      "creationInfo": "_:creation-info",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-AWWJKWWM2HQQW5ZM",
       "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-kprobe-attach-failures\",\"value\":[]}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS",
       "type": "Annotation"
     },
     {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-KHOOAKYH4D52DGYR",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-E5NF56KACZFSRAP2",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-ring-buffer-overflows\",\"value\":0}",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS",
+      "type": "Annotation"
+    },
+    {
+      "annotationType": "other",
+      "creationInfo": "_:creation-info",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-EFXGIYR5IIZMWU23",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-AMQQ7AE3OQIQRIZH",
+      "type": "Annotation"
+    },
+    {
+      "annotationType": "other",
+      "creationInfo": "_:creation-info",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-FI4IHKW2Q2UMBN4J",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-E3KDPHV32PPHGGT4",
+      "type": "Annotation"
+    },
+    {
+      "annotationType": "other",
+      "creationInfo": "_:creation-info",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-GU7EVIC43UHZQQGX",
       "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:sbom-tier\",\"value\":\"source\"}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-Z72PVEYDZTEVUFVQ",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-7QZEBQB7QRFNI5M5",
       "type": "Annotation"
     },
     {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-KQNQJVO43HX6RI43",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:sbom-tier\",\"value\":\"source\"}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-BKMD7Y4M3VJPWGQM",
-      "type": "Annotation"
-    },
-    {
-      "annotationType": "other",
-      "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-KSL5OXZ6OROZDEES",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:sbom-tier\",\"value\":\"source\"}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-7QZEBQB7QRFNI5M5",
-      "type": "Annotation"
-    },
-    {
-      "annotationType": "other",
-      "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-KW6CUMR4NCXEOQIX",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-HOEL5DHETGJGXENT",
       "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.identity\",\"value\":{\"confidence\":0.85,\"technique\":\"package-database\"}}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-E3KDPHV32PPHGGT4",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-AMQQ7AE3OQIQRIZH",
       "type": "Annotation"
     },
     {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-LX3T6NR7WS6LUIQ6",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:os-release-missing-fields\",\"value\":[\"ID\",\"VERSION_ID\"]}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-JBKQ3NYKYE4O6T4E",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:sbom-tier\",\"value\":\"source\"}",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-E3KDPHV32PPHGGT4",
       "type": "Annotation"
     },
     {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-PXYTKDBAJMDW2BE7",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-KHBVCJ5VMPDVNBUG",
       "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.identity\",\"value\":{\"confidence\":0.85,\"technique\":\"package-database\"}}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-BKMD7Y4M3VJPWGQM",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-E3KDPHV32PPHGGT4",
       "type": "Annotation"
     },
     {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-QOH3CTEWMSFQIFXY",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-L6XOC5WCEF7EHKZK",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.identity\",\"value\":{\"confidence\":0.85,\"technique\":\"package-database\"}}",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-UFXHU3P5DZAY42HF",
+      "type": "Annotation"
+    },
+    {
+      "annotationType": "other",
+      "creationInfo": "_:creation-info",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-OYPC4IIDABGUX2U4",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:sbom-tier\",\"value\":\"source\"}",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-Z72PVEYDZTEVUFVQ",
+      "type": "Annotation"
+    },
+    {
+      "annotationType": "other",
+      "creationInfo": "_:creation-info",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-P5DURQ7TZYA6PJYN",
       "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-uprobe-attach-failures\",\"value\":[]}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS",
       "type": "Annotation"
     },
     {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-R7ASFX3C3Q3ESWFN",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-PCYM55W66Y5UG4BD",
       "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.identity\",\"value\":{\"confidence\":0.85,\"technique\":\"package-database\"}}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-AMQQ7AE3OQIQRIZH",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-7QZEBQB7QRFNI5M5",
       "type": "Annotation"
     },
     {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-RTT7QVY5WPYJHHGC",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.identity\",\"value\":{\"confidence\":0.85,\"technique\":\"package-database\"}}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-Z72PVEYDZTEVUFVQ",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-PU2AHXWIQ2QSLPT3",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:os-release-missing-fields\",\"value\":[\"ID\",\"VERSION_ID\"]}",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS",
       "type": "Annotation"
     },
     {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-W7RDTDWZSHQTZFUG",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-AMQQ7AE3OQIQRIZH",
-      "type": "Annotation"
-    },
-    {
-      "annotationType": "other",
-      "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-YKAKS5QVFAVEQOCL",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-UFXHU3P5DZAY42HF",
-      "type": "Annotation"
-    },
-    {
-      "annotationType": "other",
-      "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-Z5JSEBKSJV52HLW2",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-PYU66ZNLTJFORX5V",
       "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:sbom-tier\",\"value\":\"source\"}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-CDE3XEXSDOGUXIZT",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-IYTSKXZIE4RF3PSV",
       "type": "Annotation"
     },
     {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-ZC4CO2JDTFKBZASN",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-QFP4AM6JOFN45EAF",
       "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-Z72PVEYDZTEVUFVQ",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-IYTSKXZIE4RF3PSV",
       "type": "Annotation"
     },
     {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/anno-ZQQ3XMAENZYWFEOS",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-S5YHPAG7756E2SQR",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:sbom-tier\",\"value\":\"source\"}",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-AMQQ7AE3OQIQRIZH",
+      "type": "Annotation"
+    },
+    {
+      "annotationType": "other",
+      "creationInfo": "_:creation-info",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-T5B53AMTNACZ3VZV",
       "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.identity\",\"value\":{\"confidence\":0.85,\"technique\":\"package-database\"}}",
-      "subject": "https://mikebom.kusari.dev/spdx3/doc-WQDSWLIHIUZVJGS6GVJQ2TBM/pkg-UFXHU3P5DZAY42HF",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-IYTSKXZIE4RF3PSV",
+      "type": "Annotation"
+    },
+    {
+      "annotationType": "other",
+      "creationInfo": "_:creation-info",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-TQ35M4SI3ABYPZVJ",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.identity\",\"value\":{\"confidence\":0.85,\"technique\":\"package-database\"}}",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-Z72PVEYDZTEVUFVQ",
+      "type": "Annotation"
+    },
+    {
+      "annotationType": "other",
+      "creationInfo": "_:creation-info",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-UETG6G3ZZLA4CPZM",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-UFXHU3P5DZAY42HF",
+      "type": "Annotation"
+    },
+    {
+      "annotationType": "other",
+      "creationInfo": "_:creation-info",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-V25HZKOWQOHAEMQT",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.identity\",\"value\":{\"confidence\":0.85,\"technique\":\"package-database\"}}",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-CDE3XEXSDOGUXIZT",
+      "type": "Annotation"
+    },
+    {
+      "annotationType": "other",
+      "creationInfo": "_:creation-info",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-VFWKNSUG7XIME6C5",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:sbom-tier\",\"value\":\"source\"}",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-CDE3XEXSDOGUXIZT",
+      "type": "Annotation"
+    },
+    {
+      "annotationType": "other",
+      "creationInfo": "_:creation-info",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-WYBFA57MSNE3W2H2",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/pkg-7QZEBQB7QRFNI5M5",
+      "type": "Annotation"
+    },
+    {
+      "annotationType": "other",
+      "creationInfo": "_:creation-info",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS/anno-XUBZ2GSGLRXYXQSX",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"compositions\",\"value\":{\"complete_ecosystems\":[\"cargo\"]}}",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-WVXJBE7JPD3TPG6S3UFUQXFS",
       "type": "Annotation"
     }
   ]

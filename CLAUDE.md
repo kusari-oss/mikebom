@@ -1,6 +1,6 @@
 # mikebom Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-04-25
+Auto-generated from all feature plans. Last updated: 2026-04-28
 
 ## Active Technologies
 - Rust stable (user-space only; no eBPF touched in this milestone) (002-python-npm-ecosystem)
@@ -25,6 +25,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-25
 - N/A — all state in-process per test invocation / per CLI invocation. (013-format-parity-enforcement)
 - Rust stable (workspace toolchain inherited from milestones 001–015; no nightly required for this user-space-only work). + existing only — `cargo +stable clippy` (lint engine), `dtolnay/rust-toolchain@stable` (already used in CI), `Swatinem/rust-cache@v2` (already used). **No new crates.** (016-remaining-clippy-cleanup)
 - N/A — purely source-tree edits. (016-remaining-clippy-cleanup)
+- Rust stable (workspace toolchain inherited + existing only — `sha2` (per-file SHA-256, (038-minimal-image-deep-hash)
+- N/A — all state in-process per scan; reuses milestone (038-minimal-image-deep-hash)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -87,9 +89,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 038-minimal-image-deep-hash: Added Rust stable (workspace toolchain inherited + existing only — `sha2` (per-file SHA-256,
 - 016-remaining-clippy-cleanup: Added Rust stable (workspace toolchain inherited from milestones 001–015; no nightly required for this user-space-only work). + existing only — `cargo +stable clippy` (lint engine), `dtolnay/rust-toolchain@stable` (already used in CI), `Swatinem/rust-cache@v2` (already used). **No new crates.**
 - 013-format-parity-enforcement: Added Rust stable (workspace toolchain inherited from milestones 001–012; no nightly). + existing only — `serde`/`serde_json` (format output parsing), `regex` (catalog-row parsing — already in the dependency closure), `tempfile`, `tracing`, `anyhow`. `clap` for the new `parity-check` subcommand (already used for `scan`). **No new crates.**
-- 012-sbom-quality-fixes: Added Rust stable (workspace toolchain inherited from milestones 001–011; no nightly required). + existing only — `spdx` (license-expression canonicalization), `data-encoding` (BASE32 for LicenseRef hash prefix), `sha2`, `serde`/`serde_json`, `tracing`, `anyhow`. Dev-dep: existing `jsonschema = "0.46"`. **No new crates.**
 
 
 <!-- MANUAL ADDITIONS START -->

@@ -150,7 +150,11 @@ fn read_status_d_dir(
             }
         };
         let source = path.to_string_lossy().into_owned();
-        let entries = parse(&text, &source, namespace, distro_version);
+        // status.d/ stanzas in real distroless / chainguard images
+        // legitimately omit the `Status:` field (the file's existence
+        // is the installation marker). Use the relaxed parser so
+        // those entries surface as installed components.
+        let entries = parse_relaxed(&text, &source, namespace, distro_version);
         out.extend(entries);
     }
     out
@@ -217,6 +221,26 @@ fn parse(
     out
 }
 
+/// Like [`parse`] but uses [`parse_stanza_no_status_required`].
+/// Per-package layout (status.d/) entries legitimately omit the
+/// `Status:` field — see that function's docs for rationale.
+fn parse_relaxed(
+    text: &str,
+    source_path: &str,
+    namespace: &str,
+    distro_version: Option<&str>,
+) -> Vec<PackageDbEntry> {
+    let mut out = Vec::new();
+    for stanza in split_stanzas(text) {
+        if let Some(entry) =
+            parse_stanza_no_status_required(&stanza, source_path, namespace, distro_version)
+        {
+            out.push(entry);
+        }
+    }
+    out
+}
+
 /// Split on blank lines. Honours RFC-822 continuation: a line starting
 /// with a space is part of the preceding field. Continuation is handled
 /// inside `parse_stanza`, not here — this just yields stanza strings.
@@ -245,6 +269,32 @@ fn parse_stanza(
     namespace: &str,
     distro_version: Option<&str>,
 ) -> Option<PackageDbEntry> {
+    parse_stanza_inner(stanza, source_path, namespace, distro_version, true)
+}
+
+/// Variant of [`parse_stanza`] that does NOT require the `Status`
+/// field. Used by [`read_status_d_dir`] for the per-package layout
+/// (distroless / chainguard / Bazel-built minimal images): those
+/// files legitimately omit `Status:` because the image has no dpkg
+/// daemon to maintain install state — the file's existence IS the
+/// installation marker. When `Status:` IS present (rare in
+/// status.d/), a non-installed value still filters the entry out.
+fn parse_stanza_no_status_required(
+    stanza: &str,
+    source_path: &str,
+    namespace: &str,
+    distro_version: Option<&str>,
+) -> Option<PackageDbEntry> {
+    parse_stanza_inner(stanza, source_path, namespace, distro_version, false)
+}
+
+fn parse_stanza_inner(
+    stanza: &str,
+    source_path: &str,
+    namespace: &str,
+    distro_version: Option<&str>,
+    require_status: bool,
+) -> Option<PackageDbEntry> {
     // Collect fields. Continuation lines (start with space) extend the
     // last field. Keys are compared case-insensitively.
     let mut fields: Vec<(String, String)> = Vec::new();
@@ -270,10 +320,18 @@ fn parse_stanza(
 
     // Only count entries whose status is fully installed. dpkg's Status
     // is three space-separated tokens; we want the exact phrase
-    // `install ok installed`.
-    let status = get("status").unwrap_or("");
-    if !status.contains("install ok installed") {
-        return None;
+    // `install ok installed`. The `require_status` flag controls
+    // whether absence of the Status field is treated as installed
+    // (status.d/ layout) or as a filter-out (legacy status file).
+    let status = get("status");
+    match (require_status, status) {
+        // Legacy file: Status MUST be present and "install ok installed".
+        (true, Some(s)) if !s.contains("install ok installed") => return None,
+        (true, None) => return None,
+        // Per-package layout: Status absence is fine; presence with a
+        // non-installed value still filters.
+        (false, Some(s)) if !s.contains("install ok installed") => return None,
+        _ => {}
     }
 
     let name = get("package")?.to_string();

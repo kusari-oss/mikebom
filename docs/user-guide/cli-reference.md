@@ -170,6 +170,19 @@ Behaviour notes:
   `--include-declared-deps`, and `--include-legacy-rpmdb` flags — they
   can be passed either before or after `scan`. See [global flags](#global-flags)
   and [Configuration](configuration.md).
+- **Minimal-image deb coverage** (distroless / chainguard / Bazel-built):
+  per-file `evidence.occurrences[]` is populated for these images just
+  like for full-fat `debian:*` / `ubuntu:*` scans. The per-package layout
+  used by `gcr.io/distroless/*` and rules-distroless ships
+  `var/lib/dpkg/status.d/<pkg>.md5sums` companion files which mikebom
+  consumes both as the file-path source and as the cross-reference for
+  per-file MD5s. Stanza files in this layout legitimately omit the
+  `Status:` field (no dpkg daemon manages install state in the image);
+  mikebom treats the file's existence as the installation marker.
+  Apk-based minimal images (chainguard apko / Wolfi) get correct
+  component metadata today; per-file evidence for apk components is
+  tracked separately in
+  [#75](https://github.com/kusari-sandbox/mikebom/issues/75).
 
 ### Authenticating to private registries
 

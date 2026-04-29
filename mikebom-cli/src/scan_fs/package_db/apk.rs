@@ -14,12 +14,27 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use base64::engine::general_purpose::STANDARD as B64_STANDARD;
+use base64::Engine as _;
 use mikebom_common::types::license::SpdxExpression;
 use mikebom_common::types::purl::{encode_purl_segment, Purl};
 
 use super::PackageDbEntry;
 
 const APK_INSTALLED_PATH: &str = "lib/apk/db/installed";
+
+/// One file entry from an apk installed-db package stanza —
+/// a rootfs-relative path plus optional apk-provided SHA-1
+/// extracted from the file's `Z:` companion line. The SHA-1 is
+/// `None` when the package's stanza omitted the `Z:` line for
+/// this file (rare; very old apk dbs or malformed stanzas) or
+/// when the `Z:` line uses a non-`Q1` scheme that mikebom
+/// doesn't recognize.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApkFileEntry {
+    pub path: String,
+    pub sha1: Option<String>,
+}
 
 /// Read and parse the apk installed-db beneath `rootfs`. Empty output
 /// when the file is absent (typical for Debian/Ubuntu rootfs); errors
@@ -101,28 +116,30 @@ pub fn collect_claimed_paths(
 }
 
 /// Walk `<rootfs>/lib/apk/db/installed` once and build a per-package
-/// file-list map. Used by milestone 039's deep-hash path: the apk
-/// stanza format encodes file ownership inline via interleaved
-/// `F:<dir>` (directory) and `R:<basename>` (regular file) lines —
-/// no companion files like dpkg's `info/<pkg>.list`.
+/// file-list map. The apk stanza format encodes file ownership
+/// inline via interleaved `F:<dir>` (directory), `R:<basename>`
+/// (regular file), and `Z:<checksum>` (file's apk-provided SHA-1)
+/// lines — no companion files like dpkg's `info/<pkg>.list`.
 ///
-/// Returns a map keyed on package name with each value being the
-/// rootfs-relative file paths the package's stanza claims. Returns
-/// an empty map when the file is absent (typical for Debian/Ubuntu
-/// rootfs) or unreadable; never errors.
+/// Returns a map keyed on package name with each value being a
+/// `Vec<ApkFileEntry>` carrying the rootfs-relative path and the
+/// optional apk-provided SHA-1. Returns an empty map when the
+/// file is absent (typical for Debian/Ubuntu rootfs) or
+/// unreadable; never errors.
 ///
 /// Stanza boundaries (blank lines) reset the current package and
 /// directory tracking. Files declared without a current `F:` (which
 /// shouldn't happen in well-formed databases) are silently skipped
-/// to match the `collect_claimed_paths` posture.
+/// to match the `collect_claimed_paths` posture. `Z:` lines without
+/// a preceding `R:` in the same stanza are also dropped.
 pub fn read_file_lists(
     rootfs: &Path,
-) -> std::collections::HashMap<String, Vec<String>> {
+) -> std::collections::HashMap<String, Vec<ApkFileEntry>> {
     let path = rootfs.join(APK_INSTALLED_PATH);
     let Ok(text) = std::fs::read_to_string(&path) else {
         return std::collections::HashMap::new();
     };
-    let mut out: std::collections::HashMap<String, Vec<String>> =
+    let mut out: std::collections::HashMap<String, Vec<ApkFileEntry>> =
         std::collections::HashMap::new();
     let mut current_pkg: Option<String> = None;
     let mut current_dir: Option<String> = None;
@@ -151,13 +168,45 @@ pub fn read_file_lists(
                     } else {
                         format!("{dir}/{basename}")
                     };
-                    out.entry(pkg.clone()).or_default().push(rel);
+                    out.entry(pkg.clone()).or_default().push(ApkFileEntry {
+                        path: rel,
+                        sha1: None,
+                    });
+                }
+            }
+            b'Z' => {
+                // Attach the apk-provided SHA-1 to the most-recent R:
+                // entry for the current package. Z: lines without a
+                // preceding R: in the stanza (or with no current_pkg)
+                // are silently dropped.
+                if let Some(pkg) = current_pkg.as_deref() {
+                    if let Some(entries) = out.get_mut(pkg) {
+                        if let Some(last) = entries.last_mut() {
+                            last.sha1 = parse_apk_z_value(&line[2..]);
+                        }
+                    }
                 }
             }
             _ => {}
         }
     }
     out
+}
+
+/// Decode an apk `Z:` line value into a 40-hex-char lowercase
+/// SHA-1 string. apk uses `Q1<base64-encoded-20-bytes>` (the only
+/// scheme mikebom recognizes today). Returns `None` for any other
+/// prefix, malformed base64, or wrong-length payload.
+fn parse_apk_z_value(z_value: &str) -> Option<String> {
+    let payload = z_value.trim().strip_prefix("Q1")?;
+    if payload.is_empty() {
+        return None;
+    }
+    let decoded = B64_STANDARD.decode(payload).ok()?;
+    if decoded.len() != 20 {
+        return None;
+    }
+    Some(decoded.iter().map(|b| format!("{b:02x}")).collect())
 }
 
 fn parse(text: &str, source_path: &str, distro_version: Option<&str>) -> Vec<PackageDbEntry> {
@@ -539,13 +588,15 @@ D:so:libc.musl-aarch64.so.1
 
         let foo = map.get("foo").expect("foo entry");
         assert_eq!(foo.len(), 2);
-        assert!(foo.contains(&"usr/bin/foo".to_string()));
-        assert!(foo.contains(&"etc/foo.conf".to_string()));
+        let foo_paths: Vec<&str> = foo.iter().map(|e| e.path.as_str()).collect();
+        assert!(foo_paths.contains(&"usr/bin/foo"));
+        assert!(foo_paths.contains(&"etc/foo.conf"));
 
         let bar = map.get("bar").expect("bar entry");
         assert_eq!(bar.len(), 2);
-        assert!(bar.contains(&"usr/lib/libbar.so.1".to_string()));
-        assert!(bar.contains(&"usr/lib/libbar.so".to_string()));
+        let bar_paths: Vec<&str> = bar.iter().map(|e| e.path.as_str()).collect();
+        assert!(bar_paths.contains(&"usr/lib/libbar.so.1"));
+        assert!(bar_paths.contains(&"usr/lib/libbar.so"));
     }
 
     #[test]
@@ -563,7 +614,8 @@ D:so:libc.musl-aarch64.so.1
         let map = read_file_lists(dir.path());
         let entries = map.get("baselayout-data").expect("entry");
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0], ".profile");
+        assert_eq!(entries[0].path, ".profile");
+        assert_eq!(entries[0].sha1, None);
     }
 
     #[test]
@@ -598,6 +650,82 @@ D:so:libc.musl-aarch64.so.1
         assert!(
             !map.contains_key("baz") || map.get("baz").is_none_or(|v| v.is_empty()),
             "orphan R: without preceding F: should be skipped"
+        );
+    }
+
+    // ---- Milestone 040 US2: Z:-line SHA-1 cross-ref ---------------------
+
+    /// Z: line carrying the apk-provided SHA-1 surfaces on the
+    /// preceding R: file's `sha1` field.
+    ///
+    /// Test value: SHA-1("hello world") = 2aae6c35c94fcfb415dbe95f408b9ce91ee846ed
+    /// Base64 of those 20 bytes: Kq5sNclPz7QV2+lfQIuc6R7oRu0=
+    #[test]
+    fn read_file_lists_extracts_z_line_sha1() {
+        let dir = tempfile::tempdir().unwrap();
+        write_installed_db(
+            dir.path(),
+            "P:foo\n\
+             V:1.0\n\
+             F:usr/bin\n\
+             R:foo\n\
+             Z:Q1Kq5sNclPz7QV2+lfQIuc6R7oRu0=\n",
+        );
+        let map = read_file_lists(dir.path());
+        let foo = map.get("foo").expect("foo entry");
+        assert_eq!(foo.len(), 1);
+        assert_eq!(foo[0].path, "usr/bin/foo");
+        assert_eq!(
+            foo[0].sha1.as_deref(),
+            Some("2aae6c35c94fcfb415dbe95f408b9ce91ee846ed"),
+            "Z: line SHA-1 should decode to lowercase 40-hex"
+        );
+    }
+
+    /// Multiple R: lines without intervening Z: each have sha1=None.
+    /// Adding a Z: only attaches to the IMMEDIATELY preceding R:.
+    #[test]
+    fn read_file_lists_handles_missing_z_line() {
+        let dir = tempfile::tempdir().unwrap();
+        write_installed_db(
+            dir.path(),
+            "P:foo\n\
+             V:1.0\n\
+             F:usr/bin\n\
+             R:foo\n\
+             R:bar\n",
+        );
+        let map = read_file_lists(dir.path());
+        let foo = map.get("foo").expect("foo entry");
+        assert_eq!(foo.len(), 2);
+        for entry in foo {
+            assert_eq!(
+                entry.sha1, None,
+                "no Z: line in stanza → all entries should have sha1=None"
+            );
+        }
+    }
+
+    /// Defensive: only the documented `Q1` prefix is recognized.
+    /// Hypothetical future schemes (Q2, Q3, ...) are silently
+    /// ignored — file's sha1 stays None rather than mis-decoding.
+    #[test]
+    fn read_file_lists_rejects_non_q1_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        write_installed_db(
+            dir.path(),
+            "P:foo\n\
+             V:1.0\n\
+             F:usr/bin\n\
+             R:foo\n\
+             Z:Q2Kq5sNclPz7QV2+lfQIuc6R7oRu0=\n",
+        );
+        let map = read_file_lists(dir.path());
+        let foo = map.get("foo").expect("foo entry");
+        assert_eq!(foo.len(), 1);
+        assert_eq!(
+            foo[0].sha1, None,
+            "Q2-prefixed scheme is unknown → sha1 must be None"
         );
     }
 }

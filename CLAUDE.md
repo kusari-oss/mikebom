@@ -89,9 +89,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 040-pkg-db-followups: Added [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
 - 038-minimal-image-deep-hash: Added Rust stable (workspace toolchain inherited + existing only — `sha2` (per-file SHA-256,
 - 016-remaining-clippy-cleanup: Added Rust stable (workspace toolchain inherited from milestones 001–015; no nightly required for this user-space-only work). + existing only — `cargo +stable clippy` (lint engine), `dtolnay/rust-toolchain@stable` (already used in CI), `Swatinem/rust-cache@v2` (already used). **No new crates.**
-- 013-format-parity-enforcement: Added Rust stable (workspace toolchain inherited from milestones 001–012; no nightly). + existing only — `serde`/`serde_json` (format output parsing), `regex` (catalog-row parsing — already in the dependency closure), `tempfile`, `tracing`, `anyhow`. `clap` for the new `parity-check` subcommand (already used for `scan`). **No new crates.**
 
 
 <!-- MANUAL ADDITIONS START -->

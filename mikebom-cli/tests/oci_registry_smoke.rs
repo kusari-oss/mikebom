@@ -102,8 +102,13 @@ fn pulls_alpine_3_19_and_emits_apk_components() {
     // Milestone 039: per-file evidence MUST be populated for apk
     // components (mirrors the milestone-038 deb assertion). Pre-039
     // this was always 0 because file_hashes.rs was dpkg-only.
+    //
+    // Milestone 040 US2: each populated occurrence's
+    // `additionalContext` MUST also carry `sha1` from the apk
+    // package's `Z:` line. Pre-040 this was always None.
     let mut total_occurrences = 0usize;
     let mut sha256_seen = false;
+    let mut sha1_seen = false;
     for c in components {
         let occs = c["evidence"]["occurrences"]
             .as_array()
@@ -122,6 +127,11 @@ fn pulls_alpine_3_19_and_emits_apk_components() {
                     sha256_seen = true;
                 }
             }
+            if let Some(s) = ctx["sha1"].as_str() {
+                if s.len() == 40 && s.chars().all(|c| c.is_ascii_hexdigit()) {
+                    sha1_seen = true;
+                }
+            }
         }
     }
     assert!(
@@ -134,6 +144,11 @@ fn pulls_alpine_3_19_and_emits_apk_components() {
     assert!(
         sha256_seen,
         "at least one apk occurrence should carry a 64-hex SHA-256 in additionalContext; got none"
+    );
+    assert!(
+        sha1_seen,
+        "milestone 040 US2: at least one apk occurrence should carry a 40-hex \
+         SHA-1 (apk-provided Z:-line cross-ref) in additionalContext; got none"
     );
 }
 

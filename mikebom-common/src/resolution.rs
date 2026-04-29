@@ -234,6 +234,12 @@ pub struct FileOccurrence {
     /// created post-install).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub md5_legacy: Option<String>,
+    /// apk-provided SHA-1 from the `Z:` line in the package's
+    /// stanza, lowercase hex (40 chars). `None` for non-apk
+    /// occurrences (deb, rpm) and for apk files whose stanza
+    /// omitted the `Z:` line. Milestone 040 / #75 follow-on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub apk_sha1: Option<String>,
 }
 
 /// Evidence describing how a component was resolved from trace data.

@@ -127,6 +127,7 @@ pub fn hash_package_files(
             location: path_in_pkg.to_string(),
             sha256,
             md5_legacy,
+            apk_sha1: None,
         });
     }
 
@@ -237,15 +238,20 @@ fn read_info_file_bytes(
 /// are skipped with a debug log.
 ///
 /// Unlike the dpkg path, no MD5 cross-reference is emitted —
-/// apk's analogous `Z:` line carries SHA-1, which is OUT OF SCOPE
-/// for this milestone (could be added later via a follow-on).
+/// apk's analogous `Z:` line carries SHA-1; that cross-reference
+/// is plumbed through alongside the SHA-256 (milestone 040 US2).
+/// Each [`ApkFileEntry`] passed in carries an optional SHA-1 from
+/// the package's stanza; when present, it surfaces as
+/// `apk_sha1` on the resulting [`FileOccurrence`] (and from there
+/// into the per-occurrence `additionalContext` JSON-string at
+/// emission time).
 pub fn hash_apk_package_files(
     rootfs: &Path,
-    files: &[String],
+    files: &[super::apk::ApkFileEntry],
 ) -> (Vec<FileOccurrence>, Option<ContentHash>) {
     let mut occurrences: Vec<FileOccurrence> = Vec::new();
-    for rel in files {
-        let rel = rel.trim_start_matches('/');
+    for entry in files {
+        let rel = entry.path.trim_start_matches('/');
         if rel.is_empty() {
             continue;
         }
@@ -279,12 +285,117 @@ pub fn hash_apk_package_files(
             location: format!("/{rel}"),
             sha256,
             md5_legacy: None,
+            apk_sha1: entry.sha1.clone(),
         });
     }
 
     let root = compute_merkle_root(&occurrences);
     (occurrences, root)
 }
+
+// ---- Milestone 040 US3: rpm per-file deep-hashing -----------------------
+
+/// Deep-hash every file the rpm package claims (via
+/// HeaderBlob `BASENAMES` / `DIRNAMES` / `DIRINDEXES`).
+/// Mirrors [`hash_apk_package_files`]; the resulting
+/// `FileOccurrence`s carry SHA-256 only — no MD5 cross-ref
+/// (rpm has no analog of dpkg's `.md5sums`) and no SHA-1
+/// cross-ref (rpm's FILEDIGESTS deferred to a follow-on
+/// milestone per the milestone-040 Q1 clarification).
+///
+/// `files` is the rootfs-relative-or-absolute path list yielded
+/// by [`super::rpm::read_file_lists`]. rpm paths come in as
+/// absolute (`/usr/bin/bash`); we resolve to absolute form for
+/// `FileOccurrence.location` and strip the leading `/` before
+/// joining onto the rootfs.
+///
+/// Files that disappear between install and scan time are
+/// silently skipped (rare; would typically indicate config files
+/// removed during image build). Oversized files (> [`MAX_PER_FILE_BYTES`])
+/// are skipped with a debug log.
+pub fn hash_rpm_package_files(
+    rootfs: &Path,
+    files: &[String],
+) -> (Vec<FileOccurrence>, Option<ContentHash>) {
+    let mut occurrences: Vec<FileOccurrence> = Vec::new();
+    for raw in files {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        // Normalize to an absolute deployed path for `location`
+        // (rpm sources already provide them this way) and to a
+        // rootfs-relative form for the actual filesystem read.
+        let absolute_location = if trimmed.starts_with('/') {
+            trimmed.to_string()
+        } else {
+            format!("/{trimmed}")
+        };
+        let rel = absolute_location.trim_start_matches('/');
+        let abs = rootfs.join(rel);
+        let Ok(meta) = abs.symlink_metadata() else {
+            continue;
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        if meta.len() > MAX_PER_FILE_BYTES {
+            tracing::debug!(
+                path = %abs.display(),
+                size = meta.len(),
+                "skipping oversized file in rpm deep hash"
+            );
+            continue;
+        }
+        let sha256 = match sha256_file_hex(&abs, MAX_PER_FILE_BYTES) {
+            Ok(h) => h,
+            Err(e) => {
+                tracing::debug!(path = %abs.display(), error = %e, "could not hash rpm file");
+                continue;
+            }
+        };
+        occurrences.push(FileOccurrence {
+            location: absolute_location,
+            sha256,
+            md5_legacy: None,
+            apk_sha1: None,
+        });
+    }
+
+    let root = compute_merkle_root(&occurrences);
+    (occurrences, root)
+}
+
+/// `--no-deep-hash` fast path for rpm. SHA-256s a deterministic
+/// per-package fingerprint derived from the rpmdb-resident metadata.
+///
+/// Implementation: compute SHA-256 of a sorted, newline-terminated
+/// concatenation of the package's claimed file paths. This gives a
+/// stable per-package identity claim that survives image-rebuild
+/// jitter (the rpm HeaderBlob's bytes change with metadata-only
+/// re-installs even when the file list is identical, so hashing the
+/// path-set directly is more useful than hashing the blob).
+///
+/// Returns `None` when the named package isn't found in the rpmdb
+/// or has no associated file paths.
+pub fn hash_rpm_db_only(rootfs: &Path, pkg_name: &str) -> Option<ContentHash> {
+    let map = super::rpm::read_file_lists(rootfs);
+    let files = map.get(pkg_name)?;
+    if files.is_empty() {
+        return None;
+    }
+    let mut sorted = files.clone();
+    sorted.sort();
+    let mut payload = String::new();
+    for p in &sorted {
+        payload.push_str(p);
+        payload.push('\n');
+    }
+    let hex = sha256_hex(payload.as_bytes());
+    ContentHash::sha256(&hex).ok()
+}
+
+// -------------------------------------------------------------------------
 
 /// `--no-deep-hash` fast path for apk. SHA-256s the bytes of the
 /// package's stanza extracted from `<rootfs>/lib/apk/db/installed`.
@@ -795,7 +906,16 @@ mod tests {
             dir.path(),
             &[("usr/bin/foo", b"foo-bytes"), ("etc/foo.conf", b"conf=1\n")],
         );
-        let files = vec!["usr/bin/foo".to_string(), "etc/foo.conf".to_string()];
+        let files = vec![
+            super::super::apk::ApkFileEntry {
+                path: "usr/bin/foo".to_string(),
+                sha1: None,
+            },
+            super::super::apk::ApkFileEntry {
+                path: "etc/foo.conf".to_string(),
+                sha1: None,
+            },
+        ];
         let (occs, root) = hash_apk_package_files(dir.path(), &files);
         assert_eq!(occs.len(), 2);
         assert!(root.is_some(), "must produce a per-component Merkle root");
@@ -808,9 +928,33 @@ mod tests {
             );
             assert!(
                 o.md5_legacy.is_none(),
-                "apk path emits no MD5 cross-ref (Z: lines out of scope)"
+                "apk path never carries MD5 cross-ref"
+            );
+            assert!(
+                o.apk_sha1.is_none(),
+                "no Z: data was passed in this test, so apk_sha1 must be None"
             );
         }
+    }
+
+    /// Milestone 040 US2: Z:-line SHA-1 surfaces on the resulting
+    /// occurrence's `apk_sha1` field when the input ApkFileEntry
+    /// carries one.
+    #[test]
+    fn hash_apk_package_files_threads_sha1_when_provided() {
+        let dir = tempfile::tempdir().unwrap();
+        place_files(dir.path(), &[("usr/bin/foo", b"foo-bytes")]);
+        let files = vec![super::super::apk::ApkFileEntry {
+            path: "usr/bin/foo".to_string(),
+            sha1: Some("aabbccddeeff00112233445566778899aabbccdd".to_string()),
+        }];
+        let (occs, _root) = hash_apk_package_files(dir.path(), &files);
+        assert_eq!(occs.len(), 1);
+        assert_eq!(
+            occs[0].apk_sha1.as_deref(),
+            Some("aabbccddeeff00112233445566778899aabbccdd"),
+            "apk_sha1 must thread from input entry to output occurrence"
+        );
     }
 
     #[test]
@@ -818,7 +962,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         place_files(dir.path(), &[("usr/bin/exists", b"on-disk")]);
         // Only one of the two listed files actually exists on disk.
-        let files = vec!["usr/bin/exists".to_string(), "usr/bin/missing".to_string()];
+        let files = vec![
+            super::super::apk::ApkFileEntry {
+                path: "usr/bin/exists".to_string(),
+                sha1: None,
+            },
+            super::super::apk::ApkFileEntry {
+                path: "usr/bin/missing".to_string(),
+                sha1: None,
+            },
+        ];
         let (occs, root) = hash_apk_package_files(dir.path(), &files);
         assert_eq!(occs.len(), 1, "absent file must be skipped");
         assert_eq!(occs[0].location, "/usr/bin/exists");
@@ -871,5 +1024,78 @@ mod tests {
     fn hash_apk_db_only_returns_none_when_db_absent() {
         let dir = tempfile::tempdir().unwrap();
         assert!(hash_apk_db_only(dir.path(), "foo").is_none());
+    }
+
+    // ---- Milestone 040 US3: rpm per-file deep-hashing ---------------------
+
+    #[test]
+    fn hash_rpm_package_files_round_trips_files() {
+        let dir = tempfile::tempdir().unwrap();
+        place_files(
+            dir.path(),
+            &[("usr/bin/bash", b"bash-bytes"), ("etc/bash.bashrc", b"# rc\n")],
+        );
+        // rpm path conventions: paths come in as absolute (with
+        // leading /).
+        let files = vec![
+            "/usr/bin/bash".to_string(),
+            "/etc/bash.bashrc".to_string(),
+        ];
+        let (occs, root) = hash_rpm_package_files(dir.path(), &files);
+        assert_eq!(occs.len(), 2);
+        assert!(root.is_some(), "must produce a per-component Merkle root");
+        for o in &occs {
+            assert_eq!(o.sha256.len(), 64);
+            assert!(
+                o.location.starts_with('/'),
+                "rpm occurrence locations must be absolute, got `{}`",
+                o.location
+            );
+            assert!(
+                o.md5_legacy.is_none(),
+                "rpm path never carries MD5 cross-ref"
+            );
+            assert!(
+                o.apk_sha1.is_none(),
+                "rpm path never carries the apk SHA-1 cross-ref"
+            );
+        }
+    }
+
+    #[test]
+    fn hash_rpm_package_files_skips_absent_files() {
+        let dir = tempfile::tempdir().unwrap();
+        place_files(dir.path(), &[("usr/bin/exists", b"on-disk")]);
+        let files = vec![
+            "/usr/bin/exists".to_string(),
+            "/usr/bin/missing".to_string(),
+        ];
+        let (occs, root) = hash_rpm_package_files(dir.path(), &files);
+        assert_eq!(occs.len(), 1, "absent file must be skipped");
+        assert_eq!(occs[0].location, "/usr/bin/exists");
+        assert!(root.is_some());
+    }
+
+    #[test]
+    fn hash_rpm_package_files_returns_empty_for_empty_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let (occs, root) = hash_rpm_package_files(dir.path(), &[]);
+        assert!(occs.is_empty());
+        assert!(root.is_none());
+    }
+
+    #[test]
+    fn hash_rpm_package_files_handles_relative_path_entries() {
+        // Defensive: even if a hypothetical caller passes paths
+        // without the leading `/`, the helper should normalize.
+        let dir = tempfile::tempdir().unwrap();
+        place_files(dir.path(), &[("usr/bin/foo", b"bytes")]);
+        let files = vec!["usr/bin/foo".to_string()]; // no leading /
+        let (occs, _root) = hash_rpm_package_files(dir.path(), &files);
+        assert_eq!(occs.len(), 1);
+        assert_eq!(
+            occs[0].location, "/usr/bin/foo",
+            "relative input should normalize to absolute location"
+        );
     }
 }

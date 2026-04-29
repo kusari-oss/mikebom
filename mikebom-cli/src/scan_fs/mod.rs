@@ -368,6 +368,12 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
         // (file-not-found short-circuits cheaply) — the unconditional
         // call is fine.
         let apk_file_lists = package_db::apk::read_file_lists(root);
+        // Milestone 040 US3: rpm per-file deep-hashing. Build the
+        // per-package file-list map once per scan (mirrors the apk
+        // pattern from milestone 039). `iter_rpmdb` underneath
+        // handles SQLite-vs-BDB selection; an absent rpmdb returns
+        // an empty map at zero cost.
+        let rpm_file_lists = package_db::rpm::read_file_lists(root);
 
         for entry in &db_entries {
             let purl_str = entry.purl.as_str().to_string();
@@ -381,6 +387,12 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
             // as the dpkg path. Detected via the standard apk
             // installed-db source_path.
             let is_apk = entry.source_path.contains("apk/db/installed");
+            // Milestone 040 US3: rpm per-file deep-hashing.
+            // Detector matches both legacy `var/lib/rpm/` and the
+            // newer `usr/lib/sysimage/rpm/` paths via the common
+            // `lib/rpm/` substring (verified to not collide with
+            // any non-rpm source_path in mikebom).
+            let is_rpm = entry.source_path.contains("lib/rpm/");
             // dpkg licenses live out-of-band in /usr/share/doc/<pkg>/
             // copyright; other sources (e.g. Python dist-info METADATA)
             // embed them directly on the entry.
@@ -417,7 +429,7 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
                 }
             } else if is_apk {
                 if deep_hash {
-                    let files: &[String] = apk_file_lists
+                    let files: &[package_db::apk::ApkFileEntry] = apk_file_lists
                         .get(&entry.name)
                         .map(|v| v.as_slice())
                         .unwrap_or(&[]);
@@ -426,6 +438,19 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
                     (occs, root_hash.into_iter().collect::<Vec<_>>())
                 } else {
                     let h = package_db::file_hashes::hash_apk_db_only(root, &entry.name);
+                    (Vec::new(), h.into_iter().collect::<Vec<_>>())
+                }
+            } else if is_rpm {
+                if deep_hash {
+                    let files: &[String] = rpm_file_lists
+                        .get(&entry.name)
+                        .map(|v| v.as_slice())
+                        .unwrap_or(&[]);
+                    let (occs, root_hash) =
+                        package_db::file_hashes::hash_rpm_package_files(root, files);
+                    (occs, root_hash.into_iter().collect::<Vec<_>>())
+                } else {
+                    let h = package_db::file_hashes::hash_rpm_db_only(root, &entry.name);
                     (Vec::new(), h.into_iter().collect::<Vec<_>>())
                 }
             } else {

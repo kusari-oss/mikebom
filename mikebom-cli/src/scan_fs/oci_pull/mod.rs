@@ -45,6 +45,11 @@
 //! locks the substrate decision in.
 
 mod auth;
+// `cache` is wired into `registry` in milestone 036 commit 2; this
+// commit only adds the module + inline tests so it can land
+// independently.
+#[allow(dead_code)]
+mod cache;
 mod platform;
 mod reference;
 mod registry;

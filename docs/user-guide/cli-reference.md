@@ -205,18 +205,18 @@ Behaviour notes:
   images like `cgr.dev/chainguard/*`. mikebom reads the per-package
   file list inline from each stanza's `F:` (directory) and `R:`
   (regular file) lines in `/lib/apk/db/installed`, walks the rootfs,
-  and emits SHA-256 per file. As of milestone 040, the apk-provided
-  per-file SHA-1 from each `Z:` line is also surfaced as a
-  cross-reference checksum in `additionalContext` alongside the
-  mikebom-computed SHA-256, mirroring the way deb's `additionalContext`
-  carries `md5` from dpkg's `.md5sums`.
+  and emits SHA-256 per file. The apk-provided per-file SHA-1 from
+  each `Z:` line is also surfaced as a cross-reference checksum in
+  `additionalContext` alongside the mikebom-computed SHA-256,
+  mirroring the way deb's `additionalContext` carries `md5` from
+  dpkg's `.md5sums`.
 - **Rpm per-file evidence** (fedora / almalinux / rocky / centos:stream
   / redhat/*): same shape as deb and apk. mikebom decodes each
   package's `BASENAMES` / `DIRNAMES` / `DIRINDEXES` triple from the
   rpmdb HeaderBlob, walks the rootfs, and emits SHA-256 per file.
-  As of milestone 041, rpm-side `additionalContext` also carries the
-  rpm-provided per-file digest from the package's `FILEDIGESTS` tag
-  as `rpm_filedigest`, in algorithm-prefixed form
+  rpm-side `additionalContext` also carries the rpm-provided
+  per-file digest from the package's `FILEDIGESTS` tag as
+  `rpm_filedigest`, in algorithm-prefixed form
   (e.g. `"sha256:abc..."` for modern packages, `"md5:def..."` for
   legacy CentOS-7-era ones — the algorithm matches the package's
   `FILEDIGESTALGO` value or defaults to MD5 when absent per the rpm

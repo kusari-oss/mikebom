@@ -12,7 +12,7 @@ Global flags apply to every subcommand and must appear before the noun
 |---|---|---|
 | `--offline` | — | Disables all outbound HTTP calls. Enrichment (deps.dev, ClearlyDefined) becomes a no-op. The scanner still produces a complete SBOM from local sources. |
 | `--include-dev` | — | Include dev / test / optional dependencies for ecosystems that carry the distinction (npm, Poetry, Pipfile). Emitted with property `mikebom:dev-dependency = true`. |
-| `--include-legacy-rpmdb` | `MIKEBOM_INCLUDE_LEGACY_RPMDB=1` | Enable legacy Berkeley-DB rpmdb (`/var/lib/rpm/Packages`) reading. Default-off preserves milestone-003 behavior; the BDB reader ships in milestone 004 US4 — the flag threads through today as a no-op until that code lands. |
+| `--include-legacy-rpmdb` | `MIKEBOM_INCLUDE_LEGACY_RPMDB=1` | Enable reading the legacy Berkeley-DB rpmdb (`/var/lib/rpm/Packages`) on pre-RHEL-8 / CentOS-7 / Amazon-Linux-2 base images. Modern RHEL-8+ / Fedora / Amazon-Linux-2023 use the SQLite rpmdb, which mikebom reads by default; the BDB format is opt-in to keep the modern hot-path slim. |
 
 ## Environment variables
 

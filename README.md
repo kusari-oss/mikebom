@@ -10,10 +10,9 @@ A toolkit for working with software bills of materials end-to-end:
   + real dependency relationships. On Linux, optionally captures build-
   time provenance via eBPF.
 - **Analyzes SBOMs** — verifies DSSE-signed attestations against keys /
-  Fulcio identities / in-toto layouts, and (new in milestone 013)
-  cross-checks already-emitted CycloneDX / SPDX 2.3 / SPDX 3.0.1
-  outputs for per-datum × per-format coverage parity via
-  `mikebom sbom parity-check`.
+  Fulcio identities / in-toto layouts, and cross-checks already-emitted
+  CycloneDX / SPDX 2.3 / SPDX 3.0.1 outputs for per-datum × per-format
+  coverage parity via `mikebom sbom parity-check`.
 - **Modifies and enriches SBOMs** — today, `mikebom sbom enrich`
   applies RFC 6902 JSON Patches with provenance metadata recorded as
   `mikebom:enrichment-patch[N]` properties. Richer modification

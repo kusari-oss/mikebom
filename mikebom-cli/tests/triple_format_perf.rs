@@ -175,14 +175,25 @@ fn time_scan(image: &std::path::Path, formats: &str) -> Duration {
 }
 
 /// Median of three measurements — robust to CI-runner noise.
-fn median_of_3(image: &std::path::Path, formats: &str) -> Duration {
+/// Median of five wall-clock measurements. Bumped from
+/// median-of-3 in milestone 045 after macOS-latest CI runners
+/// produced two perf-gate failures on otherwise-clean PRs (run
+/// 24967239854 at 14.4 %, run 25131817848 at 19.9 %), with the
+/// local distribution sitting around 50 % reduction. Five
+/// samples cuts the median's variance by ≈40 % vs three for the
+/// same per-iteration cost — buys headroom against macOS-runner
+/// CPU contention without weakening the regression-catch
+/// surface. Spec target stays at 30 %; CI gate stays at 25 %.
+fn median_of_5(image: &std::path::Path, formats: &str) -> Duration {
     let mut samples = [
+        time_scan(image, formats),
+        time_scan(image, formats),
         time_scan(image, formats),
         time_scan(image, formats),
         time_scan(image, formats),
     ];
     samples.sort();
-    samples[1]
+    samples[2]
 }
 
 #[test]
@@ -204,10 +215,10 @@ fn triple_format_is_at_least_25_percent_faster_than_three_sequential_scans() {
     // I/O noise.
     let _ = time_scan(&image, "cyclonedx-json");
 
-    let cdx = median_of_3(&image, "cyclonedx-json");
-    let spdx = median_of_3(&image, "spdx-2.3-json");
-    let spdx3 = median_of_3(&image, "spdx-3-json");
-    let triple = median_of_3(&image, "cyclonedx-json,spdx-2.3-json,spdx-3-json");
+    let cdx = median_of_5(&image, "cyclonedx-json");
+    let spdx = median_of_5(&image, "spdx-2.3-json");
+    let spdx3 = median_of_5(&image, "spdx-3-json");
+    let triple = median_of_5(&image, "cyclonedx-json,spdx-2.3-json,spdx-3-json");
     let sequential = cdx + spdx + spdx3;
 
     // Spec SC-007 target: triple ≤ 0.70 × sequential (≥ 30 %

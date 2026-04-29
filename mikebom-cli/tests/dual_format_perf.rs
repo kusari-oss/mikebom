@@ -223,18 +223,27 @@ fn time_scan(image: &std::path::Path, formats: &str) -> Duration {
     elapsed
 }
 
-/// Median of three wall-clock measurements of the same scan.
+/// Median of five wall-clock measurements of the same scan.
 /// Median is more robust than mean on noisy runners — a single
 /// slow run (kernel cache flush, neighbor process stealing a core,
-/// etc.) doesn't shift the reported timing much.
-fn median_of_3(image: &std::path::Path, formats: &str) -> Duration {
+/// etc.) doesn't shift the reported timing much. Bumped from
+/// median-of-3 in milestone 045 after macOS-latest CI runs
+/// produced a perf-gate failure at 9.0 % reduction (run
+/// 25095463014) while local distributions sit around 50 %.
+/// Five samples cuts the median's variance by ≈40 % vs three —
+/// gives headroom against macOS-runner CPU contention without
+/// weakening the regression-catch surface. CI gate stays at
+/// 25 %; spec target stays at 30 %.
+fn median_of_5(image: &std::path::Path, formats: &str) -> Duration {
     let mut samples = [
+        time_scan(image, formats),
+        time_scan(image, formats),
         time_scan(image, formats),
         time_scan(image, formats),
         time_scan(image, formats),
     ];
     samples.sort();
-    samples[1]
+    samples[2]
 }
 
 #[test]
@@ -262,9 +271,9 @@ fn dual_format_is_at_least_30_percent_faster_than_two_sequential_scans() {
     // serializer/dispatch overhead, not cold-cache I/O noise.
     let _ = time_scan(&image, "cyclonedx-json");
 
-    let cdx = median_of_3(&image, "cyclonedx-json");
-    let spdx = median_of_3(&image, "spdx-2.3-json");
-    let dual = median_of_3(&image, "cyclonedx-json,spdx-2.3-json");
+    let cdx = median_of_5(&image, "cyclonedx-json");
+    let spdx = median_of_5(&image, "spdx-2.3-json");
+    let dual = median_of_5(&image, "cyclonedx-json,spdx-2.3-json");
     let sequential = cdx + spdx;
 
     // Spec SC-009 target: dual ≤ 0.70 × sequential (≥ 30 %

@@ -258,9 +258,11 @@ pub fn host_oci_arch() -> Result<&'static str> {
         "s390x" => "s390x",
         other => {
             anyhow::bail!(
-                "host architecture `{other}` not mapped to an OCI platform name; \
-                 milestone 031 supports x86_64/aarch64/arm/riscv64/powerpc64/s390x. \
-                 Cross-arch image pulls (`--image-platform linux/<arch>`) deferred to milestone 031.y."
+                "host architecture `{other}` not mapped to an OCI platform name. \
+                 mikebom recognizes x86_64/aarch64/arm/riscv64/powerpc64/s390x \
+                 for the host-default selection. To scan a different architecture, \
+                 pass `--image-platform <linux/arch>` explicitly \
+                 (e.g. `--image-platform linux/amd64`)."
             );
         }
     })

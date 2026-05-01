@@ -128,7 +128,7 @@ fn walk_node_modules(
             depends,
             maintainer,
             licenses: license,
-            is_dev: None, // flat walk can't recover dev scope
+            lifecycle_scope: None, // flat walk can't recover dev scope
             requirement_range: None,
             source_type: None,
             buildinfo_status: None,
@@ -212,7 +212,7 @@ pub(crate) fn parse_root_package_json(
                 depends: Vec::new(),
                 maintainer: None,
                 licenses: Vec::new(),
-                is_dev: Some(is_dev),
+                lifecycle_scope: if is_dev { Some(mikebom_common::resolution::LifecycleScope::Development) } else { Some(mikebom_common::resolution::LifecycleScope::Runtime) },
                 requirement_range: Some(range),
                 source_type,
                 buildinfo_status: None,
@@ -279,7 +279,7 @@ mod tests {
         let out = parse_root_package_json(&src, "/package.json", true);
         assert_eq!(out.len(), 2);
         let jest = out.iter().find(|c| c.name == "jest").unwrap();
-        assert_eq!(jest.is_dev, Some(true));
+        assert_eq!(jest.lifecycle_scope, Some(mikebom_common::resolution::LifecycleScope::Development));
     }
 
     #[test]

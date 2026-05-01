@@ -51,14 +51,17 @@ pub struct ResolvedComponent {
     /// was passed. Maps to CycloneDX `evidence.occurrences[]`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub occurrences: Vec<FileOccurrence>,
-    /// Dev-vs-prod flag for ecosystems that carry the distinction (npm
-    /// `devDependencies`, Poetry `category = "dev"`, Pipfile `develop`).
-    /// `Some(false)` = prod, `Some(true)` = dev, `None` = source
-    /// doesn't carry a dev/prod marker (venv dist-info, requirements.txt,
-    /// deb, apk). Drives the `mikebom:dev-dependency = true` property in
-    /// the CycloneDX output when `true` AND `--include-dev` was set.
+    /// Lifecycle scope (milestone 052). Replaces the prior
+    /// boolean `is_dev` field. Maps to native fields per format:
+    /// CDX `scope: "excluded"` + `mikebom:lifecycle-scope` property
+    /// for non-Runtime variants; SPDX 2.3 native
+    /// `DEV/BUILD/TEST_DEPENDENCY_OF` relationship types via the
+    /// matching `RelationshipType` variant; SPDX 3 `lifecycleScope`
+    /// parameter on `dependsOn` relationships. `None` means
+    /// "scope unknown" — sources that don't carry the distinction
+    /// (dpkg, apk, rpmdb, etc.).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub is_dev: Option<bool>,
+    pub lifecycle_scope: Option<LifecycleScope>,
     /// Original unresolved requirement specification for fallback-tier
     /// entries (`requirements.txt` range specs, root `package.json`
     /// dependency declarations without a lockfile). The string is
@@ -321,6 +324,71 @@ pub struct Relationship {
     pub provenance: EnrichmentProvenance,
 }
 
+/// Lifecycle scope of a component (milestone 052). Replaces the
+/// boolean `is_dev` field with a 4-variant typed enum that maps
+/// directly onto each target SBOM format's native scope construct:
+///
+/// - **CycloneDX 1.6**: `Runtime` / `None` → `scope` field omitted
+///   (default `required`); `Development` / `Build` / `Test` →
+///   `scope: "excluded"` plus `mikebom:lifecycle-scope` property
+///   carrying the finer variant name (CDX's 3-value `scope` enum
+///   cannot express the dev-vs-build-vs-test split).
+/// - **SPDX 2.3**: maps to the relationship-type variants below
+///   (`Development` → `DevDependsOn` → SPDX `DEV_DEPENDENCY_OF`;
+///   `Build` → `BuildDependsOn` → `BUILD_DEPENDENCY_OF`; `Test` →
+///   `TestDependsOn` → `TEST_DEPENDENCY_OF`).
+/// - **SPDX 3.0.1**: `lifecycleScope` field on `dependsOn`
+///   relationship elements (`development`, `build`, `test`,
+///   `runtime`).
+///
+/// `None` means "scope unknown / unclassified" — sources that
+/// don't carry the distinction (dpkg, apk, rpmdb, etc.). Three-state
+/// semantics preserved.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LifecycleScope {
+    Runtime,
+    Development,
+    Build,
+    Test,
+}
+
+impl LifecycleScope {
+    /// Lower-cased serde-style variant name. Used for the new
+    /// `mikebom:lifecycle-scope` CDX property carry of the finer
+    /// distinction the standards-native `scope: "excluded"` cannot
+    /// express.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            LifecycleScope::Runtime => "runtime",
+            LifecycleScope::Development => "development",
+            LifecycleScope::Build => "build",
+            LifecycleScope::Test => "test",
+        }
+    }
+
+    /// True when the scope is anything but `Runtime`. Convenience
+    /// for serializer call sites that ask "should this component
+    /// emit `scope: \"excluded\"`?" or "is this a non-runtime dep?".
+    pub fn is_non_runtime(&self) -> bool {
+        !matches!(self, LifecycleScope::Runtime)
+    }
+}
+
+/// Backward-compat helper bridging the milestone-052 lifecycle_scope
+/// field to the pre-052 `is_dev: Option<bool>` semantic. Returns true
+/// when the component is `Development`, `Build`, or `Test` scoped —
+/// i.e., when the legacy `is_dev` flag would have been
+/// `Some(true)`. Intermediate during the milestone 052 transition;
+/// to be removed when all serializer call sites migrate to native
+/// fields.
+pub fn lifecycle_scope_is_legacy_dev(scope: &Option<LifecycleScope>) -> bool {
+    matches!(
+        scope,
+        Some(LifecycleScope::Development) | Some(LifecycleScope::Build) | Some(LifecycleScope::Test)
+    )
+}
+
 /// Type of dependency relationship.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -328,6 +396,7 @@ pub enum RelationshipType {
     DependsOn,
     DevDependsOn,
     BuildDependsOn,
+    TestDependsOn,
 }
 
 /// Provenance tracking for enriched data (Constitution Principle X).
@@ -374,7 +443,7 @@ mod tests {
             cpes: vec![],
             advisories: vec![],
             occurrences: vec![],
-            is_dev: None,
+            lifecycle_scope: None,
             requirement_range: None,
             source_type: None,
             sbom_tier: None,
@@ -429,7 +498,7 @@ mod tests {
                 url: Some("https://github.com/advisories/GHSA-xxxx-yyyy-zzzz".to_string()),
             }],
             occurrences: vec![],
-            is_dev: None,
+            lifecycle_scope: None,
             requirement_range: None,
             source_type: None,
             sbom_tier: None,

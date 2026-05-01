@@ -289,7 +289,7 @@ fn parse_stanza(
         depends,
         maintainer: maintainer.filter(|s| !s.is_empty()),
         licenses,
-        is_dev: None,
+        lifecycle_scope: None,
         requirement_range: None,
         source_type: None,
         buildinfo_status: None,

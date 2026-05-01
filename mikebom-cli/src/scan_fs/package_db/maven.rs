@@ -1568,7 +1568,7 @@ pub(crate) fn emit_shade_relocation_entries(
             depends: Vec::new(),
             maintainer: None,
             licenses,
-            is_dev: None,
+            lifecycle_scope: None,
             requirement_range: None,
             source_type: None,
             buildinfo_status: None,
@@ -1820,7 +1820,14 @@ fn pom_dep_to_entry(
         depends: Vec::new(),
         maintainer: None,
         licenses: Vec::new(),
-        is_dev: matches!(dep.scope.as_deref(), Some("test")).then_some(true),
+        // Milestone 052: pre-052 set `is_dev: Some(true)` on test-
+        // scope. Behavior-preserving rename: map test → `Development`
+        // so the legacy `mikebom:dev-dependency` annotation continues
+        // firing identically. Commit 2 of milestone 052 reclassifies
+        // test → `Test` and provided → `Build` via SPDX 2.3 native
+        // `TEST/BUILD_DEPENDENCY_OF` + SPDX 3 `lifecycleScope`.
+        lifecycle_scope: matches!(dep.scope.as_deref(), Some("test"))
+            .then_some(mikebom_common::resolution::LifecycleScope::Development),
         requirement_range,
         // Mark as workspace to distinguish from BFS-inferred transitive
         // coords (source_type = "transitive"). `app` (the scanned
@@ -2081,7 +2088,7 @@ fn build_transitive_entry(
         depends,
         maintainer: None,
         licenses: Vec::new(),
-        is_dev: None,
+        lifecycle_scope: None,
         requirement_range: None,
         source_type: Some("transitive".to_string()),
         buildinfo_status: None,
@@ -2134,7 +2141,7 @@ fn jar_pom_to_entry(
         depends,
         maintainer: None,
         licenses: Vec::new(),
-        is_dev: None,
+        lifecycle_scope: None,
         requirement_range: None,
         source_type: None,
         buildinfo_status: None,

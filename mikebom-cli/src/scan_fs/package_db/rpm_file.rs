@@ -357,7 +357,7 @@ fn parse_rpm_file(
         depends: requires,
         maintainer,
         licenses,
-        is_dev: None,
+        lifecycle_scope: None,
         requirement_range: None,
         source_type: None,
         sbom_tier: Some("source".to_string()),

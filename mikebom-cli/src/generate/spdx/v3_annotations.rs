@@ -160,7 +160,7 @@ fn push_component_fields(
         push(out, "mikebom:sbom-tier", json!(v));
     }
     // C6 dev-dependency — same gate as CDX / SPDX 2.3 path.
-    if include_dev && c.is_dev == Some(true) {
+    if include_dev && mikebom_common::resolution::lifecycle_scope_is_legacy_dev(&c.lifecycle_scope) {
         push(out, "mikebom:dev-dependency", json!("true"));
     }
     // C7 co-owned-by

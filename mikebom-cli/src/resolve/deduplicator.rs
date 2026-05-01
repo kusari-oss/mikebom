@@ -85,12 +85,31 @@ pub fn deduplicate(components: Vec<ResolvedComponent>) -> Vec<ResolvedComponent>
             if best.evidence.deps_dev_match.is_none() && other.evidence.deps_dev_match.is_some() {
                 best.evidence.deps_dev_match = other.evidence.deps_dev_match;
             }
-            // Dev-flag merge rule per research.md R8: `Some(false)` (prod)
-            // wins over `Some(true)` (dev-only). `None` (source without
-            // dev/prod info) merges with either without overriding.
-            best.is_dev = match (best.is_dev, other.is_dev) {
-                (Some(false), _) | (_, Some(false)) => Some(false),
-                (Some(true), _) | (_, Some(true)) => Some(true),
+            // Lifecycle-scope merge rule (milestone 052; replaces the
+            // pre-052 is_dev boolean merge). Production wins over any
+            // non-runtime scope (research.md R8). `None` (source
+            // without scope info) merges with either without
+            // overriding. Among non-runtime scopes the priority is
+            // `Build > Development > Test` per spec FR-005's
+            // "production-wins-over-build-wins-over-dev" precedence;
+            // for the milestone-052 commit-1 rename the practical
+            // merger is between `Runtime` and `Development` (since
+            // legacy `is_dev: Some(true)` mapped to `Development` in
+            // the rename).
+            use mikebom_common::resolution::LifecycleScope;
+            best.lifecycle_scope = match (best.lifecycle_scope, other.lifecycle_scope) {
+                (Some(LifecycleScope::Runtime), _) | (_, Some(LifecycleScope::Runtime)) => {
+                    Some(LifecycleScope::Runtime)
+                }
+                (Some(LifecycleScope::Build), _) | (_, Some(LifecycleScope::Build)) => {
+                    Some(LifecycleScope::Build)
+                }
+                (Some(LifecycleScope::Development), _) | (_, Some(LifecycleScope::Development)) => {
+                    Some(LifecycleScope::Development)
+                }
+                (Some(LifecycleScope::Test), _) | (_, Some(LifecycleScope::Test)) => {
+                    Some(LifecycleScope::Test)
+                }
                 _ => None,
             };
             // Prefer an existing requirement_range / source_type /
@@ -430,7 +449,7 @@ mod tests {
             cpes: vec![],
             advisories: vec![],
             occurrences: vec![],
-            is_dev: None,
+            lifecycle_scope: None,
             requirement_range: None,
             source_type: None,
             sbom_tier: None,
@@ -558,7 +577,7 @@ mod tests {
             vec![],
             vec!["/path/prod-lockfile"],
         );
-        prod.is_dev = Some(false);
+        prod.lifecycle_scope = Some(mikebom_common::resolution::LifecycleScope::Runtime);
         let mut dev = make_component(
             "pkg:npm/foo@1.0.0",
             ResolutionTechnique::PackageDatabase,
@@ -566,11 +585,11 @@ mod tests {
             vec![],
             vec!["/path/dev-lockfile"],
         );
-        dev.is_dev = Some(true);
+        dev.lifecycle_scope = Some(mikebom_common::resolution::LifecycleScope::Development);
 
         let deduped = deduplicate(vec![prod, dev]);
         assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].is_dev, Some(false));
+        assert_eq!(deduped[0].lifecycle_scope, Some(mikebom_common::resolution::LifecycleScope::Runtime));
     }
 
     #[test]
@@ -585,7 +604,7 @@ mod tests {
                 vec![],
                 vec![],
             );
-            c.is_dev = Some(true);
+            c.lifecycle_scope = Some(mikebom_common::resolution::LifecycleScope::Development);
             c
         };
         let no_flag = make_component(
@@ -598,7 +617,7 @@ mod tests {
 
         let deduped = deduplicate(vec![explicit_dev, no_flag]);
         assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].is_dev, Some(true));
+        assert_eq!(deduped[0].lifecycle_scope, Some(mikebom_common::resolution::LifecycleScope::Development));
     }
 
     #[test]

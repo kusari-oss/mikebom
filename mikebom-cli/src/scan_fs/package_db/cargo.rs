@@ -151,7 +151,7 @@ fn package_to_entry(pkg: &CargoPackage, source_path: &str) -> Option<PackageDbEn
         depends,
         maintainer,
         licenses,
-        is_dev: None,
+        lifecycle_scope: None,
         requirement_range: None,
         source_type,
         buildinfo_status: None,
@@ -564,7 +564,7 @@ fn parse_lockfile(
             if !prod_set.is_empty()
                 && !prod_set.contains(&(pkg.name.clone(), pkg.version.clone()))
             {
-                entry.is_dev = Some(true);
+                entry.lifecycle_scope = Some(mikebom_common::resolution::LifecycleScope::Development);
             }
             out.push(entry);
         }
@@ -607,7 +607,7 @@ pub fn read(rootfs: &Path, include_dev: bool) -> Result<Vec<PackageDbEntry>, Car
         for entry in entries {
             let purl_key = entry.purl.as_str().to_string();
             // Drop dev entries when --include-dev is off.
-            if entry.is_dev == Some(true) {
+            if mikebom_common::resolution::lifecycle_scope_is_legacy_dev(&entry.lifecycle_scope) {
                 tagged_dev += 1;
                 if !include_dev {
                     dropped += 1;

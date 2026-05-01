@@ -72,7 +72,7 @@ pub(crate) fn parse_pipfile_lock(
                 depends: Vec::new(), // Pipfile.lock doesn't expose the dep graph
                 maintainer: None,
                 licenses: Vec::new(),
-                is_dev: Some(is_dev),
+                lifecycle_scope: if is_dev { Some(mikebom_common::resolution::LifecycleScope::Development) } else { Some(mikebom_common::resolution::LifecycleScope::Runtime) },
                 requirement_range: None,
                 source_type: None,
                 buildinfo_status: None,
@@ -117,7 +117,7 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].name, "requests");
         assert_eq!(out[0].version, "2.31.0"); // `==` prefix stripped
-        assert_eq!(out[0].is_dev, Some(false));
+        assert_eq!(out[0].lifecycle_scope, Some(mikebom_common::resolution::LifecycleScope::Runtime));
     }
 
     #[test]
@@ -133,7 +133,7 @@ mod tests {
         let out = parse_pipfile_lock(&src, "/Pipfile.lock", true);
         assert_eq!(out.len(), 2);
         let pyt = out.iter().find(|e| e.name == "pytest").unwrap();
-        assert_eq!(pyt.is_dev, Some(true));
+        assert_eq!(pyt.lifecycle_scope, Some(mikebom_common::resolution::LifecycleScope::Development));
         assert_eq!(pyt.sbom_tier.as_deref(), Some("source"));
     }
 

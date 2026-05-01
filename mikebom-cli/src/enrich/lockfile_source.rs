@@ -294,7 +294,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
             cpes: vec![],
             advisories: vec![],
             occurrences: vec![],
-            is_dev: None,
+            lifecycle_scope: None,
             requirement_range: None,
             source_type: None,
             sbom_tier: None,

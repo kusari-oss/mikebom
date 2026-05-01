@@ -312,7 +312,7 @@ impl CycloneDxBuilder {
             // flagged dev-only AND the caller actually opted in — the
             // absence of the property on a dev-capable-ecosystem component
             // is a positive signal that it's a prod dep.
-            if self.config.include_dev && component.is_dev == Some(true) {
+            if self.config.include_dev && mikebom_common::resolution::lifecycle_scope_is_legacy_dev(&component.lifecycle_scope) {
                 properties.push(json!({
                     "name": "mikebom:dev-dependency",
                     "value": "true"
@@ -684,7 +684,7 @@ mod tests {
             cpes: vec![],
             advisories: vec![],
             occurrences: vec![],
-            is_dev: None,
+            lifecycle_scope: None,
             requirement_range: None,
             source_type: None,
             sbom_tier: None,

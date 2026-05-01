@@ -33,6 +33,7 @@ pub enum SpdxRelationshipType {
     DependsOn,
     DevDependencyOf,
     BuildDependencyOf,
+    TestDependencyOf,
     Contains,
     ContainedBy,
 }
@@ -139,6 +140,13 @@ pub fn build_relationships(
             RelationshipType::BuildDependsOn => {
                 (to_id, from_id, SpdxRelationshipType::BuildDependencyOf)
             }
+            RelationshipType::TestDependsOn => {
+                // Same direction-reversal convention as DevDependsOn /
+                // BuildDependsOn — internal `(A) TestDependsOn (B)`
+                // "A needs B for tests" → SPDX
+                // `(B) TEST_DEPENDENCY_OF (A)` "B is a test dep of A".
+                (to_id, from_id, SpdxRelationshipType::TestDependencyOf)
+            }
         };
         out.push(SpdxRelationship {
             source,
@@ -210,7 +218,7 @@ mod tests {
             cpes: vec![],
             advisories: vec![],
             occurrences: vec![],
-            is_dev: None,
+            lifecycle_scope: None,
             requirement_range: None,
             source_type: None,
             sbom_tier: None,

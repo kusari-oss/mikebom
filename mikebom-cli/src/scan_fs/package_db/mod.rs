@@ -57,13 +57,17 @@ pub struct PackageDbEntry {
     /// doesn't carry a supplier (apk's installed db has no equivalent
     /// per-package field).
     pub maintainer: Option<String>,
-    /// Dev-vs-prod classification for ecosystems that carry the
-    /// distinction (npm `devDependencies`, Poetry `category = "dev"`,
-    /// Pipfile `develop:`). `Some(false)` = observed as a prod dep,
-    /// `Some(true)` = dev-only, `None` = source doesn't carry the
-    /// distinction (dpkg, apk, venv `.dist-info`, `requirements.txt`).
-    /// Drives the `mikebom:dev-dependency` property at serialization.
-    pub is_dev: Option<bool>,
+    /// Lifecycle scope (milestone 052) — replaces the prior
+    /// `is_dev: Option<bool>` flag with a 4-variant typed enum
+    /// (`Runtime`, `Development`, `Build`, `Test`). Maps directly
+    /// to native fields per format: CDX `scope` + new
+    /// `mikebom:lifecycle-scope` property; SPDX 2.3 native
+    /// `DEV/BUILD/TEST_DEPENDENCY_OF` relationship types via the
+    /// matching `RelationshipType` variant; SPDX 3 `lifecycleScope`
+    /// on `dependsOn`. `None` = source doesn't carry the
+    /// distinction (dpkg, apk, venv `.dist-info`,
+    /// `requirements.txt`).
+    pub lifecycle_scope: Option<mikebom_common::resolution::LifecycleScope>,
     /// Original unresolved requirement specification for fallback-tier
     /// entries (`requirements.txt` lines, root `package.json`
     /// dependencies). `None` for authoritative sources.
@@ -390,7 +394,7 @@ fn apply_go_production_set_filter(
             continue;
         }
         if test_only_imports.contains(&e.name) {
-            e.is_dev = Some(true);
+            e.lifecycle_scope = Some(mikebom_common::resolution::LifecycleScope::Development);
             tagged_test_only += 1;
         }
     }
@@ -406,7 +410,7 @@ fn apply_go_production_set_filter(
             if e.sbom_tier.as_deref() != Some("source") {
                 return true;
             }
-            e.is_dev != Some(true)
+            !mikebom_common::resolution::lifecycle_scope_is_legacy_dev(&e.lifecycle_scope)
         });
         dropped = before.saturating_sub(entries.len());
     }
@@ -924,7 +928,7 @@ Architecture: arm64
             depends: Vec::new(),
             maintainer: None,
             licenses: Vec::new(),
-            is_dev: None,
+            lifecycle_scope: None,
             requirement_range: None,
             source_type: None,
             buildinfo_status: None,

@@ -347,41 +347,77 @@ pub(crate) fn insert_claim_with_canonical(
 /// preference in `resolve::deduplicator::deduplicate` (source wins
 /// over analyzed on same-coord collision) still applies to
 /// surviving entries.
-/// G4 (feature 007 US2): drop `pkg:golang` source-tier entries whose
-/// module path is NOT reachable from any non-`_test.go` import in the
-/// scanned source tree(s). Combined with G3 (BuildInfo intersection)
-/// this implements the FR-007a intersection semantics: a module is
-/// emitted iff it's in BuildInfo (when a binary is present) AND in a
-/// production import (when source is present).
+/// G4 (feature 007 US2 → milestone 049): tag `pkg:golang` source-tier
+/// entries that are imported only from `_test.go` files with
+/// `is_dev = Some(true)`, and drop tagged entries when `--include-dev`
+/// is off (mirrors npm/Poetry/Pipfile semantics).
 ///
-/// The filter is a no-op when `production_imports` is empty — that
-/// happens on pure-binary scans (no .go source to parse), which G3
-/// alone already handles correctly.
+/// Pre-milestone-049 behavior was "drop everything not in the project's
+/// direct prod imports", which collapsed legitimate transitive prod
+/// deps (e.g., aws-sdk-go-v2 internals) into the test-only bucket.
+/// Milestone 049 inverts the default: every go.sum entry is emitted
+/// (FR-001), then we *only* tag the small subset that source-walking
+/// proves is test-only — `test_imports - production_imports` at this
+/// project's level. Indirect transitives (in go.sum, not directly
+/// imported by either prod or test source here) pass through as prod.
+///
+/// We deliberately do NOT BFS through deps' go.mod `require` blocks:
+/// a dep can declare a module in its own go.mod purely for its tests
+/// (logrus declares testify), but that doesn't mean a downstream
+/// consumer loads it in prod. Source-import walking at the project
+/// boundary is the trustworthy signal.
+///
+/// The filter no-ops when `production_imports` is empty (pure-binary
+/// scans with no .go source to parse) — G3 alone already handles
+/// those correctly.
 fn apply_go_production_set_filter(
     entries: &mut Vec<PackageDbEntry>,
     production_imports: &std::collections::HashSet<String>,
+    test_only_imports: &std::collections::HashSet<String>,
+    include_dev: bool,
 ) {
-    if production_imports.is_empty() {
+    if production_imports.is_empty() && test_only_imports.is_empty() {
         return;
     }
-    let before = entries.len();
-    entries.retain(|e| {
+    let mut tagged_test_only = 0usize;
+    for e in entries.iter_mut() {
         if e.purl.ecosystem() != "golang" {
-            return true;
+            continue;
         }
         if e.sbom_tier.as_deref() != Some("source") {
             // Analyzed-tier (BuildInfo) entries pass through; G3 is
             // their authority.
-            return true;
+            continue;
         }
-        production_imports.contains(&e.name)
-    });
-    let dropped = before.saturating_sub(entries.len());
-    if dropped > 0 {
+        if test_only_imports.contains(&e.name) {
+            e.is_dev = Some(true);
+            tagged_test_only += 1;
+        }
+    }
+
+    // Honor --include-dev: when off, drop tagged entries entirely.
+    let mut dropped = 0usize;
+    if !include_dev {
+        let before = entries.len();
+        entries.retain(|e| {
+            if e.purl.ecosystem() != "golang" {
+                return true;
+            }
+            if e.sbom_tier.as_deref() != Some("source") {
+                return true;
+            }
+            e.is_dev != Some(true)
+        });
+        dropped = before.saturating_sub(entries.len());
+    }
+
+    if tagged_test_only + dropped > 0 {
         tracing::info!(
-            dropped,
+            tagged_test_only,
+            dropped_when_no_include_dev = dropped,
             production_imports = production_imports.len(),
-            "G4 filter: dropped go.sum entries not reachable from non-_test.go imports",
+            include_dev,
+            "G4 classifier: tagged Go test-only modules; dropped tagged entries when --include-dev=off",
         );
     }
 }
@@ -630,11 +666,20 @@ pub fn read_all(
     // remains the only signal.
     apply_go_linked_filter(&mut out);
 
-    // G4 (feature 007 US2): intersection with non-`_test.go` imports.
-    // Production-import signals come only from the source-tree scanner
-    // (`golang::read`). When no Go source is parsed, this no-ops and
-    // G3 alone drives the Go filtering.
-    apply_go_production_set_filter(&mut out, &go_signals.production_imports);
+    // G4 (feature 007 US2 → milestone 049): tag test-only Go
+    // entries with is_dev=Some(true) and drop them when
+    // --include-dev=off. Pre-milestone-049 dropped test-only
+    // unconditionally; now the full transitive prod closure is
+    // emitted by default and test-only deps are filterable via the
+    // existing --include-dev flag (matches npm/Poetry/Pipfile
+    // semantics). When no Go source is parsed (transitive_prod_set
+    // empty), this no-ops and G3 alone drives Go filtering.
+    apply_go_production_set_filter(
+        &mut out,
+        &go_signals.production_imports,
+        &go_signals.test_only_imports,
+        include_dev,
+    );
 
     // G5 (feature 007 US3): drop the project's own main module from
     // the dependency listing. Main modules come from BOTH go.mod

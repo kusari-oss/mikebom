@@ -7,9 +7,27 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
-(Nothing yet. Land changes here, then cut a release per the
-`release.yml` workflow trigger documented in
-`docs/contributing/release.md`.)
+### Changed
+
+- **Go source-tree scans now emit the full go.sum closure by
+  default** (milestone 049). Previously the source-tree filter
+  dropped every entry not directly imported by this project's
+  non-`_test.go` files, collapsing legitimate transitive prod
+  deps (e.g., aws-sdk internals, gin's middleware chain) into
+  the test-only bucket. Audit on `apigatewayv2/config` showed
+  6 components emitted vs. 55 in trivy / 56 in syft. The new
+  default emits every `go.sum` entry as a component (matches
+  trivy/syft) and only TAGS the small subset proven test-only
+  by source-walking the project's `_test.go` imports. Test-only
+  deps carry the existing `mikebom:dev-dependency = true`
+  annotation when `--include-dev` is set; default-mode drops
+  them (mirrors npm/Poetry/Pipfile semantics). No new flag,
+  no new annotation, no new catalog row. CDX + SPDX 2.3 +
+  SPDX 3 outputs all carry the new emission via existing
+  parity wiring.
+
+  Scope: Go-only. cargo / gem / maven test-tagging extension
+  tracked as milestone 050 (see specs/049-go-source-scope/).
 
 ## [0.1.0-alpha.8] — 2026-04-30
 

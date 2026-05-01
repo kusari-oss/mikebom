@@ -194,7 +194,33 @@ pub fn deduplicate(components: Vec<ResolvedComponent>) -> Vec<ResolvedComponent>
     // Sort the output deterministically by PURL string.
     result.sort_by(|a, b| a.purl.as_str().cmp(b.purl.as_str()));
 
+    // Component-role classification (milestone 048). Annotates every
+    // dedup'd component whose `evidence.occurrences[]` paths match a
+    // curated build-tool / language-runtime path heuristic. Three-state
+    // semantics: components without a heuristic match get NO
+    // `mikebom:component-role` annotation (absence ≠ application).
+    classify_component_roles(&mut result);
+
     result
+}
+
+/// Apply the milestone-048 component-role classifier to every
+/// component in `components` post-dedup. Components whose
+/// `occurrences[]` paths match a heuristic-table entry get a
+/// `mikebom:component-role` annotation in their
+/// `extra_annotations` bag; components without a match are left
+/// unchanged.
+fn classify_component_roles(components: &mut [ResolvedComponent]) {
+    for component in components.iter_mut() {
+        if let Some(role) =
+            crate::resolve::component_role::classify(&component.occurrences)
+        {
+            component.extra_annotations.insert(
+                "mikebom:component-role".to_string(),
+                serde_json::Value::String(role.as_str().to_string()),
+            );
+        }
+    }
 }
 
 /// Canonical coord key for Fix A's cross-source fold. Maven coords
@@ -1009,6 +1035,74 @@ mod tests {
             deduped.len(),
             2,
             "mismatched names demonstrate the pre-fix bug: {deduped:?}",
+        );
+    }
+
+    /// Milestone 048: post-dedup classifier annotates components
+    /// whose `evidence.occurrences[]` paths match a build-tool /
+    /// language-runtime heuristic.
+    #[test]
+    fn deduplicate_annotates_build_tool_components() {
+        use mikebom_common::resolution::FileOccurrence;
+
+        let mut c = make_component(
+            "pkg:maven/org.apache.maven/maven-artifact@3.1.0",
+            ResolutionTechnique::FilePathPattern,
+            0.70,
+            vec![],
+            vec!["/usr/share/maven/lib/maven-artifact-3.1.0.jar"],
+        );
+        c.occurrences.push(FileOccurrence {
+            location:
+                "/usr/share/maven/lib/maven-artifact-3.1.0.jar".to_string(),
+            sha256:
+                "0000000000000000000000000000000000000000000000000000000000000000"
+                    .to_string(),
+            md5_legacy: None,
+            apk_sha1: None,
+            rpm_file_digest: None,
+        });
+
+        let deduped = deduplicate(vec![c]);
+        assert_eq!(deduped.len(), 1);
+        let role = deduped[0]
+            .extra_annotations
+            .get("mikebom:component-role")
+            .expect("classifier should have annotated this component");
+        assert_eq!(role, &serde_json::json!("build-tool"));
+    }
+
+    /// Milestone 048: components without heuristic-matched paths
+    /// stay un-annotated. Three-state semantics — absence ≠
+    /// application code.
+    #[test]
+    fn deduplicate_leaves_application_components_unclassified() {
+        use mikebom_common::resolution::FileOccurrence;
+
+        let mut c = make_component(
+            "pkg:maven/com.example/myapp@1.0.0",
+            ResolutionTechnique::FilePathPattern,
+            0.70,
+            vec![],
+            vec!["/app/lib/myapp-1.0.0.jar"],
+        );
+        c.occurrences.push(FileOccurrence {
+            location: "/app/lib/myapp-1.0.0.jar".to_string(),
+            sha256:
+                "0000000000000000000000000000000000000000000000000000000000000000"
+                    .to_string(),
+            md5_legacy: None,
+            apk_sha1: None,
+            rpm_file_digest: None,
+        });
+
+        let deduped = deduplicate(vec![c]);
+        assert_eq!(deduped.len(), 1);
+        assert!(
+            !deduped[0]
+                .extra_annotations
+                .contains_key("mikebom:component-role"),
+            "application paths must NOT carry the role annotation",
         );
     }
 }

@@ -9,21 +9,37 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ### Added
 
+- **`mikebom:not-linked` annotation on Go source-tier entries
+  not confirmed by binary BuildInfo** (milestone 050). When
+  `mikebom sbom scan` finds both a Go binary and source-tier
+  `pkg:golang` entries (from go.sum) in the same rootfs, every
+  go.sum entry whose `(name, version)` is NOT in the binary's
+  `runtime/debug.BuildInfo` is now annotated with
+  `mikebom:not-linked = true`. Consumers wanting the strict
+  "what shipped" view filter on this property; consumers
+  wanting the full lockfile closure get every go.sum entry
+  with rich classification metadata. CDX, SPDX 2.3, and SPDX 3
+  outputs all carry the annotation via the generic
+  `extra_annotations` serialization wired in milestone 048.
 - **Source-tree Go scan: BuildInfo-scope hint when no binary is
-  present** (milestone 050). When `mikebom sbom scan --path
-  <go-project>` finds a `go.mod` but the rootfs has no built Go
-  binary, mikebom now emits a one-line `tracing::info` log
-  explaining that the SBOM reflects the full `go.sum` closure
-  (including DCE'd build-tag alternatives + test scaffolding)
-  and pointing at the workflow that tightens it: `go build`,
-  then re-scan. The existing G3 filter
-  (`apply_go_linked_filter`) already intersects go.sum entries
-  against `runtime/debug.BuildInfo` when both are present in the
-  rootfs — this milestone is purely a discoverability fix, no
-  behavior change. README's ecosystem section documents the
-  workflow with the `apigatewayv2/config` audit numbers
-  (63 source-only → 41 with binary). No new flag, no new
-  annotation, no goldens churn.
+  present**. When `mikebom sbom scan --path <go-project>` finds
+  a `go.mod` but the rootfs has no built Go binary, mikebom
+  emits a one-line `tracing::info` log naming the SBOM scope
+  (full go.sum closure, no `mikebom:not-linked` data) and the
+  workflow that tightens it: `go build`, then re-scan.
+
+### Changed
+
+- **G3 filter (`apply_go_linked_filter`) inverted from drop to
+  tag** (milestone 050). Pre-050 silently dropped go.sum
+  entries not in BuildInfo, throwing away the data with no
+  recovery path. Now G3 tags those entries with
+  `mikebom:not-linked = true` and retains them. SBOM output
+  is strictly more inclusive; consumers narrow scope via the
+  annotation. On `apigatewayv2/config` (with binary present):
+  41 components pre-050 → 65 components post-050, with 24
+  carrying `mikebom:not-linked`. README ecosystem section
+  documents the workflow with audit numbers.
 
 ## [0.1.0-alpha.9] — 2026-05-01
 

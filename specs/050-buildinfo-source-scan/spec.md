@@ -1,4 +1,4 @@
-# Feature Specification: Surface BuildInfo-vs-go.sum scope to source-tree Go users
+# Feature Specification: `mikebom:not-linked` annotation + scope hint for Go source-tree scans
 
 **Feature Branch**: `050-buildinfo-source-scan`
 **Created**: 2026-05-01
@@ -6,194 +6,229 @@
 
 ## Summary
 
-**The behavior already exists.** When `mikebom sbom scan --path
-<go-project>` finds both a Go binary and a `go.mod` in the same
-rootfs, the existing G3 filter (`apply_go_linked_filter` in
-`mikebom-cli/src/scan_fs/package_db/mod.rs:458`) intersects the
-source-tier go.sum entries with the binary's BuildInfo — emitting
-exactly the linker-DCE'd "what shipped" set. No code change needed
-to make G3 fire on source-tree scans; the current implementation is
-rootfs-agnostic.
+Pre-milestone-050 Go scan behavior:
 
-**What's missing is discoverability.** The user's
-`apigatewayv2/config` audit emitted 63 components from a source-only
-scan because the binary hadn't been built yet. After
-`go build .` and re-running mikebom against the same path, the SBOM
-correctly drops to 41 components (40 deps + 1 main) via existing
-G3. The user shouldn't have to discover this by accident.
+- `--path <source>` (no binary): emit full `go.sum` closure (63
+  components on `apigatewayv2/config`)
+- `--path <source>` (binary present): G3 silently DROPS go.sum
+  entries not in the binary's BuildInfo (41 components — 22
+  silently lost; no recovery path)
+- `--image <ref>`: same G3 drop on container layers
 
-This milestone delivers two things:
+The drop behavior throws away meaningful classification data:
+those 22 modules really ARE in `go.sum` (the lockfile says they
+were fetched), they're just not in the linker's output for THIS
+build configuration. A consumer seeing only 41 modules can't tell
+whether the missing 22 are "never required" vs. "DCE'd build-tag
+alternatives" vs. "test scaffolding."
 
-1. **Diagnostic at scan time**: when mikebom's Go reader finds
-   `go.mod` somewhere under `--path` but the Go-binary walker
-   finds zero binaries in the same rootfs, log a `tracing::info`
-   hint explaining the SBOM scope (full go.sum closure) and how
-   to tighten it (`go build` then re-scan).
-2. **Doc updates**: README's Go-scanning explainer + `cli-reference.md`
-   `sbom scan --path` notes call out the BuildInfo-intersection
-   workflow explicitly.
+This milestone inverts G3 from drop → tag. The new behavior:
 
-No behavior change. No new flag. No new annotation. No goldens churn.
+- `--path <source>` (no binary): unchanged (full go.sum closure)
+- `--path <source>` (binary present): emit ALL go.sum entries,
+  tag the 22 non-BuildInfo ones with `mikebom:not-linked = true`
+- `--image <ref>`: same tag behavior on container layers
+
+Consumers get richer data — both the broad lockfile view AND a
+precise "what shipped" filter — on a single SBOM. Existing
+`mikebom:dev-dependency` (milestone 049) handles test-only
+classification independently; a module can carry BOTH annotations
+(common case for testify-style deps).
+
+This milestone also adds a discoverability hint: when a
+source-tree scan finds `go.mod` but no binary, log a
+`tracing::info` line explaining the workflow.
 
 ## User Scenarios & Testing
 
-### User Story 1 - Source-tree scan with no binary surfaces a hint (Priority: P1)
+### User Story 1 - Tag-don't-drop for non-BuildInfo Go entries (Priority: P1)
 
-**As a developer running `mikebom sbom scan --path .` on a Go
-project I haven't built yet**, I want mikebom to tell me that the
-SBOM I just got is the full `go.sum` closure (which includes
-DCE'd build-tag-alternatives and test scaffolding), and that
-running `go build` first will give me a tighter "what actually
-ships in the binary" SBOM via mikebom's existing BuildInfo
-intersection.
+**As a security analyst consuming an mikebom SBOM**, when a Go
+module appears in `go.sum` but the linker did not embed it in
+the compiled binary, I want it to STAY in the SBOM with metadata
+explaining its status, not be silently dropped. That way I can
+choose between (a) "everything the resolver touched" and (b)
+"only what shipped" with a single filter, instead of needing two
+scans to compare.
 
-**Why this priority**: This is the entire delivery. The G3 logic
-that closes the 63-vs-40 gap already exists and works correctly;
-users just don't know to fire it.
+**Why this priority**: Direct user-stated requirement (verbatim:
+"I just want to make sure we include these dependencies but with
+the right metadata showing they're dev dependencies or not
+included in the binary"). The current drop behavior actively
+loses information.
 
-**Independent Test**: `mikebom sbom scan --path
-~/Projects/iac/app-code/apigatewayv2/config` (with the binary NOT
-present) → stderr contains a one-line hint mentioning `go build`.
-Same scan with the binary present → no hint emitted (G3 already
-fired and the SBOM is BuildInfo-tight).
+**Independent Test**: Run `mikebom sbom scan --path
+<go-project-with-binary>`. Assert: (a) component count equals
+the full go.sum closure, (b) at least one component carries
+`mikebom:not-linked = true`, (c) the `(name, version)` tuples
+of components without that annotation match the binary's
+BuildInfo output (`go version -m`).
 
 **Acceptance Scenarios**:
 
-1. **Given** a Go project at `--path` with `go.mod` + `go.sum`
-   but no built binary,
+1. **Given** a Go project with both `go.mod`/`go.sum` AND a
+   built binary in the rootfs,
    **When** I run `mikebom sbom scan --path .`,
-   **Then** stderr contains a `tracing::info` log line naming
-   the gap and suggesting `go build` for a tighter SBOM.
+   **Then** every go.sum entry is emitted as an SBOM component,
+   AND entries not in the binary's BuildInfo carry
+   `mikebom:not-linked = true`, AND entries in the binary's
+   BuildInfo do NOT carry that property.
 
-2. **Given** a Go project at `--path` with both `go.mod`/`go.sum`
-   AND a built binary in the rootfs,
+2. **Given** a Go project with only `go.mod`/`go.sum` (no
+   binary),
    **When** I run `mikebom sbom scan --path .`,
-   **Then** no hint is emitted (G3 fires; SBOM is already the
-   BuildInfo intersection).
+   **Then** every go.sum entry is emitted, none carry
+   `mikebom:not-linked` (no BuildInfo to compare against), AND
+   stderr contains a hint about running `go build` for the
+   richer classification.
 
-3. **Given** a non-Go project at `--path`,
-   **When** I run `mikebom sbom scan --path .`,
-   **Then** no Go-related hint is emitted (the diagnostic is
-   gated on Go reader having parsed at least one go.mod).
+3. **Given** a container image with both Go binaries and
+   go.sum entries (existing `--image` flow),
+   **When** I run `mikebom sbom scan --image <tarball>`,
+   **Then** non-BuildInfo go.sum entries are tagged
+   (not dropped) — same behavior as `--path`.
 
 ---
 
-### User Story 2 - README + CLI reference document the workflow (Priority: P1)
+### User Story 2 - Discoverability hint when source-tree scan has no binary (Priority: P2)
+
+**As a developer running `mikebom sbom scan --path .`**, when I
+haven't built my Go project yet, I want mikebom to tell me that
+the SBOM I just got lacks BuildInfo classification and that
+running `go build` would let mikebom annotate non-linked
+entries.
+
+**Why this priority**: Closes the discoverability gap that
+prompted this milestone.
+
+**Independent Test**: `mikebom sbom scan --path
+<go-project-without-binary>` → stderr contains a one-line
+`tracing::info` mentioning `go build` and `mikebom:not-linked`.
+
+---
+
+### User Story 3 - README documents the workflow (Priority: P2)
 
 **As a new mikebom user reading the README**, I want the Go
-ecosystem section to explicitly explain that scanning a directory
-containing a built binary gives a tighter SBOM than scanning a
-source-only tree, and to point at the exact one-liner workflow
-(`go build && mikebom sbom scan --path .`).
+ecosystem section to explain the BuildInfo-vs-go.sum trade-off
+and the `mikebom:not-linked` annotation.
 
-**Why this priority**: Same motivation as US1 — this is the docs
-half of the discoverability gap.
-
-**Independent Test**: README's Go section (or `docs/cli-reference.md`)
-contains a paragraph naming BuildInfo, `go build`, and the
-expected component-count tightening. Search the docs for "BuildInfo"
-or "go build" → at least one hit in user-facing docs.
-
-**Acceptance Scenarios**:
-
-1. **Given** a user reading mikebom's README,
-   **When** they look up Go-scanning behavior,
-   **Then** they see the source-vs-binary trade-off named with
-   numbers (e.g., "63 from go.sum vs ~40 from BuildInfo on
-   typical projects") and the recommended workflow.
+**Independent Test**: README's Go-ecosystem subsection contains
+the words `mikebom:not-linked` and `go build` and a one-liner
+showing the consumer-side filter.
 
 ---
 
 ### Edge Cases
 
-- **Binary present but BuildInfo unreadable** (`-ldflags="-w -s"`
-  + `-buildid=` strip): `go_binary::read` already emits a
-  `mikebom:buildinfo-status` diagnostic. The new hint should
-  fire IFF `go_binary` returned ZERO entries with valid BuildInfo
-  — same condition as G3 no-op'ing.
-- **Multiple Go projects under `--path`**, some built, some not:
-  G3 already fires per-rootfs against the union of all binaries'
-  BuildInfo. Hint fires when zero binaries are found anywhere.
-- **`--image` scans**: hint MUST NOT fire (it's only meaningful
-  for source-tree scans where the user can run `go build`).
+- **Binary present but BuildInfo unreadable** (`-buildid=` strip):
+  G3 sees no analyzed-tier entries from that binary — `linked`
+  set is empty — G3 no-ops. Same as having no binary. The hint
+  in US2 fires.
+- **Multiple binaries with overlapping BuildInfo**: existing G3
+  union-of-all-binaries' BuildInfo behavior unchanged.
+- **Module in BuildInfo of binary A, not in BuildInfo of binary
+  B, with both binaries present**: under union semantics, the
+  module is "linked" (not tagged). That matches existing G3.
+- **Module already tagged `mikebom:dev-dependency = true`** (G4
+  test-only) and also not-linked: gets BOTH annotations. CDX
+  emits both as separate `properties[]` entries. Same for SPDX
+  2.3 / SPDX 3 annotations.
+- **Existing G6 cache-zip filter** (`apply_go_cache_zip_filter`
+  in `scan_fs/mod.rs:620`): out of scope. G6 drops cache-zip
+  path-resolver entries not in BuildInfo — different code path,
+  different semantic. A future milestone may revisit.
 
 ## Requirements
 
 ### Functional Requirements
 
-- **FR-001**: When `mikebom sbom scan --path <root>` parses at
-  least one `go.mod` (i.e., `go_signals.main_modules` is
-  non-empty) AND `go_binary::read` returns zero analyzed-tier
-  entries from the same rootfs, mikebom MUST emit a single
-  `tracing::info` log line naming the gap.
-- **FR-002**: The hint message MUST include (a) a count of the
-  source-tier Go entries that would be filtered out by G3 if
-  a binary were present, computed from `go.sum` closure size
-  vs. zero (use `go.sum` size as the upper bound),
-  (b) a literal `go build` suggestion, (c) a pointer to the
-  README section explaining the BuildInfo workflow.
-- **FR-003**: The hint MUST NOT fire on `--image` scans (where
-  the user has no opportunity to run `go build`).
-- **FR-004**: The hint MUST NOT fire on non-Go scans (no
-  `go.mod` parsed).
-- **FR-005**: The hint MUST NOT fire when at least one Go
-  binary's BuildInfo was successfully read (G3 already did
-  the right thing).
-- **FR-006**: README's Go ecosystem section MUST name the
-  BuildInfo workflow with concrete numbers and a one-line
-  command example.
-- **FR-007**: Existing behavior MUST be byte-identical for
-  every milestone-049 case: same default-mode SBOM, same
-  `--include-dev` SBOM, same 27 byte-identity goldens, same
-  11/11 holistic_parity.
+- **FR-001**: When `apply_go_linked_filter` (G3) finds at least
+  one analyzed-tier `pkg:golang` entry, every source-tier
+  `pkg:golang` entry whose `(name, version)` is NOT in the
+  analyzed set MUST be annotated with
+  `mikebom:not-linked = true` in `extra_annotations`. No source-
+  tier entry MUST be removed by G3.
+- **FR-002**: When G3's analyzed set is empty (no Go binary
+  scanned), G3 MUST be a no-op. No `mikebom:not-linked`
+  annotations get applied — there's no BuildInfo signal to
+  confirm or deny.
+- **FR-003**: The `mikebom:not-linked` annotation MUST appear in
+  CDX outputs as a `components[].properties[]` entry, in SPDX
+  2.3 outputs as a `packages[].annotations[]` entry, and in
+  SPDX 3 outputs as a top-level `annotations[]` entry — via the
+  existing generic `extra_annotations` serialization (no new
+  format-specific code).
+- **FR-004**: Hint emission (US2): when source-tree Go scan
+  finds `go.mod` but `go_binary_entries` is empty AND
+  `scan_mode == ScanMode::Path`, mikebom MUST log a
+  `tracing::info` line naming `mikebom:not-linked` and the
+  `go build` workflow.
+- **FR-005**: The hint MUST NOT fire on `--image` scans, on
+  non-Go projects, or when at least one Go binary's BuildInfo
+  was readable.
+- **FR-006**: README's Go ecosystem section MUST document the
+  `mikebom:not-linked` annotation with a consumer-side filter
+  example.
+- **FR-007**: Existing milestone-049 default-mode behavior
+  (test-only deps tagged + dropped via `mikebom:dev-dependency
+  = true` + `--include-dev=false`) MUST continue to work. A
+  module test-only AND not-linked carries both annotations.
+- **FR-008**: All 27 byte-identity goldens MUST stay
+  byte-identical: the `simple-module` Go fixture has no built
+  binary so G3 doesn't fire on it.
 
 ### Key Entities
 
-- **`go_signals.main_modules`**: existing `HashSet<String>` —
-  empty IFF no go.mod was parsed.
-- **`go_binary_entries.len()`**: existing — zero IFF no
-  BuildInfo-readable Go binary was found in the rootfs.
-- **scan-mode flag**: existing `crate::scan_fs::ScanMode` enum
-  carries Image vs. Path discrimination — used to gate the
-  hint to source-tree scans only.
+- **`PackageDbEntry.extra_annotations: BTreeMap<String,
+  serde_json::Value>`** (existing, milestone 048): the bag G3
+  inserts `mikebom:not-linked` into. Propagated to
+  `ResolvedComponent.extra_annotations` via
+  `scan_fs/mod.rs:523`.
+- **G3 filter** (`apply_go_linked_filter`): rewritten from
+  `entries.retain(linked)` to `for e in entries.iter_mut() { if
+  !linked.contains(...) { e.extra_annotations.insert(...) } }`.
+- **C-row catalog** (`docs/reference/sbom-format-mapping.md`):
+  add a row for `mikebom:not-linked` to document the parity
+  contract.
 
 ## Success Criteria
 
 ### Measurable Outcomes
 
 - **SC-001**: `mikebom sbom scan --path
-  ~/Projects/iac/app-code/apigatewayv2/config` (binary absent)
-  → stderr contains the new hint.
-- **SC-002**: Same path with binary present → no hint, SBOM
-  components ≤ 41 (BuildInfo intersection still fires).
-- **SC-003**: All 27 byte-identity goldens unchanged (the
-  `simple-module` Go fixture has no go.mod main-module activity
-  that triggers the new code path's `tracing::info` — and even
-  if it did, goldens don't capture stderr).
-- **SC-004**: All 14 `tests/scan_go.rs` integration tests pass
-  unchanged.
-- **SC-005**: `holistic_parity` 11/11 passes.
-- **SC-006**: At least one new integration test asserts the
-  hint fires (or doesn't) based on binary presence: synthetic
-  Go project, scan, capture stderr, assert hint substring
-  present/absent.
+  ~/Projects/iac/app-code/apigatewayv2/config` (binary in
+  rootfs) emits ≥ 60 components AND ≥ 20 of them carry
+  `mikebom:not-linked = true`. (Empirically: 65 components,
+  24 tagged.)
+- **SC-002**: Same path WITHOUT binary present: hint fires
+  (stderr contains `mikebom:not-linked` substring), full
+  go.sum closure emitted (≥ 50 components per milestone 049).
+- **SC-003**: `--image` scans: byte-identical to milestone
+  049 EXCEPT for the new annotation appearing on previously-
+  dropped entries. Existing image-scan integration tests pass
+  with updated drop→tag assertions.
+- **SC-004**: All 27 byte-identity goldens unchanged.
+- **SC-005**: All 16+ `tests/scan_go.rs` integration tests
+  pass (14 existing + 2 new from this milestone).
+- **SC-006**: `holistic_parity` 11/11 passes — the
+  `mikebom:not-linked` annotation appears identically in CDX,
+  SPDX 2.3, and SPDX 3 outputs via existing generic wiring.
 - **SC-007**: `pre-pr.sh` clean.
-- **SC-008**: CI lanes green (3 lanes).
+- **SC-008**: 3 CI lanes green.
 
 ## Assumptions
 
-- Users running `mikebom sbom scan --path` on a Go project who
-  haven't built the binary yet would WANT to know they're getting
-  a wider SBOM than what would ship. Validated by the user
-  surfacing exactly this question in the conversation that
-  produced this milestone.
-- A `tracing::info` log line is a sufficient surface area —
-  mikebom already emits scan-progress info to stderr, users
-  see them, and the existing alpha-stage UX has set this
-  expectation. Not adding stdout output (would risk breaking
-  pipelines that consume `--output -`).
-- README + `cli-reference.md` are the right docs to update;
-  no new docs file needed.
-- The hint is a one-shot emission per scan (not per-go.mod
-  found) — multi-project rootfs with no binaries gets one
-  hint, not N.
+- The existing milestone-049 design philosophy ("emit
+  everything; tag liberally; drop on opt-in flag") is the
+  right pattern; G3 should conform to it. Validated by the
+  user's verbatim ask to "include these dependencies".
+- Reusing the `extra_annotations` bag (vs. adding a typed
+  field on `PackageDbEntry`) keeps the milestone scope tight
+  and matches the milestone-048 pattern.
+- "Cache-zip not in BuildInfo" (G6, `apply_go_cache_zip_filter`)
+  is a separate semantic from "go.sum not in BuildInfo" (G3).
+  Updating G6 to tag-don't-drop is out of scope; tracked for
+  a future milestone if user demand emerges.
+- Building binaries on the user's behalf (auto-`go build`)
+  remains out of scope.

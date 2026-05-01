@@ -269,24 +269,30 @@ property, gated on bytecode-presence verification so
 declared-but-not-relocated ancestors do not inflate the SBOM. See
 [`specs/009-maven-shade-deps/spec.md`](specs/009-maven-shade-deps/spec.md).
 
-**Go: build the binary first for a tighter SBOM.** A source-only
-scan (`mikebom sbom scan --path .` on a Go project before
-`go build`) emits the full `go.sum` closure — every module the
-resolver ever fetched, including build-tag alternatives the linker
-DCE'd and test scaffolding never linked. On
-`apigatewayv2/config` (typical service): 63 modules from go.sum
-vs. 41 from BuildInfo. To get the BuildInfo-tight SBOM, just build
-your binary first; mikebom auto-detects it and intersects go.sum
-against `runtime/debug.BuildInfo`:
+**Go: build the binary for richer per-component classification.**
+A source-only scan (`mikebom sbom scan --path .` on a Go project
+before `go build`) emits the full `go.sum` closure — every module
+the resolver ever fetched, including build-tag alternatives the
+linker DCE'd and test scaffolding never linked. With the binary
+present, mikebom keeps the same components but annotates each one
+the linker didn't embed with `mikebom:not-linked = true`, so
+consumers get both the broad lockfile view AND a precise
+"what shipped" filter on a single SBOM. On `apigatewayv2/config`
+(typical service): 65 modules with binary, 24 of them carrying
+`mikebom:not-linked`; consumers wanting the binary-tight view
+filter on the property and see ~41:
 
 ```bash
 go build .                                    # produces ./apigatewayv2-config
 mikebom sbom scan --path . --output app.cdx.json
-# → 41 components (linker-DCE'd subset), not 63
+# → 65 components, 24 carrying mikebom:not-linked = true
+jq '[.components[] | select(.properties[]? | select(.name=="mikebom:not-linked") | not)]' app.cdx.json
+# → strict "what shipped" view (~41 components, no annotation noise)
 ```
 
 When no binary is found, mikebom emits a one-line `tracing::info`
-hint pointing you at this workflow.
+hint pointing you at this workflow — no `mikebom:not-linked` data
+is computed in that case.
 
 ## Quickstart
 

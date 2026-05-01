@@ -433,11 +433,35 @@ fn scan_go_source_plus_binary_filters_go_sum_to_linked_subset() {
     let sbom = scan_path(dir.path());
     let golang = golang_purls(&sbom);
 
-    // The never-linked module must NOT appear — it was in go.sum
-    // but not in BuildInfo.
+    // Milestone 050: the never-linked module IS retained (no longer
+    // dropped) and carries a `mikebom:not-linked = true` property
+    // identifying it as in-go.sum-but-not-in-BuildInfo. Consumers
+    // wanting the strict "what shipped" view filter on this property.
     assert!(
-        !golang.iter().any(|p| p.contains("never-linked/fake")),
-        "never-linked/fake must be dropped by G3 filter: {golang:?}",
+        golang.iter().any(|p| p.contains("never-linked/fake")),
+        "never-linked/fake must be RETAINED (milestone 050 — \
+         tagged not dropped): {golang:?}",
+    );
+    let fake_props = sbom["components"]
+        .as_array()
+        .expect("components")
+        .iter()
+        .find(|c| {
+            c["purl"]
+                .as_str()
+                .is_some_and(|p| p.contains("never-linked/fake"))
+        })
+        .and_then(|c| c["properties"].as_array())
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        fake_props.iter().any(|p| {
+            p["name"].as_str() == Some("mikebom:not-linked")
+                && (p["value"].as_str() == Some("true")
+                    || p["value"].as_bool() == Some(true))
+        }),
+        "never-linked/fake must carry mikebom:not-linked = true: \
+         props={fake_props:?}",
     );
 
     // The binary's BuildInfo modules (logrus, go-spew, etc.) DO
@@ -804,9 +828,10 @@ fn scan_go_source_only_emits_buildinfo_scope_hint() {
 
     let (_sbom, stderr) = scan_path_with_stderr(dir.path());
     assert!(
-        stderr.contains("no Go binary found alongside go.mod"),
+        stderr.contains("no Go binary found alongside go.mod")
+            && stderr.contains("mikebom:not-linked"),
         "SC-001: hint must fire when go.mod parsed but no binary \
-         present. stderr was: {stderr}",
+         present, naming the not-linked annotation. stderr was: {stderr}",
     );
 }
 

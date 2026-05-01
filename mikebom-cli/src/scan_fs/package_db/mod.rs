@@ -455,7 +455,22 @@ fn apply_go_main_module_filter(
     }
 }
 
-fn apply_go_linked_filter(entries: &mut Vec<PackageDbEntry>) {
+/// G3 (milestone 050 redesign): when a Go binary is present in the
+/// scanned rootfs, TAG every `pkg:golang` source-tier entry whose
+/// `(name, version)` is NOT in the binary's BuildInfo with a
+/// `mikebom:not-linked = true` property. The annotation tells SBOM
+/// consumers "this module was in go.sum but the linker did not embed
+/// it in the compiled binary in this rootfs" — a precise signal for
+/// scope-narrowing without throwing the data away.
+///
+/// Pre-milestone-050 behavior was to DROP non-linked entries (which
+/// silently lost data — consumers had no way to recover it). The
+/// new design preserves the data, lets consumers filter on the
+/// annotation, and aligns with the milestone 049 pattern of
+/// "tag-don't-drop" for test-only deps.
+///
+/// No-ops when no Go binary was scanned (linked set empty).
+fn apply_go_linked_filter(entries: &mut [PackageDbEntry]) {
     let linked: std::collections::HashSet<(String, String)> = entries
         .iter()
         .filter(|e| {
@@ -466,28 +481,30 @@ fn apply_go_linked_filter(entries: &mut Vec<PackageDbEntry>) {
         .collect();
     if linked.is_empty() {
         // No Go binary was scanned — pure source-tree path.
-        // Leave every go.sum entry in place.
+        // Nothing to tag against.
         return;
     }
-    let before = entries.len();
-    entries.retain(|e| {
+    let mut tagged = 0usize;
+    for e in entries.iter_mut() {
         if e.purl.ecosystem() != "golang" {
-            return true;
+            continue;
         }
         if e.sbom_tier.as_deref() != Some("source") {
-            // Analyzed-tier golang entries (the BuildInfo emissions
-            // themselves) pass through; anything without a tier
-            // is an edge case we don't filter aggressively.
-            return true;
+            continue;
         }
-        linked.contains(&(e.name.clone(), e.version.clone()))
-    });
-    let dropped = before.saturating_sub(entries.len());
-    if dropped > 0 {
+        if !linked.contains(&(e.name.clone(), e.version.clone())) {
+            e.extra_annotations.insert(
+                "mikebom:not-linked".to_string(),
+                serde_json::Value::Bool(true),
+            );
+            tagged += 1;
+        }
+    }
+    if tagged > 0 {
         tracing::info!(
-            dropped,
+            tagged,
             linked_count = linked.len(),
-            "G3 filter: dropped go.sum entries not confirmed by Go binary BuildInfo",
+            "G3 filter: tagged go.sum entries not confirmed by Go binary BuildInfo with mikebom:not-linked",
         );
     }
 }
@@ -699,13 +716,15 @@ pub fn read_all(
     apply_go_main_module_filter(&mut out, &main_modules);
 
     // Milestone 050: source-tree Go scan with go.mod parsed but no
-    // built Go binary present. The SBOM reflects the full go.sum
-    // closure (build-tag alternatives + test scaffolding included);
-    // running `go build` and re-scanning would let G3 filter to the
-    // BuildInfo intersection (typically 30-40% smaller). Emit a
-    // single tracing::info hint so users know to tighten their
-    // workflow. Gated to --path scans because --image scans don't
-    // give the user an opportunity to run `go build`.
+    // built Go binary present. Without a binary, mikebom can't
+    // distinguish modules that the linker actually embedded from
+    // modules that are merely in go.sum (build-tag alternatives,
+    // test scaffolding). When a binary IS present, G3 tags every
+    // non-BuildInfo go.sum entry with `mikebom:not-linked = true`
+    // so consumers can filter precisely. Emit a single
+    // tracing::info hint so users know to tighten their workflow.
+    // Gated to --path scans because --image scans don't give the
+    // user an opportunity to run `go build`.
     if !go_signals.main_modules.is_empty()
         && go_binary_entries_count == 0
         && matches!(scan_mode, crate::scan_fs::ScanMode::Path)
@@ -720,9 +739,9 @@ pub fn read_all(
         tracing::info!(
             go_modules = go_signals.main_modules.len(),
             go_sum_components,
-            "no Go binary found alongside go.mod — SBOM reflects \
-             the full go.sum closure. Run `go build` and re-scan \
-             to filter to the BuildInfo intersection.",
+            "no Go binary found alongside go.mod — every go.sum \
+             entry is emitted unmarked. Run `go build` and re-scan \
+             to annotate non-linked entries with mikebom:not-linked.",
         );
     }
 
@@ -928,12 +947,13 @@ Architecture: arm64
     }
 
     #[test]
-    fn g3_drops_go_sum_entries_without_buildinfo_match() {
-        // Three source-tier Go entries (from go.sum). Two
-        // analyzed-tier (from BuildInfo) — only `logrus` overlaps.
-        // Plus non-Go entries that must pass through untouched.
+    fn g3_tags_go_sum_entries_without_buildinfo_match() {
+        // Milestone 050: G3 tags non-BuildInfo entries with
+        // mikebom:not-linked rather than dropping them. Three
+        // source-tier Go entries (from go.sum). Two analyzed-tier
+        // (from BuildInfo) — only `logrus` overlaps. Plus non-Go
+        // entries that must pass through untouched.
         let mut entries = vec![
-            // go.sum emissions — source tier.
             make_entry(
                 "pkg:golang/github.com/davecgh/go-spew@v1.1.1",
                 "github.com/davecgh/go-spew",
@@ -952,7 +972,6 @@ Architecture: arm64
                 "v1.9.3",
                 Some("source"),
             ),
-            // BuildInfo emissions — analyzed tier.
             make_entry(
                 "pkg:golang/github.com/sirupsen/logrus@v1.9.3",
                 "github.com/sirupsen/logrus",
@@ -965,7 +984,6 @@ Architecture: arm64
                 "v0.0.0-20220715",
                 Some("analyzed"),
             ),
-            // Non-Go entries that must pass through unchanged.
             make_entry(
                 "pkg:maven/com.google.guava/guava@32.1.3-jre",
                 "guava",
@@ -982,27 +1000,51 @@ Architecture: arm64
 
         apply_go_linked_filter(&mut entries);
 
-        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
-        // Unmatched Go source-tier entries → dropped.
-        assert!(
-            !names.contains(&"github.com/davecgh/go-spew"),
-            "go-spew source-tier must drop (no BuildInfo match): {names:?}",
+        let lookup = |name: &str, tier: &str| -> Option<&PackageDbEntry> {
+            entries.iter().find(|e| {
+                e.name == name && e.sbom_tier.as_deref() == Some(tier)
+            })
+        };
+
+        // Milestone 050 FR-001: non-BuildInfo source-tier entries
+        // are TAGGED, not dropped.
+        let go_spew = lookup("github.com/davecgh/go-spew", "source")
+            .expect("go-spew source-tier must be retained (tagged, not dropped)");
+        assert_eq!(
+            go_spew.extra_annotations.get("mikebom:not-linked"),
+            Some(&serde_json::Value::Bool(true)),
+            "go-spew must carry mikebom:not-linked = true: \
+             extra_annotations={:?}",
+            go_spew.extra_annotations,
         );
-        assert!(
-            !names.contains(&"github.com/stretchr/testify"),
-            "testify source-tier must drop (no BuildInfo match): {names:?}",
+        let testify = lookup("github.com/stretchr/testify", "source")
+            .expect("testify source-tier must be retained (tagged, not dropped)");
+        assert_eq!(
+            testify.extra_annotations.get("mikebom:not-linked"),
+            Some(&serde_json::Value::Bool(true)),
         );
-        // Matched Go source-tier entry → kept.
+
+        // Matched source-tier entry → NOT tagged.
+        let logrus_source = lookup("github.com/sirupsen/logrus", "source")
+            .expect("logrus source-tier must be retained");
         assert!(
-            names.contains(&"github.com/sirupsen/logrus"),
-            "logrus source-tier must be kept (in BuildInfo): {names:?}",
+            !logrus_source
+                .extra_annotations
+                .contains_key("mikebom:not-linked"),
+            "logrus source-tier must NOT carry mikebom:not-linked \
+             (it's in BuildInfo): extra_annotations={:?}",
+            logrus_source.extra_annotations,
         );
-        // Analyzed-tier entries pass through.
+
+        // Analyzed-tier entries pass through (G3 only tags
+        // source-tier).
         assert!(
-            names.contains(&"golang.org/x/sys"),
-            "x/sys analyzed-tier must pass through: {names:?}",
+            lookup("golang.org/x/sys", "analyzed").is_some(),
+            "x/sys analyzed-tier must pass through",
         );
+
         // Non-Go entries untouched.
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
         assert!(names.contains(&"guava"), "maven must pass through: {names:?}");
         assert!(names.contains(&"serde"), "cargo must pass through: {names:?}");
     }

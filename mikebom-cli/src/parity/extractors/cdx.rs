@@ -423,6 +423,11 @@ cdx_anno!(c39_cdx, "mikebom:macho-codesign-team-id",    component);
 // (when no heuristic matches) absent.
 cdx_anno!(c40_cdx, "mikebom:component-role",            component);
 
+// C41 — not-linked classifier (milestone 050). Set on Go source-tier
+// components when a Go binary is also present in the rootfs AND the
+// binary's BuildInfo does NOT confirm the component as linked.
+cdx_anno!(c41_cdx, "mikebom:not-linked",                 component);
+
 // ============================================================
 // Section D — Evidence (D1, D2 — CDX-native shape)
 // ============================================================

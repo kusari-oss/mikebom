@@ -7,9 +7,27 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
-(Nothing yet. Land changes here, then cut a release per the
-`release.yml` workflow trigger documented in
-`docs/contributing/release.md`.)
+### Added
+
+- **SPDX-side document-level scope hint** (047). SPDX 2.3
+  `creationInfo.comment` and SPDX 3 `SpdxDocument.comment` now
+  carry a free-text scope summary naming the scope mode
+  (artifact vs manifest, derived from `--include-declared-deps`),
+  the observed lifecycle phases (mirroring CDX
+  `metadata.lifecycles[]`), and a pointer to the per-component
+  `mikebom:sbom-tier` annotation for finer-grained detail. SPDX
+  consumers reading metadata-only now get the same scope
+  context CDX consumers already had via
+  `metadata.lifecycles[]`. CDX output unchanged.
+- **README "What kind of SBOM does mikebom emit?" section**
+  (047). New top-level section between "Why" and "Install"
+  explaining mikebom's two scope axes (document-level
+  artifact-vs-manifest mode + per-component lifecycle tier),
+  how each format self-describes its scope, and how mikebom's
+  default scopes map to industry / NTIA-style terminology — so
+  operators comparing component counts to trivy / syft can see
+  the question being asked rather than wonder whether mikebom
+  is undercounting.
 
 ## [0.1.0-alpha.6] — 2026-04-29
 

@@ -873,6 +873,11 @@ pub async fn execute(
         include_dev,
         include_hashes: !args.no_hashes,
         include_source_files: true, // path-pattern evidence is the whole value prop here
+        scope_mode: if effective_include_declared_deps {
+            crate::generate::ScopeMode::Manifest
+        } else {
+            crate::generate::ScopeMode::Artifact
+        },
     };
     let output_cfg = OutputConfig {
         mikebom_version: env!("CARGO_PKG_VERSION"),

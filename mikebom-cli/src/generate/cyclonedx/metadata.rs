@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 
 use chrono::Utc;
 use mikebom_common::attestation::integrity::TraceIntegrity;
@@ -30,21 +29,6 @@ fn cpe_sanitize(raw: &str) -> String {
     out
 }
 
-/// Map a `mikebom:sbom-tier` value (per research.md R13) to its
-/// corresponding CycloneDX 1.5+ `lifecycles[].phase` value. Returns
-/// `None` for unrecognised tier strings so unknown tiers don't pollute
-/// the envelope declaration.
-fn tier_to_lifecycle_phase(tier: &str) -> Option<&'static str> {
-    match tier {
-        "build" => Some("build"),
-        "deployed" => Some("operations"),
-        "analyzed" => Some("post-build"),
-        "source" => Some("pre-build"),
-        "design" => Some("design"),
-        _ => None,
-    }
-}
-
 /// Build the CycloneDX `metadata` section.
 ///
 /// Includes:
@@ -74,19 +58,14 @@ pub fn build_metadata(
         .unwrap_or_else(|| "unknown".to_string());
 
     // Aggregate lifecycle phases from the observed component tiers.
-    // BTreeSet → sorted, deterministic output.
-    let mut phases: BTreeSet<&'static str> = BTreeSet::new();
-    for c in components {
-        if let Some(ref tier) = c.sbom_tier {
-            if let Some(phase) = tier_to_lifecycle_phase(tier) {
-                phases.insert(phase);
-            }
-        }
-    }
-    let lifecycles: Vec<serde_json::Value> = phases
-        .into_iter()
-        .map(|p| json!({"phase": p}))
-        .collect();
+    // Source-of-truth lives in `crate::generate::lifecycle_phases`
+    // so the SPDX serializers' document-level scope comment uses the
+    // same phase set.
+    let lifecycles: Vec<serde_json::Value> =
+        crate::generate::lifecycle_phases::aggregate_phases(components)
+            .into_iter()
+            .map(|p| json!({"phase": p}))
+            .collect();
 
     let mut properties = vec![json!({
         "name": "mikebom:generation-context",

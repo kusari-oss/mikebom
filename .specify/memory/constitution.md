@@ -2,25 +2,38 @@
   ============================================================
   SYNC IMPACT REPORT
   ============================================================
-  Version change: 1.3.0 → 1.3.1
-  Bump rationale: PATCH — pre-PR Verification table updated to
-  reflect the post-milestone-016 zero-warnings baseline. The
-  clippy invocation now carries `-- -D warnings`; the passing
-  condition becomes "Zero errors and zero warnings." A new
-  paragraph immediately after the table clarifies the deliberate
-  divergence with the Build & Test Commands quick-reference at
-  line 346 (`--all-targets --all-features` for thorough local
-  linting vs. `--workspace --all-targets` matching CI exactly) so
-  future contributors don't mistake the two for redundant copies.
+  Version change: 1.3.1 → 1.4.0
+  Bump rationale: MINOR — Principle V (Specification Compliance)
+  gains a new normative bullet codifying "standards-native
+  fields take precedence over `mikebom:`-prefixed properties".
+  Every spec proposing a new `mikebom:*` property, annotation,
+  or relationship type MUST first audit the target formats for
+  an existing native construct carrying the same semantic, and
+  reviewers MUST reject specs that don't. Prompted by milestone
+  052 (lifecycle-dep-scope), where the alpha.9
+  `mikebom:dev-dependency` annotation was found to reinvent
+  CDX `scope` + SPDX 2.3 `DEV/BUILD/TEST_DEPENDENCY_OF` + SPDX
+  3 `LifecycleScopeType` — all three formats had the native
+  field, mikebom had silently used a custom property.
 
   Modified sections:
-    - Pre-PR Verification table: clippy command + passing condition.
-    - One new explanatory paragraph after the table.
+    - Principle V (Specification Compliance): new fifth bullet
+      + new paragraph in the Rationale.
 
   Added sections: none
   Removed sections: none
 
   Previous SYNC IMPACT history:
+    - 1.3.0 → 1.3.1: PATCH — pre-PR Verification table updated to
+      reflect the post-milestone-016 zero-warnings baseline. The
+      clippy invocation now carries `-- -D warnings`; the passing
+      condition becomes "Zero errors and zero warnings." A new
+      paragraph immediately after the table clarifies the
+      deliberate divergence with the Build & Test Commands
+      quick-reference at line 346 (`--all-targets --all-features`
+      for thorough local linting vs. `--workspace --all-targets`
+      matching CI exactly) so future contributors don't mistake
+      the two for redundant copies.
     - 1.2.1 → 1.3.0: MINOR — Principle V (Specification Compliance)
       materially expanded. The SPDX bullet now permits both SPDX 2.3
       and SPDX 3.x (instead of pinning SPDX 3.1, which is currently
@@ -135,6 +148,22 @@ Generated SBOMs MUST strictly conform to:
 - **PURL Specification** — every Package URL emitted MUST
   conform to the PURL spec. Invalid PURLs MUST NOT appear
   in output.
+- **Standards-native fields take precedence over `mikebom:`-
+  prefixed properties.** Before introducing any new
+  `mikebom:*` property, annotation, or relationship type,
+  every spec MUST audit each target format for an existing
+  native construct that carries the same semantic. If one
+  exists, mikebom MUST use the native construct as the
+  primary signal; a `mikebom:*` property is permitted ONLY
+  to carry finer-grained information the standard does not
+  express, or to bridge a parity gap when one format has the
+  native field but another doesn't (in which case the
+  parity-bridging `mikebom:*` annotation MUST be documented
+  in `docs/reference/sbom-format-mapping.md` with a
+  justification clause naming the missing native field).
+  Spec authors MUST cite the audit result in the spec's
+  Functional Requirements; reviewers MUST reject specs that
+  introduce a `mikebom:*` field without it.
 
 Conformance applies to the SBOM envelope and to every
 sub-element within it. Non-compliant output at any level is
@@ -152,6 +181,16 @@ stable, 3.1-rc1 in flight) is the forward path. Permitting
 both lets mikebom serve current adopters without locking
 out future ones; the experimental-labeling requirement
 preserves consumer trust during the transition.
+
+The standards-native-precedence requirement keeps mikebom
+output interoperable with every SBOM-aware tool, not just
+mikebom-aware ones — and prevents the catalog from
+accumulating `mikebom:*` annotations that reinvent
+constructs the format already provides. Milestone 049's
+`mikebom:dev-dependency` annotation (later removed by
+milestone 052 in favor of CDX `scope`, SPDX 2.3
+`DEV/BUILD/TEST_DEPENDENCY_OF`, and SPDX 3
+`LifecycleScopeType`) is the canonical motivating case.
 
 ### VI. Three-Crate Architecture
 
@@ -430,4 +469,4 @@ changes do not violate any principle. Violations require
 either a code fix or a constitution amendment — never silent
 deviation.
 
-**Version**: 1.3.1 | **Ratified**: 2026-04-15 | **Last Amended**: 2026-04-25
+**Version**: 1.4.0 | **Ratified**: 2026-04-15 | **Last Amended**: 2026-05-01

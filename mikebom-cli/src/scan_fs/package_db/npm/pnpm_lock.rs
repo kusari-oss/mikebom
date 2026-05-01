@@ -99,7 +99,7 @@ pub(crate) fn parse_pnpm_lock(
             depends,
             maintainer: None,
             licenses: Vec::new(),
-            is_dev: Some(is_dev),
+            lifecycle_scope: if is_dev { Some(mikebom_common::resolution::LifecycleScope::Development) } else { Some(mikebom_common::resolution::LifecycleScope::Runtime) },
             requirement_range: None,
             source_type: None,
             buildinfo_status: None,

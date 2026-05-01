@@ -144,7 +144,7 @@ pub fn annotate_component(
     // C6 dev-dependency — same gate as CDX: only when include_dev
     // AND the component is dev-flagged. (Relationship direction is
     // also handled by B2's DEV_DEPENDENCY_OF edge in relationships.rs.)
-    if include_dev && c.is_dev == Some(true) {
+    if include_dev && mikebom_common::resolution::lifecycle_scope_is_legacy_dev(&c.lifecycle_scope) {
         push(&mut out, "mikebom:dev-dependency", json!("true"));
     }
     // C7 co-owned-by

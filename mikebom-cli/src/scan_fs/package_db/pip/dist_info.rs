@@ -217,7 +217,7 @@ impl PipDistInfoEntry {
             depends,
             maintainer: supplier,
             licenses,
-            is_dev: None, // venv dist-info doesn't carry a dev/prod marker
+            lifecycle_scope: None, // venv dist-info doesn't carry a dev/prod marker
             requirement_range: None,
             source_type: None,
             buildinfo_status: None,

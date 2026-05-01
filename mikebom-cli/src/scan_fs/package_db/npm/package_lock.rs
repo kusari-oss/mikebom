@@ -115,7 +115,7 @@ pub(crate) fn parse_package_lock(
                 })
                 .into_iter()
                 .collect(),
-            is_dev: Some(is_dev),
+            lifecycle_scope: if is_dev { Some(mikebom_common::resolution::LifecycleScope::Development) } else { Some(mikebom_common::resolution::LifecycleScope::Runtime) },
             requirement_range: None,
             source_type: None,
             buildinfo_status: None,
@@ -206,7 +206,7 @@ mod tests {
         assert_eq!(out[0].name, "lodash");
         assert_eq!(out[0].version, "4.17.21");
         assert_eq!(out[0].sbom_tier.as_deref(), Some("source"));
-        assert_eq!(out[0].is_dev, Some(false));
+        assert_eq!(out[0].lifecycle_scope, Some(mikebom_common::resolution::LifecycleScope::Runtime));
         // Hash extraction is covered by `integrity_round_trips_to_content_hash`;
         // once PackageDbEntry gains a hashes field we re-assert here.
     }
@@ -221,7 +221,7 @@ mod tests {
         });
         let out = parse_package_lock(&src, "/package-lock.json", true);
         assert_eq!(out.len(), 1);
-        assert_eq!(out[0].is_dev, Some(true));
+        assert_eq!(out[0].lifecycle_scope, Some(mikebom_common::resolution::LifecycleScope::Development));
     }
 
     #[test]

@@ -537,7 +537,7 @@ pub(crate) fn build_entries_from_go_module(
             depends,
             maintainer: None,
             licenses: Vec::new(),
-            is_dev: None,
+            lifecycle_scope: None,
             requirement_range: None,
             source_type: None,
             buildinfo_status: None,

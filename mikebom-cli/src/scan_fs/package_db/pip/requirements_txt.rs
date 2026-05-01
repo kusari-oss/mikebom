@@ -92,7 +92,7 @@ impl RequirementsTxtEntry {
             depends: Vec::new(),
             maintainer: None,
             licenses: Vec::new(),
-            is_dev: None,
+            lifecycle_scope: None,
             requirement_range: Some(self.range_spec),
             source_type: self.source_type,
             buildinfo_status: None,

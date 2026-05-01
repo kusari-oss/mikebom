@@ -369,7 +369,7 @@ fn parse_stanza_inner(
         // distinction or range spec, and the source is always the
         // registry (never local/git/url).
         licenses: Vec::new(),
-        is_dev: None,
+        lifecycle_scope: None,
         requirement_range: None,
         source_type: None,
         buildinfo_status: None,

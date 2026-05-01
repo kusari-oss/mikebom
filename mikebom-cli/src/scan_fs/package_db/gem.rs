@@ -264,7 +264,7 @@ fn spec_to_entry(
         depends,
         maintainer: None,
         licenses: Vec::new(),
-        is_dev: None,
+        lifecycle_scope: None,
         requirement_range: None,
         source_type,
         buildinfo_status: None,
@@ -306,7 +306,7 @@ fn gemspec_to_entry(
         depends: Vec::new(),
         maintainer: authors.map(|s| s.to_string()),
         licenses: Vec::new(),
-        is_dev: None,
+        lifecycle_scope: None,
         requirement_range: None,
         source_type: Some("installed-gemspec".to_string()),
         buildinfo_status: None,
@@ -644,7 +644,7 @@ pub fn read(rootfs: &Path, include_dev: bool) -> Vec<PackageDbEntry> {
             };
             // Tag dev: not in prod-reachable set.
             if !prod_set.contains(&spec.name) {
-                entry.is_dev = Some(true);
+                entry.lifecycle_scope = Some(mikebom_common::resolution::LifecycleScope::Development);
                 tagged_dev += 1;
                 if !include_dev {
                     dropped += 1;

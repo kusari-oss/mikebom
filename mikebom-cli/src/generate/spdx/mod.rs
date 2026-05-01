@@ -286,7 +286,7 @@ mod tests {
             cpes: vec![],
             advisories,
             occurrences: vec![],
-            is_dev: None,
+            lifecycle_scope: None,
             requirement_range: None,
             source_type: None,
             sbom_tier: None,

@@ -121,7 +121,7 @@ impl PythonStdlibCollapser {
                     depends: Vec::new(),
                     maintainer: None,
                     licenses: vec![],
-                    is_dev: None,
+                    lifecycle_scope: None,
                     requirement_range: None,
                     source_type: None,
                     sbom_tier: Some("analyzed".to_string()),

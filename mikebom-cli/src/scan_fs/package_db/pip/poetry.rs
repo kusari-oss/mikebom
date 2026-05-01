@@ -61,10 +61,19 @@ pub(crate) fn parse_poetry_lock(
         // Dev detection:
         // v1: `category = "main"` (prod) / `"dev"` (dev)
         // v2+: `groups = ["main", ...]` — prod if "main" is present.
-        let is_dev = poetry_is_dev(tbl);
+        // Milestone 052 rename: poetry_is_dev returns the legacy
+        // boolean; map to LifecycleScope below.
+        let legacy_is_dev = poetry_is_dev(tbl);
+        let lifecycle_scope = match legacy_is_dev {
+            Some(true) => Some(mikebom_common::resolution::LifecycleScope::Development),
+            Some(false) => Some(mikebom_common::resolution::LifecycleScope::Runtime),
+            None => None,
+        };
 
         // Honour the dev filter at source.
-        if is_dev == Some(true) && !include_dev {
+        if matches!(lifecycle_scope, Some(mikebom_common::resolution::LifecycleScope::Development))
+            && !include_dev
+        {
             continue;
         }
 
@@ -100,7 +109,7 @@ pub(crate) fn parse_poetry_lock(
             depends,
             maintainer: None,
             licenses: Vec::new(),
-            is_dev,
+            lifecycle_scope,
             requirement_range: None,
             source_type: None,
             // Lockfile entries are pre-build declarations of what WILL
@@ -182,7 +191,7 @@ lock-version = "1.1"
         let out = parse_poetry_lock(&parsed, "/poetry.lock", /*include_dev=*/ false);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].name, "requests");
-        assert_eq!(out[0].is_dev, Some(false));
+        assert_eq!(out[0].lifecycle_scope, Some(mikebom_common::resolution::LifecycleScope::Runtime));
         assert_eq!(out[0].sbom_tier.as_deref(), Some("source"));
     }
 
@@ -206,7 +215,7 @@ lock-version = "1.1"
         let out = parse_poetry_lock(&parsed, "/poetry.lock", true);
         assert_eq!(out.len(), 2);
         let pytest = out.iter().find(|e| e.name == "pytest").expect("pytest present");
-        assert_eq!(pytest.is_dev, Some(true));
+        assert_eq!(pytest.lifecycle_scope, Some(mikebom_common::resolution::LifecycleScope::Development));
     }
 
     #[test]
@@ -230,8 +239,8 @@ lock-version = "2.0"
         assert_eq!(out.len(), 2);
         let req = out.iter().find(|e| e.name == "requests").unwrap();
         let pyt = out.iter().find(|e| e.name == "pytest").unwrap();
-        assert_eq!(req.is_dev, Some(false));
-        assert_eq!(pyt.is_dev, Some(true));
+        assert_eq!(req.lifecycle_scope, Some(mikebom_common::resolution::LifecycleScope::Runtime));
+        assert_eq!(pyt.lifecycle_scope, Some(mikebom_common::resolution::LifecycleScope::Development));
     }
 
     #[test]

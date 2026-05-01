@@ -626,6 +626,10 @@ pub fn read_all(
         #[cfg(unix)]
         &claimed_inodes,
     );
+    // Milestone 050: capture binary count BEFORE moving entries
+    // into `out`, for the source-tree-no-binary scope hint emitted
+    // after the G3/G4/G5 chain finishes.
+    let go_binary_entries_count = go_binary_entries.len();
     out.extend(go_binary_entries);
     // Milestone 004 US1: standalone `.rpm` artefact reader (stub until
     // T015–T018 land). No-op today; wiring in place so the dispatcher
@@ -693,6 +697,34 @@ pub fn read_all(
         .cloned()
         .collect();
     apply_go_main_module_filter(&mut out, &main_modules);
+
+    // Milestone 050: source-tree Go scan with go.mod parsed but no
+    // built Go binary present. The SBOM reflects the full go.sum
+    // closure (build-tag alternatives + test scaffolding included);
+    // running `go build` and re-scanning would let G3 filter to the
+    // BuildInfo intersection (typically 30-40% smaller). Emit a
+    // single tracing::info hint so users know to tighten their
+    // workflow. Gated to --path scans because --image scans don't
+    // give the user an opportunity to run `go build`.
+    if !go_signals.main_modules.is_empty()
+        && go_binary_entries_count == 0
+        && matches!(scan_mode, crate::scan_fs::ScanMode::Path)
+    {
+        let go_sum_components = out
+            .iter()
+            .filter(|e| {
+                e.purl.ecosystem() == "golang"
+                    && e.sbom_tier.as_deref() == Some("source")
+            })
+            .count();
+        tracing::info!(
+            go_modules = go_signals.main_modules.len(),
+            go_sum_components,
+            "no Go binary found alongside go.mod — SBOM reflects \
+             the full go.sum closure. Run `go build` and re-scan \
+             to filter to the BuildInfo intersection.",
+        );
+    }
 
     Ok(DbScanResult {
         entries: out,

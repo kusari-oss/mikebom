@@ -269,6 +269,25 @@ property, gated on bytecode-presence verification so
 declared-but-not-relocated ancestors do not inflate the SBOM. See
 [`specs/009-maven-shade-deps/spec.md`](specs/009-maven-shade-deps/spec.md).
 
+**Go: build the binary first for a tighter SBOM.** A source-only
+scan (`mikebom sbom scan --path .` on a Go project before
+`go build`) emits the full `go.sum` closure — every module the
+resolver ever fetched, including build-tag alternatives the linker
+DCE'd and test scaffolding never linked. On
+`apigatewayv2/config` (typical service): 63 modules from go.sum
+vs. 41 from BuildInfo. To get the BuildInfo-tight SBOM, just build
+your binary first; mikebom auto-detects it and intersects go.sum
+against `runtime/debug.BuildInfo`:
+
+```bash
+go build .                                    # produces ./apigatewayv2-config
+mikebom sbom scan --path . --output app.cdx.json
+# → 41 components (linker-DCE'd subset), not 63
+```
+
+When no binary is found, mikebom emits a one-line `tracing::info`
+hint pointing you at this workflow.
+
 ## Quickstart
 
 Produce a CycloneDX 1.6 SBOM from any source tree:

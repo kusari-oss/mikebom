@@ -741,3 +741,86 @@ fn scan_go_cache_zip_alone_is_retained_when_no_binary() {
          BuildInfo contradicts: {golang:?}",
     );
 }
+
+// --- Milestone 050: BuildInfo-vs-go.sum scope hint --------------------
+
+/// Helper that mirrors `scan_path` but returns stderr alongside the
+/// SBOM. Needed for the milestone-050 hint test, which asserts on
+/// the `tracing::info` line rather than SBOM content.
+fn scan_path_with_stderr(path: &std::path::Path) -> (serde_json::Value, String) {
+    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let tmp = tempfile::NamedTempFile::new().expect("tempfile");
+    let out_path = tmp.path().to_path_buf();
+    let output = Command::new(bin)
+        .arg("--offline")
+        .arg("sbom")
+        .arg("scan")
+        .arg("--path")
+        .arg(path)
+        .arg("--output")
+        .arg(&out_path)
+        .arg("--no-deep-hash")
+        .output()
+        .expect("mikebom should run");
+    assert!(
+        output.status.success(),
+        "scan failed: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let raw = std::fs::read_to_string(&out_path).expect("read sbom");
+    let sbom = serde_json::from_str(&raw).expect("valid JSON");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    (sbom, stderr)
+}
+
+#[test]
+fn scan_go_source_only_emits_buildinfo_scope_hint() {
+    // Milestone 050 SC-001: when `mikebom sbom scan --path` finds a
+    // go.mod but no built Go binary in the rootfs, emit a hint
+    // explaining the SBOM scope and how to tighten it via
+    // `go build` + the existing G3 BuildInfo intersection.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let app = dir.path().join("app");
+    std::fs::create_dir_all(&app).unwrap();
+    std::fs::write(
+        app.join("go.mod"),
+        "module example.com/m050\n\
+         go 1.22\n\
+         require github.com/sirupsen/logrus v1.9.4\n",
+    )
+    .unwrap();
+    std::fs::write(
+        app.join("go.sum"),
+        "github.com/sirupsen/logrus v1.9.4 h1:fake/sha==\n",
+    )
+    .unwrap();
+    std::fs::write(
+        app.join("main.go"),
+        "package main\n\
+         import \"github.com/sirupsen/logrus\"\n\
+         func main() { logrus.Info(\"hi\") }\n",
+    )
+    .unwrap();
+
+    let (_sbom, stderr) = scan_path_with_stderr(dir.path());
+    assert!(
+        stderr.contains("no Go binary found alongside go.mod"),
+        "SC-001: hint must fire when go.mod parsed but no binary \
+         present. stderr was: {stderr}",
+    );
+}
+
+#[test]
+fn scan_go_non_go_project_does_not_emit_buildinfo_hint() {
+    // Milestone 050 FR-004: hint MUST NOT fire when no go.mod is
+    // parsed (i.e., not a Go project). The scan-mode condition is
+    // gated on `go_signals.main_modules` being non-empty.
+    let dir = tempfile::tempdir().expect("tempdir");
+    // Empty rootfs — nothing for the Go reader to find.
+    let (_sbom, stderr) = scan_path_with_stderr(dir.path());
+    assert!(
+        !stderr.contains("no Go binary found alongside go.mod"),
+        "FR-004: hint must NOT fire on non-Go scans. stderr was: \
+         {stderr}",
+    );
+}

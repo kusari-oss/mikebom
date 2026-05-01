@@ -7,9 +7,23 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
-(Nothing yet. Land changes here, then cut a release per the
-`release.yml` workflow trigger documented in
-`docs/contributing/release.md`.)
+### Added
+
+- **Source-tree Go scan: BuildInfo-scope hint when no binary is
+  present** (milestone 050). When `mikebom sbom scan --path
+  <go-project>` finds a `go.mod` but the rootfs has no built Go
+  binary, mikebom now emits a one-line `tracing::info` log
+  explaining that the SBOM reflects the full `go.sum` closure
+  (including DCE'd build-tag alternatives + test scaffolding)
+  and pointing at the workflow that tightens it: `go build`,
+  then re-scan. The existing G3 filter
+  (`apply_go_linked_filter`) already intersects go.sum entries
+  against `runtime/debug.BuildInfo` when both are present in the
+  rootfs — this milestone is purely a discoverability fix, no
+  behavior change. README's ecosystem section documents the
+  workflow with the `apigatewayv2/config` audit numbers
+  (63 source-only → 41 with binary). No new flag, no new
+  annotation, no goldens churn.
 
 ## [0.1.0-alpha.9] — 2026-05-01
 

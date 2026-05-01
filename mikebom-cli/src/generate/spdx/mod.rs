@@ -346,6 +346,7 @@ mod tests {
             include_dev: false,
             include_hashes: true,
             include_source_files: false,
+            scope_mode: crate::generate::ScopeMode::Artifact,
         }
     }
 

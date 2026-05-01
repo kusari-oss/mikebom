@@ -119,7 +119,7 @@ pub struct SpdxExternalDocumentRef {
     pub checksum: super::packages::SpdxChecksum,
 }
 
-/// SPDX 2.3 `creationInfo` object (spec §6.8 / §6.9).
+/// SPDX 2.3 `creationInfo` object (spec §6.8 / §6.9 / §6.13).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CreationInfo {
     /// RFC 3339 UTC timestamp — sourced from `OutputConfig.created`,
@@ -131,6 +131,14 @@ pub struct CreationInfo {
     pub creators: Vec<String>,
     #[serde(rename = "licenseListVersion", skip_serializing_if = "Option::is_none")]
     pub license_list_version: Option<String>,
+    /// SPDX 2.3 §6.13 free-text `comment` slot. mikebom populates it
+    /// with a document-level scope hint (scope mode + observed
+    /// lifecycle phases + pointer to per-component
+    /// `mikebom:sbom-tier` annotations) so SPDX consumers reading
+    /// only `creationInfo` get parity with CDX consumers reading
+    /// `metadata.lifecycles[]`. Milestone 047.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }
 
 /// SPDX 2.3 top-level document (spec §6).
@@ -297,6 +305,7 @@ pub fn build_document(
             "Organization: mikebom contributors".to_string(),
         ],
         license_list_version: None,
+        comment: Some(build_scope_comment(artifacts)),
     };
 
     // Document-level mikebom annotations (Sections C21–C23 + E1).
@@ -317,6 +326,37 @@ pub fn build_document(
         has_extracted_licensing_infos,
         document_describes: vec![root_id],
     }
+}
+
+/// Build the document-level scope-hint string for SPDX 2.3
+/// `creationInfo.comment` and SPDX 3 `SpdxDocument.comment`
+/// (milestone 047). Names the scope mode (artifact vs manifest),
+/// the observed CDX-style lifecycle phases (sorted
+/// lexicographically via the `lifecycle_phases::aggregate_phases`
+/// helper), and a pointer to the per-component
+/// `mikebom:sbom-tier` annotation for finer-grained scope detail.
+///
+/// Always returns a string. When no component carries a tier
+/// (atypical), the phases-list line degrades to "no lifecycle
+/// phases observed" rather than omitting the whole comment, so
+/// downstream consumers can rely on the field being present.
+pub(super) fn build_scope_comment(scan: &ScanArtifacts<'_>) -> String {
+    use crate::generate::ScopeMode;
+
+    let mode = match scan.scope_mode {
+        ScopeMode::Artifact => "artifact (on-disk components only)",
+        ScopeMode::Manifest => "manifest (declared transitives included)",
+    };
+    let phases = crate::generate::lifecycle_phases::aggregate_phases(scan.components);
+    let phases_text = if phases.is_empty() {
+        "no lifecycle phases observed".to_string()
+    } else {
+        phases.join(", ")
+    };
+    format!(
+        "Scope: {mode}. Observed lifecycle phases: {phases_text}. \
+         Per-component scope detail in mikebom:sbom-tier annotations."
+    )
 }
 
 /// Deterministically derive a synthetic-root SPDXID and a
@@ -487,6 +527,7 @@ mod tests {
             include_dev: false,
             include_hashes: true,
             include_source_files: false,
+            scope_mode: crate::generate::ScopeMode::Artifact,
         }
     }
 
@@ -563,6 +604,72 @@ mod tests {
             ns.as_str().starts_with(NAMESPACE_BASE),
             "namespace {} should start with {NAMESPACE_BASE}",
             ns.as_str()
+        );
+    }
+
+    /// Test helper: build a component with a specific `sbom_tier`
+    /// for the `build_scope_comment` tests below.
+    fn mk_component_with_tier(
+        purl: &str,
+        tier: Option<&str>,
+    ) -> ResolvedComponent {
+        let mut c = mk_component(purl, "x", "1");
+        c.sbom_tier = tier.map(|s| s.to_string());
+        c
+    }
+
+    #[test]
+    fn build_scope_comment_emits_artifact_mode_with_phases() {
+        let integ = empty_integrity();
+        let comps = vec![
+            mk_component_with_tier("pkg:cargo/a@1", Some("build")),
+            mk_component_with_tier("pkg:cargo/b@1", Some("deployed")),
+            mk_component_with_tier("pkg:cargo/c@1", Some("analyzed")),
+        ];
+        let mut arts = mk_artifacts("demo", &comps, &[], &integ);
+        arts.scope_mode = crate::generate::ScopeMode::Artifact;
+        let comment = build_scope_comment(&arts);
+        assert!(
+            comment.starts_with("Scope: artifact"),
+            "expected artifact-mode prefix; got: {comment}"
+        );
+        // Phase order is lexicographic via BTreeSet:
+        //   build → "build", deployed → "operations", analyzed → "post-build"
+        assert!(
+            comment.contains("build, operations, post-build"),
+            "expected sorted phase list; got: {comment}"
+        );
+        assert!(
+            comment.contains("mikebom:sbom-tier"),
+            "expected pointer to per-component annotation; got: {comment}"
+        );
+    }
+
+    #[test]
+    fn build_scope_comment_emits_manifest_mode() {
+        let integ = empty_integrity();
+        let comps = vec![mk_component_with_tier("pkg:cargo/a@1", Some("source"))];
+        let mut arts = mk_artifacts("demo", &comps, &[], &integ);
+        arts.scope_mode = crate::generate::ScopeMode::Manifest;
+        let comment = build_scope_comment(&arts);
+        assert!(
+            comment.starts_with("Scope: manifest"),
+            "expected manifest-mode prefix; got: {comment}"
+        );
+    }
+
+    #[test]
+    fn build_scope_comment_handles_empty_phases() {
+        let integ = empty_integrity();
+        let comps = vec![
+            mk_component_with_tier("pkg:cargo/a@1", None),
+            mk_component_with_tier("pkg:cargo/b@1", Some("not-a-known-tier")),
+        ];
+        let arts = mk_artifacts("demo", &comps, &[], &integ);
+        let comment = build_scope_comment(&arts);
+        assert!(
+            comment.contains("no lifecycle phases observed"),
+            "expected empty-phases degradation; got: {comment}"
         );
     }
 }

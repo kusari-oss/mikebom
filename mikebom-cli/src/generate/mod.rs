@@ -22,6 +22,7 @@
 
 pub mod cpe;
 pub mod cyclonedx;
+pub mod lifecycle_phases;
 pub mod openvex;
 pub mod spdx;
 
@@ -55,6 +56,43 @@ pub struct ScanArtifacts<'a> {
     pub include_dev: bool,
     pub include_hashes: bool,
     pub include_source_files: bool,
+    /// Document-level scope mode. Resolved from
+    /// `--include-declared-deps` (with the `--path`/`--image`
+    /// auto-default rule). Surfaced in CDX `metadata.lifecycles[]`
+    /// (component-derived, indirect) and SPDX
+    /// `creationInfo.comment` / `SpdxDocument.comment` (direct).
+    /// Milestone 047.
+    pub scope_mode: ScopeMode,
+}
+
+/// Document-level scope mode for a single mikebom scan. Surfaced
+/// in SPDX 2.3 `creationInfo.comment` and SPDX 3
+/// `SpdxDocument.comment` so consumers reading metadata-only know
+/// whether the document represents on-disk-only emission
+/// (`Artifact`) or includes declared transitives that may not be
+/// on disk yet (`Manifest`).
+///
+/// The value derives from the resolution of
+/// `--include-declared-deps`: when that flag resolves true (the
+/// default for `--path` scans), the scan is `Manifest`; when
+/// false (the default for `--image` scans), the scan is
+/// `Artifact`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScopeMode {
+    /// On-disk components only — every emitted component has its
+    /// bytes physically present in the scanned tree or image.
+    /// Default for `--image`. CDX phase aggregation typically
+    /// shows `operations` (deployed runtime) plus whatever
+    /// build-time tiers happen to be present in installed
+    /// packages.
+    Artifact,
+    /// On-disk components plus declared-but-not-on-disk
+    /// transitives (lockfile-pinned but absent from local
+    /// caches, deps.dev-resolved, Maven cache-miss BFS, etc.).
+    /// Default for `--path` scans (source trees) so SBOM
+    /// consumers get the full "what would this build pull in"
+    /// view.
+    Manifest,
 }
 
 /// Per-invocation configuration threaded through every serializer.

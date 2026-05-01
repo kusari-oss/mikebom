@@ -594,15 +594,23 @@ fn cache_lookup_depends(cache: &GoModCache, module: &str, version: &str) -> Vec<
 /// * `main_modules` — Go module paths declared as the project's own
 ///   `module` directive in any scanned go.mod. Feeds the G5 filter
 ///   (feature 007 US3): a project is never its own dependency.
-/// * `production_imports` — Go module paths that are reachable from
-///   at least one non-`_test.go` import anywhere in the scanned
-///   source tree. Feeds the G4 filter (feature 007 US2): modules
-///   only imported from `_test.go` files are test-scope transitives
-///   and shouldn't surface as runtime dependencies.
+/// * `production_imports` — Go module paths reachable from at least
+///   one non-`_test.go` import anywhere in the scanned source tree
+///   (this project's prod imports — direct only). Used as the prod
+///   baseline for the milestone 049 test-vs-prod tagging.
+/// * `test_only_imports` (milestone 049) — Go module paths reachable
+///   from `_test.go` imports of this project but NOT from any
+///   non-`_test.go` import. These deps are tagged
+///   `is_dev = Some(true)` and dropped when `--include-dev` is off.
+///   Source-walk only; we do not BFS through deps' go.mod `require`
+///   blocks because those don't distinguish prod-vs-test requires
+///   (a dep can declare testify in its go.mod purely for its own
+///   tests, but downstream consumers wouldn't load it in prod).
 #[derive(Debug, Default)]
 pub struct GoScanSignals {
     pub main_modules: HashSet<String>,
     pub production_imports: HashSet<String>,
+    pub test_only_imports: HashSet<String>,
 }
 
 pub fn read(rootfs: &Path, _include_dev: bool) -> (Vec<PackageDbEntry>, GoScanSignals) {
@@ -661,8 +669,9 @@ pub fn read(rootfs: &Path, _include_dev: bool) -> (Vec<PackageDbEntry>, GoScanSi
     known_modules.sort_by_key(|m| std::cmp::Reverse(m.len()));
     known_modules.dedup();
 
-    // Second pass: emit entries AND walk .go files for production
-    // imports.
+    // Second pass: emit entries AND walk .go files for production +
+    // test-only imports.
+    let mut test_imports: HashSet<String> = HashSet::new();
     for (project_root, doc, sums) in &parsed_roots {
         let go_sum_path = project_root.join("go.sum");
         let source_path = go_sum_path.to_string_lossy().into_owned();
@@ -673,24 +682,50 @@ pub fn read(rootfs: &Path, _include_dev: bool) -> (Vec<PackageDbEntry>, GoScanSi
                 out.push(entry);
             }
         }
-        // Feature 007 US2: walk .go source files under this project
-        // root (excluding `_test.go` files and test-adjacent subtrees)
-        // and record every imported module path that matches a known
-        // module in `known_modules`. Imports of stdlib or unknown
-        // paths are silently ignored.
+        // Feature 007 US2 / Milestone 049: walk .go source files for
+        // prod imports (non-`_test.go`) and test imports (`_test.go`
+        // only). The two sets together drive the test-vs-prod
+        // classification in `package_db::mod::apply_go_production_set_filter`.
         collect_production_imports(
             project_root,
             0,
             &known_modules,
             &mut signals.production_imports,
         );
+        collect_test_imports(
+            project_root,
+            0,
+            &known_modules,
+            &mut test_imports,
+        );
     }
+
+    // Test-only set: imports reachable from `_test.go` source MINUS
+    // imports reachable from non-test source. Modules in the difference
+    // get `is_dev = Some(true)` in the classifier.
+    //
+    // Milestone 049 R3 (revised): the test-only computation uses
+    // direct source imports only, NOT a go.mod-`require` BFS expansion.
+    // Reason: a dep's go.mod `require` block doesn't distinguish prod
+    // requires from test-only requires (Go test deps live in the dep's
+    // `_test.go` source, not in its go.mod). Conservative BFS through
+    // go.mod requires would falsely promote test-only deps to prod
+    // whenever a transitively-prod dep's go.mod also requires them
+    // (e.g., logrus's go.mod requires testify because logrus's own
+    // tests use it; from this project's perspective testify is still
+    // test-only). Output scope is unchanged — every go.sum entry is
+    // emitted (FR-001) — only the test-only TAG uses this difference.
+    signals.test_only_imports = test_imports
+        .difference(&signals.production_imports)
+        .cloned()
+        .collect();
 
     if !out.is_empty() {
         tracing::info!(
             rootfs = %rootfs.display(),
             modules = out.len(),
             production_imports = signals.production_imports.len(),
+            test_only_imports = signals.test_only_imports.len(),
             main_modules = signals.main_modules.len(),
             "parsed Go source tree",
         );
@@ -700,20 +735,63 @@ pub fn read(rootfs: &Path, _include_dev: bool) -> (Vec<PackageDbEntry>, GoScanSi
 
 /// Walk a Go project root collecting production-scope imports. Skips
 /// `_test.go` files (test-scope) and any directory `should_skip_descent`
-/// says to skip. For each remaining `.go` file, extracts import paths
-/// via [`extract_go_imports`] and longest-prefix-matches each one
-/// against `known_modules`. Matches are inserted into `out`.
-///
-/// The `known_modules` slice MUST be sorted by length descending so
-/// the first prefix match is the longest (e.g., import
-/// `github.com/foo/bar/baz` correctly attributes to module
-/// `github.com/foo/bar` when both `github.com/foo` and
-/// `github.com/foo/bar` are known modules).
+/// says to skip. Thin wrapper over [`collect_imports_filtered`] with the
+/// "non-test files only" predicate.
 fn collect_production_imports(
     dir: &Path,
     depth: usize,
     known_modules: &[String],
     out: &mut HashSet<String>,
+) {
+    collect_imports_filtered(
+        dir,
+        depth,
+        known_modules,
+        out,
+        FileScope::ProdOnly,
+    );
+}
+
+/// Walk a Go project root collecting test-scope imports. Visits ONLY
+/// `_test.go` files (the inverse predicate of [`collect_production_imports`]).
+/// Milestone 049: paired with `collect_production_imports` to compute
+/// the test-only set as a difference (`test_imports - prod_imports`).
+fn collect_test_imports(
+    dir: &Path,
+    depth: usize,
+    known_modules: &[String],
+    out: &mut HashSet<String>,
+) {
+    collect_imports_filtered(
+        dir,
+        depth,
+        known_modules,
+        out,
+        FileScope::TestOnly,
+    );
+}
+
+/// Which `.go` files to inspect in [`collect_imports_filtered`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FileScope {
+    /// Skip `_test.go` files; record imports from non-test source.
+    ProdOnly,
+    /// Only `_test.go` files; record imports from test source.
+    TestOnly,
+}
+
+/// Shared implementation for [`collect_production_imports`] and
+/// [`collect_test_imports`]. The `known_modules` slice MUST be sorted
+/// by length descending so the first prefix match is the longest
+/// (e.g., import `github.com/foo/bar/baz` correctly attributes to
+/// module `github.com/foo/bar` when both `github.com/foo` and
+/// `github.com/foo/bar` are known modules).
+fn collect_imports_filtered(
+    dir: &Path,
+    depth: usize,
+    known_modules: &[String],
+    out: &mut HashSet<String>,
+    scope: FileScope,
 ) {
     if depth >= MAX_PROJECT_ROOT_DEPTH {
         return;
@@ -730,7 +808,7 @@ fn collect_production_imports(
             if should_skip_descent(&path) {
                 continue;
             }
-            collect_production_imports(&path, depth + 1, known_modules, out);
+            collect_imports_filtered(&path, depth + 1, known_modules, out, scope);
             continue;
         }
         if !meta.is_file() {
@@ -742,8 +820,11 @@ fn collect_production_imports(
         if !name.ends_with(".go") {
             continue;
         }
-        if name.ends_with("_test.go") {
-            continue;
+        let is_test_file = name.ends_with("_test.go");
+        match scope {
+            FileScope::ProdOnly if is_test_file => continue,
+            FileScope::TestOnly if !is_test_file => continue,
+            _ => {}
         }
         let Ok(bytes) = std::fs::read(&path) else {
             continue;
@@ -1384,4 +1465,78 @@ replace github.com/old/lib v1.0.0 => github.com/new/lib v2.0.0
             "walker must skip /workspace/go/pkg/mod cache tree: {entries:?}",
         );
     }
+
+    // ---------------------------------------------------------------
+    // Milestone 049 — collect_test_imports + compute_transitive_prod_set
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn collect_test_imports_records_only_test_files() {
+        let dir = tempfile::tempdir().unwrap();
+        // Project source: main.go (prod) + main_test.go (test).
+        std::fs::write(
+            dir.path().join("main.go"),
+            br#"package main
+import "github.com/prod/lib"
+func main() { _ = lib.Something() }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("main_test.go"),
+            br#"package main
+import "github.com/test/lib"
+func TestSomething(t *testing.T) { _ = lib.Something() }"#,
+        )
+        .unwrap();
+
+        let known_modules = vec![
+            "github.com/prod/lib".to_string(),
+            "github.com/test/lib".to_string(),
+        ];
+        let mut prod = HashSet::new();
+        let mut test = HashSet::new();
+        collect_production_imports(dir.path(), 0, &known_modules, &mut prod);
+        collect_test_imports(dir.path(), 0, &known_modules, &mut test);
+
+        assert_eq!(prod.len(), 1);
+        assert!(prod.contains("github.com/prod/lib"));
+        assert!(!prod.contains("github.com/test/lib"));
+
+        assert_eq!(test.len(), 1);
+        assert!(test.contains("github.com/test/lib"));
+        assert!(!test.contains("github.com/prod/lib"));
+    }
+
+    #[test]
+    fn collect_test_imports_records_modules_imported_from_both() {
+        // A module imported by BOTH prod and test code appears in
+        // BOTH sets. The classifier later subtracts prod from test
+        // to compute test-only.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("main.go"),
+            br#"package main
+import "github.com/shared/lib"
+func main() { _ = lib.X() }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("main_test.go"),
+            br#"package main
+import "github.com/shared/lib"
+func TestX(t *testing.T) { _ = lib.X() }"#,
+        )
+        .unwrap();
+        let known_modules = vec!["github.com/shared/lib".to_string()];
+        let mut prod = HashSet::new();
+        let mut test = HashSet::new();
+        collect_production_imports(dir.path(), 0, &known_modules, &mut prod);
+        collect_test_imports(dir.path(), 0, &known_modules, &mut test);
+        assert_eq!(prod, test);
+        // Per spec: a module reachable from both prod and test is
+        // classified as prod (test_only = test - prod = empty).
+        let test_only: HashSet<String> = test.difference(&prod).cloned().collect();
+        assert!(test_only.is_empty());
+    }
+
 }

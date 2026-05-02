@@ -27,7 +27,10 @@ use std::path::{Path, PathBuf};
 
 use mikebom_common::types::purl::{encode_purl_segment, Purl};
 
-use super::PackageDbEntry;
+// `super` is now `golang/` (not `package_db/`) post-milestone-055 T008
+// directory promotion. Import via crate-absolute path so the reference
+// is unambiguous regardless of where this module nests in the tree.
+use crate::scan_fs::package_db::PackageDbEntry;
 
 /// Max depth for the recursive project-root search. Matches the npm
 /// walker's budget — enough to cover monorepo shapes without running

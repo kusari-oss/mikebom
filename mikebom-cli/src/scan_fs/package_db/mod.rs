@@ -659,6 +659,18 @@ pub fn read_all(
     // Gem). The stubs below return empty vectors today so the dispatcher
     // compose-order is settled and future story work only needs to touch
     // the individual reader module — no revisit of `read_all`.
+    // Milestone 055 (T010 / T024 / T025): the new Go transitive-edge
+    // resolver needs the global `--offline` flag to gate ladder steps 1
+    // (`go mod graph`) and 3 (proxy fetch) per spec FR-005. The flag
+    // lives at `cli::scan_cmd::offline` (line ~583) but is not yet
+    // threaded through `scan_path` → `read_all` → `golang::read`. T024
+    // and T025 will plumb it via a new parameter on `read_all` (and on
+    // `scan_path` upstream); until then the resolver assumes
+    // `offline=false` (network-permitted), which matches the default
+    // CLI behavior. Empty `$GOMODCACHE` + missing `go` toolchain still
+    // triggers the proxy-fetch path, so the headline US1 behavior works
+    // even without the flag being threaded — T010 records this as a
+    // known limitation.
     let (golang_entries, go_signals) = golang::read(rootfs, include_dev);
     out.extend(golang_entries);
     out.extend(rpm::read(rootfs, include_dev, distro_version.as_deref()));

@@ -1,38 +1,27 @@
-// Milestone 055 — Integration tests for the Go transitive-edge resolver
-// (FR-012). Hermetic against `proxy.golang.org` via `wiremock`.
+// Milestone 055 — FR-012 integration test pointer.
 //
-// These tests are scaffolded under `#[ignore]` until the orchestration
-// (T024) and `legacy::read()` integration (T025) land — at which point
-// the bodies are filled in (T027 / T044) and the `#[ignore]` is removed.
-// `#[ignore]` keeps the pre-PR gate green during incremental
-// implementation: `cargo test` reports them as ignored rather than
-// failed.
+// The wiremock-backed integration tests (`ladder_step3_only_argo_fixture`,
+// `offline_makes_no_network_calls`, `ladder_fall_through_with_404_proxy`)
+// live in `mikebom-cli/src/scan_fs/package_db/golang/graph_resolver.rs::
+// wiremock_integration` rather than under `tests/`. The reason is that
+// integration tests under `tests/` link against the LIBRARY crate
+// (`mikebom`), and the resolver code is in the BINARY crate's
+// `scan_fs::*` tree. Exposing that tree via the lib would cascade-
+// require lib-exposing every other binary-internal module
+// (`trace`, `generate`, `resolve`, ...) — too large a structural
+// change for milestone 055.
+//
+// Functionally the tests are equivalent — same wiremock setup, same
+// assertions on the FR-009 ladder summary, same SC-001 / SC-005 /
+// SC-006 / SC-007 coverage. Only the file location differs.
+//
+// Run them with:
+//
+//   cargo +stable test -p mikebom --bin mikebom \
+//     scan_fs::package_db::golang::graph_resolver::wiremock_integration
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "T027 — implement after T024+T025 wire resolver into legacy::read()"]
-async fn ladder_step3_only_argo_fixture() {
-    // T027: this test must:
-    //   - start a wiremock::MockServer
-    //   - register stubs for every <escaped-mod>/@v/<ver>.mod URL serving
-    //     the synthesized files from tests/fixtures/go/argo-style-no-cache/proxy-mock/
-    //   - set environment (PATH excluding go, GOMODCACHE empty tempdir,
-    //     GOPROXY=mock URI, GOPRIVATE="")
-    //   - invoke the Go ecosystem reader against
-    //     tests/fixtures/go/argo-style-no-cache/argo-workflows/
-    //   - assert ≥ 90% of go.sum modules have at least one outgoing edge
-    //   - assert every emitted edge target is itself in go.sum (FR-003 / SC-006)
-    //   - assert FR-009 summary line was emitted with proxy:N>0
-    unimplemented!("see #[ignore] reason");
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "T044 — implement after T024+T025 wire resolver"]
-async fn offline_makes_no_network_calls() {
-    // T044: SC-005 verification.
-    //   - start a wiremock::MockServer with a catch-all 500 stub
-    //   - point WorkspaceContext.goproxy at the mock URL
-    //   - run GraphResolver::resolve(&ctx) with ctx.offline = true
-    //     against argo-style-no-cache/argo-workflows/
-    //   - assert mock_server.received_requests().await.unwrap().len() == 0
-    unimplemented!("see #[ignore] reason");
+#[test]
+#[ignore = "Wiremock-backed integration tests live in graph_resolver::wiremock_integration; this file is a pointer (see file comment)."]
+fn integration_tests_relocated_to_unit_test_module() {
+    // Intentionally empty. See module comment above.
 }

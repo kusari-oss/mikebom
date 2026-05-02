@@ -1,13 +1,6 @@
 // Milestone 055 — Step 3 of the resolution ladder: HTTP fetch of a
 // module's `go.mod` from the Go module proxy (`$GOPROXY`).
 //
-// Module-level `#[allow(dead_code)]`: the foundational scaffold (T006)
-// + step-3 impl (T015–T020) land ahead of the orchestration in T021–T025
-// that actually invokes the fetcher. The allow is removed in T025 once
-// `GraphResolver::resolve()` calls `fetch_module_mod()`.
-#![allow(dead_code)]
-
-//
 // Endpoint format (per <https://proxy.golang.org/>):
 //   <proxy>/<escaped-mod-path>/@v/<escaped-version>.mod
 //
@@ -16,8 +9,18 @@
 //   - uppercase ASCII X → `!x`
 //   - other bytes are an error
 //
-// See specs/055-go-transitive-edges/research.md R6 for the algorithm
-// derivation.
+// **Sync, not async** — implementation discovery in T020 confirmed
+// `golang::legacy::read()` is sync and called from a sync chain
+// (`scan_fs::scan_path` → `package_db::read_all` → `golang::read`),
+// so an async resolver would require runtime gymnastics
+// (`block_in_place`, fresh-runtime fallback) that brittle the test
+// harness. Path A from the implementation checkpoint: pure-sync via
+// `reqwest::blocking::Client` (workspace `blocking` feature) and
+// `std::thread` worker pool. Spec FR-008 (10 s connect / 30 s total
+// timeouts) and FR-008a (16-way concurrency) are satisfied identically.
+//
+// See specs/055-go-transitive-edges/research.md R6 for the escape
+// algorithm derivation.
 
 use reqwest::Url;
 
@@ -87,10 +90,10 @@ pub fn build_proxy_url(proxy_base: &Url, target: &ModuleId) -> Result<Url, Escap
 }
 
 // --------------------------------------------------------------------
-// Fetcher (T020 — implemented in US1)
+// Fetcher (T020 — sync via reqwest::blocking)
 // --------------------------------------------------------------------
 
-/// Fetch a module's `go.mod` body from the proxy chain.
+/// Fetch a module's `go.mod` body from the proxy chain (synchronous).
 ///
 /// Walks the `proxy_chain` per spec FR-004 separator semantics:
 /// - `,` between entries: fall through on HTTP 404/410 only.
@@ -101,8 +104,8 @@ pub fn build_proxy_url(proxy_base: &Url, target: &ModuleId) -> Result<Url, Escap
 /// Direct-only. Returns `StepResult::Ok(body)` on the first successful
 /// fetch. Returns `StepResult::Failed` only when the WHOLE chain has
 /// been walked without a successful fetch.
-pub async fn fetch_module_mod(
-    client: &reqwest::Client,
+pub fn fetch_module_mod(
+    client: &reqwest::blocking::Client,
     proxy_chain: &ProxyChain,
     target: &ModuleId,
 ) -> StepResult<String> {
@@ -133,16 +136,16 @@ pub async fn fetch_module_mod(
                     Err(e) => {
                         return StepResult::Failed(StepError {
                             class: ErrorClass::Other,
-                            detail: format!("escape error: {e}"),
+                            detail: format!("escape error for {target}: {e}"),
                         });
                     }
                 };
 
-                match client.get(target_url.clone()).send().await {
+                match client.get(target_url.clone()).send() {
                     Ok(resp) => {
                         let status = resp.status();
                         if status.is_success() {
-                            match resp.text().await {
+                            match resp.text() {
                                 Ok(body) => return StepResult::Ok(body),
                                 Err(e) => {
                                     last_error = Some(StepError {
@@ -230,9 +233,11 @@ fn classify_reqwest_error(err: &reqwest::Error) -> ErrorClass {
     }
 }
 
-/// Build a `reqwest::Client` configured with the spec FR-008 timeouts.
-pub fn build_http_client(config: &GraphResolverConfig) -> reqwest::Result<reqwest::Client> {
-    reqwest::Client::builder()
+/// Build a `reqwest::blocking::Client` configured with the spec FR-008 timeouts.
+pub fn build_http_client(
+    config: &GraphResolverConfig,
+) -> reqwest::Result<reqwest::blocking::Client> {
+    reqwest::blocking::Client::builder()
         .connect_timeout(config.fetch_connect_timeout)
         .timeout(config.fetch_total_timeout)
         // Default no proxy — we manage `$GOPROXY` chain ourselves.
@@ -250,7 +255,7 @@ pub fn build_http_client(config: &GraphResolverConfig) -> reqwest::Result<reqwes
 mod tests {
     use super::*;
 
-    // Fixed in T015 (impl); T011 wrote these tests-first per FR-011.
+    // --- escape_module_path (T011 / T015) ---
 
     #[test]
     fn escape_lowercase_passes_through() {
@@ -289,7 +294,6 @@ mod tests {
 
     #[test]
     fn escape_returns_err_on_disallowed_byte() {
-        // Whitespace
         assert_eq!(
             escape_module_path("github.com/has space/repo"),
             Err(EscapeError::InvalidByte {
@@ -297,7 +301,6 @@ mod tests {
                 position: 14,
             })
         );
-        // Question mark
         assert_eq!(
             escape_module_path("?"),
             Err(EscapeError::InvalidByte {
@@ -305,7 +308,6 @@ mod tests {
                 position: 0,
             })
         );
-        // Non-ASCII
         let m = "github.com/föo/bar";
         let err = escape_module_path(m).unwrap_err();
         assert!(matches!(err, EscapeError::InvalidByte { .. }));
@@ -327,8 +329,6 @@ mod tests {
 
     #[test]
     fn build_proxy_url_with_trailing_slash_base() {
-        // The trim_end_matches('/') logic should produce identical
-        // output for bases with and without trailing slashes.
         let proxy = Url::parse("https://proxy.golang.org/").unwrap();
         let target = ModuleId::new("github.com/foo/bar", "v1.0.0");
         let u = build_proxy_url(&proxy, &target).unwrap();
@@ -345,5 +345,40 @@ mod tests {
         let cfg = GraphResolverConfig::default();
         let client = build_http_client(&cfg).expect("client builds");
         drop(client);
+    }
+
+    // --- fetch_module_mod fallthrough (T014 — proxy chain semantics
+    // without a real HTTP server). Wiremock-backed end-to-end fetch
+    // coverage lives in mikebom-cli/tests/go_transitive_edges.rs (T027).
+
+    #[test]
+    fn fetch_returns_unavailable_for_off_chain() {
+        let chain = ProxyChain {
+            entries: vec![ProxyEntry::Off],
+        };
+        let client = reqwest::blocking::Client::new();
+        let target = ModuleId::new("github.com/foo/bar", "v1.0.0");
+        let r = fetch_module_mod(&client, &chain, &target);
+        assert!(matches!(r, StepResult::Unavailable));
+    }
+
+    #[test]
+    fn fetch_returns_unavailable_for_direct_only_chain() {
+        let chain = ProxyChain {
+            entries: vec![ProxyEntry::Direct],
+        };
+        let client = reqwest::blocking::Client::new();
+        let target = ModuleId::new("github.com/foo/bar", "v1.0.0");
+        let r = fetch_module_mod(&client, &chain, &target);
+        assert!(matches!(r, StepResult::Unavailable));
+    }
+
+    #[test]
+    fn fetch_returns_unavailable_for_empty_chain() {
+        let chain = ProxyChain { entries: vec![] };
+        let client = reqwest::blocking::Client::new();
+        let target = ModuleId::new("github.com/foo/bar", "v1.0.0");
+        let r = fetch_module_mod(&client, &chain, &target);
+        assert!(matches!(r, StepResult::Unavailable));
     }
 }

@@ -26,5 +26,15 @@
 //! module to this lib root is a deliberate decision that should
 //! match the same pattern as `parity`: small, pure-data + pure-
 //! function code that benefits from being importable by tests.
+//!
+//! Note (milestone 055): the Go transitive-edges resolver lives in
+//! `scan_fs::package_db::golang::graph_resolver`, which the binary
+//! consumes via `mod scan_fs` in main.rs. Wiremock-backed integration
+//! tests for the resolver live alongside the resolver
+//! (`graph_resolver::wiremock_integration`), NOT under
+//! `mikebom-cli/tests/`, because exposing scan_fs here would
+//! cascade-require lib-exposing every binary-internal module
+//! (`trace`, `generate`, `resolve`, ...). See
+//! `mikebom-cli/tests/go_transitive_edges.rs` for the pointer.
 
 pub mod parity;

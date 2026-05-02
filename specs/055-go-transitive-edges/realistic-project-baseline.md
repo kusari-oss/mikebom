@@ -28,10 +28,13 @@ For each entry below:
 
 ### `knative-func @ knative-v1.22.0`
 
-- **Measured (2026-05-02, mikebom @ post-055 main)**: TBD on first CI run — the gate floor is pre-set at 200 edges based on the milestone 055 spec SC-003 estimate; the first green CI run records the actual measured value here.
-- **Floor in CI**: 200 edges
+- **Measured (2026-05-02, mikebom @ post-055 main, pre-059)**: not directly recorded; PR #115 set the floor at 200 based on the milestone 055 SC-003 estimate against an over-eager main-module edge count (053's "include `// indirect`" choice). Milestone 059 reverses that choice.
+- **Floor in CI**: **100 edges** (lowered post-059)
+- **Why lowered**: milestone 059 (graph-topology fix per #113 reviewer feedback) changed `build_main_module_entry` to emit ONLY non-`// indirect` requires as direct edges from main-module. The previous 200 floor was measured against the pre-059 over-eager count; post-059 the count drops because main-module's outgoing edges shrink to just the workspace's true direct requires. The new 100 floor is conservative pending the first green CI run's actual measurement.
 - **Platform**: ubuntu-latest (Go pre-installed). macos-latest also runs the gate; same floor (the measured value should be platform-independent because the resolver's output is content-determined, not perf-determined — only timing varies across platforms).
-- **Notes**: knative/func has ~950 modules in its top-level `go.sum`. Not every module declares requires that resolve to other go.sum-set modules; the FR-003 intersection drops dangling targets. A measured value of ~300–500 is typical for projects of this size.
+- **Notes**: knative/func has ~950 modules in its top-level `go.sum`. Not every module declares requires that resolve to other go.sum-set modules; the FR-003 intersection drops dangling targets. Post-059, the count is roughly: (sum-of-each-go.sum-module's-direct-non-indirect-requires) intersected with go.sum.
+
+**Update procedure post-059**: when the first green CI run records the measured value, capture it here and tighten the floor to ~80 % of measured per the discipline below.
 
 ### Future entries
 

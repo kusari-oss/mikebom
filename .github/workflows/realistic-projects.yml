@@ -50,7 +50,16 @@ jobs:
             # count `pkg:golang` → `pkg:golang` dependsOn edges.
             # Baseline + measurement notes:
             # `specs/055-go-transitive-edges/realistic-project-baseline.md`.
-            expected_min_pkg_golang_edges: 200
+            #
+            # Milestone 059 (graph topology fix per #113 reviewer
+            # feedback): main-module now emits ONLY non-`// indirect`
+            # requires as direct edges, so the previous 200 floor
+            # measured against the pre-059 over-eager edge count is
+            # no longer accurate. Lowered conservatively to 100;
+            # first green CI run on this baseline records the actual
+            # measured value in realistic-project-baseline.md and
+            # the floor can be tightened later.
+            expected_min_pkg_golang_edges: 100
         platform:
           - ubuntu-latest
           - macos-latest

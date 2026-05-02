@@ -791,13 +791,27 @@ pub(crate) fn build_main_module_entry(
     let version = resolve_workspace_version(project_root);
     let purl = build_golang_purl(&module_path, &version)?;
 
-    // Direct requires (including `// indirect`), post `replace`/`exclude`.
-    // Deliberate Trivy-divergence per spec Edge Cases: every go.mod-line
-    // require gets a root edge regardless of indirect status. Offline
-    // scans (issue #102 case) benefit from the simpler emission.
+    // Milestone 059 (closes #113 properly per reviewer feedback):
+    // emit ONLY the workspace `go.mod`'s NON-`// indirect` requires
+    // as direct edges from main-module. The pre-059 behavior of
+    // including `// indirect` requires was milestone 053 FR-002's
+    // deliberate "every go.mod-line require gets a root edge regardless
+    // of indirect status" choice — it kept components reachable from
+    // the SBOM root in the offline + empty-cache case but at the cost
+    // of lying about the graph topology (claiming main-module
+    // directly depends on testify's transitively-pulled
+    // `davecgh/go-spew` etc.).
+    //
+    // The corrected graph: main-module → only its direct requires.
+    // Indirect-marked requires reach their components transitively
+    // via milestone 055's resolver (when the resolver can supply
+    // transitive edges), or become orphans (Trivy-style trade-off,
+    // accepted per spec Q&A). Orphan visibility comes from the
+    // end-of-scan tracing summary in `read()` per FR-004.
     let depends: Vec<String> = doc
         .requires
         .iter()
+        .filter(|req| !req.indirect)
         .filter_map(|req| {
             apply_replace_and_exclude(
                 &req.path,
@@ -1196,6 +1210,42 @@ pub fn read(rootfs: &Path, _include_dev: bool) -> (Vec<PackageDbEntry>, GoScanSi
             main_modules = signals.main_modules.len(),
             main_module_components_emitted = main_module_emitted,
             "parsed Go source tree",
+        );
+
+        // Milestone 059 FR-004: orphan-visibility summary. After the
+        // graph-topology fix (main-module emits ONLY non-`// indirect`
+        // requires), a Go component sourced from `go.sum` is an orphan
+        // when no other component references it via `depends`. This is
+        // the expected outcome in `--offline` + empty cache + indirect-
+        // only requires (Trivy-style trade-off, accepted per spec
+        // FR-003). Operators see the count to decide whether to
+        // populate `$GOMODCACHE` / drop `--offline` for better edge
+        // resolution.
+        let mut incoming_count: std::collections::HashMap<&str, usize> =
+            std::collections::HashMap::new();
+        for entry in &out {
+            // Initialize every Go component to 0 incoming so the
+            // orphan check finds them even when no other entry refs.
+            if entry.purl.as_str().starts_with("pkg:golang/") {
+                incoming_count.entry(&entry.name).or_insert(0);
+            }
+        }
+        for entry in &out {
+            for child_path in &entry.depends {
+                if let Some(c) = incoming_count.get_mut(child_path.as_str()) {
+                    *c += 1;
+                }
+            }
+        }
+        let go_component_count = incoming_count.len();
+        let orphan_count = incoming_count.values().filter(|&&c| c == 0).count();
+        let reachable_count = go_component_count - orphan_count;
+        tracing::info!(
+            rootfs = %rootfs.display(),
+            go_components = go_component_count,
+            reachable_via_depends_on = reachable_count,
+            orphans = orphan_count,
+            "Go graph reachability summary (orphans = no incoming dependsOn — expected when --offline + empty cache + indirect-only requires)",
         );
     }
     (out, signals)
@@ -2151,9 +2201,17 @@ func TestX(t *testing.T) { _ = lib.X() }"#,
     }
 
     #[test]
-    fn build_main_module_entry_includes_indirect_requires() {
-        // Deliberate Trivy-divergence per spec Edge Cases: every
-        // go.mod-declared require gets a root edge, indirect or not.
+    fn build_main_module_entry_excludes_indirect_requires() {
+        // Milestone 059 (closes #113 properly per reviewer feedback):
+        // INVERTED from the original 053 spec FR-002 behavior. The
+        // pre-059 build_main_module_entry deliberately included
+        // `// indirect` requires as direct edges from main-module
+        // ("for offline-scan simplicity") — that lied about the
+        // graph topology. Post-059, only NON-indirect requires
+        // become direct edges from main-module; indirect components
+        // are reached via the milestone 055 transitive resolver
+        // (when it can supply edges) or become orphans (Trivy-style
+        // trade-off).
         let doc = make_doc(
             "module example.com/x\n\
              go 1.22\n\
@@ -2165,11 +2223,12 @@ func TestX(t *testing.T) { _ = lib.X() }"#,
         let tmp = tempfile::tempdir().expect("tempdir");
         let entry = build_main_module_entry(&doc, tmp.path(), "/p/go.mod")
             .expect("main-module entry constructed");
-        assert_eq!(entry.depends.len(), 2);
+        assert_eq!(entry.depends.len(), 1, "only the non-indirect require makes a direct edge");
         assert!(entry.depends.contains(&"a.example.com/direct".to_string()));
-        assert!(entry
-            .depends
-            .contains(&"b.example.com/indirect".to_string()));
+        assert!(
+            !entry.depends.contains(&"b.example.com/indirect".to_string()),
+            "indirect requires MUST NOT appear as direct edges from main-module post-059",
+        );
     }
 
     #[test]

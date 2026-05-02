@@ -7,254 +7,113 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
-### Fixed
+_No unreleased changes since v0.1.0-alpha.10._
 
-- **Filesystem-walker symlink-loop hang on real-world projects**
-  (milestone 054). `mikebom sbom scan --path <project>` would hang
-  at 100% CPU indefinitely on any repo containing intentional
-  symlink-loop test fixtures (e.g., knative/func @
-  `knative-v1.22.0` ships `pkg/oci/testdata/test-links/linkToRoot ->
-  .` plus parent-loop variants). Root cause: `rpm_file::walk_dir`
-  and `binary/discover::walk_dir` followed symlinks via
-  `path.is_dir()` (which dereferences) with no visited-set or
-  depth limit. Closes #102 (the second time — the first close was
-  the milestone 053 main-module-edge fix; this one closes the
-  walker-hang shape that the original repro also exhibited).
 
-  Per-walker hardening: every `fn walk*` in
-  `mikebom-cli/src/scan_fs/` now has either (a) a canonicalize-
-  keyed visited-set + max-depth backstop, or (b) an explicit
-  `// SAFETY:` comment naming an `entry.file_type()` lstat-skip
-  protection. Audit-gate via
-  `grep -rn "fn walk" mikebom-cli/src/scan_fs/`. New
-  `tests/scan_walker_loops.rs` integration test exercises a
-  knative/func-style fixture end-to-end (4 symlink loops in 4
-  different shapes).
 
-  Regression-prevention: new
-  `.github/workflows/realistic-projects.yml` clones knative/func
-  at the pinned tag per CI run (cached via `actions/cache@v4`)
-  and scans it on linux-x86_64 + macos-latest, asserting scan
-  duration is bounded AND the resulting SBOM has ≥ 200 components.
-  Future per-ecosystem expansion (cargo, npm, maven, pip, gem,
-  rpm, deb, apk) tracked in #109.
+## [0.1.0-alpha.10] — 2026-05-02
 
-  Migration to a single shared `safe_walk` helper (vs. the per-
-  walker patches landed here) deferred to #108.
+A larger release covering seven milestones shipped since alpha.9
+(~1 day later): three breaking changes to SBOM output shape PLUS
+a critical hang fix that SBOM consumers should review before
+upgrading.
 
-### Changed (BREAKING — Go SBOM shape, milestone 053)
+### Headline changes
 
-- **Go source-tree scans now emit a synthetic main-module component**
-  representing the workspace root, with direct `dependsOn` edges to
-  every `require` in the project's `go.mod`. Closes issue #102: a
-  fresh-clone Go scan with empty GOMODCACHE, which pre-053 produced
-  an SBOM with **zero `DEPENDS_ON` edges**, now produces ≥ N edges
-  where N is the count of direct requires in `go.mod`. Matches
-  trivy + syft's pattern.
+- **Filesystem-walker symlink-loop hang fixed.** Pre-054
+  `mikebom sbom scan --path <project>` hung at 100% CPU
+  indefinitely on any repo containing intentional symlink-loop
+  test fixtures (e.g., knative/func @ `knative-v1.22.0` ships
+  `pkg/oci/testdata/test-links/linkToRoot -> .` plus parent-loop
+  variants). Root cause: `rpm_file::walk_dir` and
+  `binary/discover::walk_dir` followed symlinks via
+  `path.is_dir()` with no visited-set or depth limit. Per-walker
+  hardening now applies a canonicalize-keyed visited-set + max-
+  depth backstop to every walker in `mikebom-cli/src/scan_fs/`.
+  New `realistic-projects.yml` CI workflow clones knative/func
+  per CI run as a regression gate. (Milestone 054; PR #110.)
 
-  - **Native-field placement** per Constitution Principle V (v1.4.0):
-    - **CycloneDX 1.6**: the main-module is the `metadata.component`
-      with `type: "application"`, NOT a sibling in `components[]`.
-      Edges from the main-module to direct requires use
-      `dependencies[]` keyed by `metadata.component.bom-ref`.
-    - **SPDX 2.3**: the main-module is a regular `packages[]` entry
-      with `primaryPackagePurpose: "APPLICATION"`. The document's
-      `documentDescribes` array and `SPDXRef-DOCUMENT DESCRIBES`
-      relationship target the main-module's SPDXID.
-    - **SPDX 3.0.1**: the main-module element carries
-      `software_primaryPurpose: "application"`.
-  - **Supplementary `mikebom:component-role: main-module`** (catalog
-    row C40) attached to all three formats as backwards-compat /
-    finer-grained signal layered on top of the native fields.
-  - **Version-resolution ladder** (FR-001): main-module's PURL
-    version comes from `git describe --tags --exact-match HEAD`,
-    falling back to `git describe --tags --always`, falling back to
-    the literal placeholder `v0.0.0-unknown` when not in a git
-    repo, when no tags reach HEAD, or when a shallow clone elided
-    all tags. Tarball-style sources (no `.git`) deterministically
-    produce the placeholder, preserving cross-host byte-identity
-    for goldens. Better than trivy + syft, which both use the raw
-    (typically empty) `go.mod` `module` directive version.
-  - **Indirect requires** (`// indirect` in `go.mod`) get root edges
-    too — deliberate divergence from Trivy's tagging approach;
-    simpler implementation that benefits the offline-scan case.
-  - **FR-009 BuildInfo dedup**: when both source-tree + binary
-    readers run, the source-tree main-module wins; binary BuildInfo's
-    redundant main-module emission is dropped.
-  - **FR-010 not-linked exclusion**: the main-module is never tagged
-    `mikebom:not-linked` (it's the linker root by definition).
+- **Go source-tree scans now produce a real dependency graph.**
+  Pre-053, scanning a freshly-cloned Go project with empty
+  `GOMODCACHE` produced an SBOM with **zero `DEPENDS_ON` edges**
+  (issue #102). Post-053 it emits a synthetic main-module
+  component (CDX `metadata.component`, SPDX
+  `primaryPackagePurpose: APPLICATION`) with direct-require edges
+  for every `require` in `go.mod`. Closes the parity gap with
+  trivy / syft. (Milestone 053; PR #105.)
 
-  **Migration**: SBOM consumers reading CDX `metadata.component.purl`
-  now get the real Go module identifier (`pkg:golang/<module>@<ver>`)
-  instead of the synthetic `pkg:generic/<target>@0.0.0` placeholder
-  for Go-only scans. Consumers reading the project's own component
-  in `components[]` need to look at `metadata.component` instead —
-  it's no longer duplicated. `documentDescribes` (SPDX) targets the
+- **Default scan now emits ALL lifecycle scopes, not just
+  Runtime.** Pre-052, the default `mikebom sbom scan` silently
+  dropped Development / Build / Test components. Post-052 they
+  emit by default with native scope tagging (CDX
+  `scope: "excluded"`, SPDX 2.3 `*_DEPENDENCY_OF` typed
+  relationships, SPDX 3 `lifecycleScope` on `dependsOn`).
+  Consumers wanting the strict pre-052 prod-only view use the
+  new `--exclude-scope dev,build,test` flag. (Milestone
+  052/part-3; PR #100.)
+
+- **Lifecycle-scope dependency tagging via standards-native
+  fields.** The legacy `mikebom:dev-dependency` annotation is
+  REMOVED; the dev-vs-build-vs-test distinction now travels via
+  each format's standards-defined construct per Constitution
+  Principle V (v1.4.0). (Milestone 052/part-2; PR #99.)
+
+### Breaking changes for SBOM consumers
+
+- **CDX `metadata.component.purl` for Go-only scans** shifts
+  from synthetic `pkg:generic/<target>@0.0.0` to the real
+  `pkg:golang/<module-path>@<version>`.
+- **SPDX `documentDescribes` for Go-only scans** targets the
   Go main-module's SPDXID instead of a `SPDXRef-DocumentRoot-*`
   placeholder.
+- **CDX `components[]` no longer contains the Go main-module**
+  for Go-only scans (it lives in `metadata.component`).
+- **`mikebom:dev-dependency` annotation** is gone everywhere —
+  consumers filtering on it migrate to CDX
+  `components[].scope = "excluded"` / SPDX 2.3
+  `*_DEPENDENCY_OF` / SPDX 3 `lifecycleScope` on `dependsOn`.
+- **`--include-dev` flag** is now a deprecated parse-and-warn
+  no-op shim (will be removed in a future release per #101).
+  Use `--exclude-scope dev,build,test` for the strict prod-only
+  view.
 
-  **Out of scope** (tracked in follow-up issues):
-  - LICENSE-file detection on the main-module (issue #103). Today
-    main-module emits empty `licenses`; the C40 role tag preserves
-    sbomqs licensing-coverage parity.
-  - Per-ecosystem main-modules for npm / cargo / maven / pip / gem
-    (issue #104). Today only Go gets a synthetic main-module.
+### Milestones in this release
 
-### Changed (BREAKING — default SBOM scope, milestone 052/part-3)
+- **054**: filesystem-walker symlink-loop hang fix +
+  realistic-project regression suite (closes #102 — second time;
+  PR #110).
+- **053**: Go main-module component + direct dependency edges
+  (closes #102 — first time; PR #105).
+- **052/part-3**: `--exclude-scope` flag + default scope flip +
+  `--include-dev` deprecation (PR #100).
+- **052/part-2**: native CDX/SPDX 2.3/SPDX 3 lifecycle-scope
+  emission + edge rewrite (PR #99).
+- **052/part-1**: `LifecycleScope` data model + behavior-
+  preserving rename + Constitution Principle V codification
+  (PR #98).
+- **051**: polyglot dev/test tagging — cargo + gem + maven
+  + python + npm dev-dep classification via
+  `mikebom:dev-dependency` (legacy, removed in 052/part-2;
+  PR #96).
+- **050**: `mikebom:not-linked` annotation on Go source-tier
+  entries not confirmed by binary BuildInfo + scope hint
+  for source-tree-only Go scans (PR #93).
 
-- **Default scan now emits ALL lifecycle scopes, not just Runtime**
-  (milestone 052/part-3, FR-002). Pre-052 the default `mikebom sbom
-  scan` silently dropped Development / Build / Test components; now
-  it emits every component with native scope tagging (CDX
-  `scope: "excluded"` + `mikebom:lifecycle-scope`; SPDX 2.3
-  `*_DEPENDENCY_OF` relationship types; SPDX 3 `lifecycleScope` on
-  `dependsOn`). Consumers wanting the strict pre-052 prod-only view
-  use the new `--exclude-scope dev,build,test` flag.
+### Follow-ups (open issues)
 
-  - **New `--exclude-scope <list>` flag**: comma-separated subset of
-    `dev,build,test`. Drops components whose `lifecycle_scope` is in
-    the set after resolution + dedup, plus every relationship edge
-    referencing them. Centralized post-resolution filter — replaces
-    the per-reader drop logic across cargo/gem/maven/npm/pip/Go/
-    package_db.
-
-  - **`--include-dev` flag deprecated to a parse-and-warn no-op
-    shim**. Pre-052 it was the only way to surface dev/build/test
-    components; now they emit by default, so `--include-dev` does
-    nothing and logs a `tracing::warn!` deprecation notice. Will be
-    removed in a future release.
-
-  - **Migration**: Consumers expecting the pre-052 prod-only set
-    add `--exclude-scope dev,build,test` to their invocation.
-    Consumers reading `mikebom:lifecycle-scope` / native
-    relationship types directly need no changes.
-
-  - **Parity framework**: New `Directionality::CdxOnly` variant on
-    parity extractors lets C42 (`mikebom:lifecycle-scope`) bypass
-    the SPDX-side parity check — the SPDX formats carry the same
-    signal natively via B2 relationship types per Principle V's
-    finer-info carve-out clause. Mirrored in
-    `spdx_annotation_fidelity` test (CDX-only carve-out list).
-
-### Changed (BREAKING — SBOM output shape, milestone 052)
-
-- **Native lifecycle-scope dependency tagging**
-  (milestone 052/part-2). The legacy `mikebom:dev-dependency`
-  annotation is REMOVED; the lifecycle-scope signal now
-  travels via each format's standards-defined construct per
-  Constitution Principle V (v1.4.0):
-  - **CycloneDX 1.6**: `components[].scope = "excluded"` plus
-    new `mikebom:lifecycle-scope` property carrying the
-    finer `development` / `build` / `test` distinction (C42
-    catalog row, finer-info carve-out per Principle V).
-  - **SPDX 2.3**: native `DEV_DEPENDENCY_OF` /
-    `BUILD_DEPENDENCY_OF` / `TEST_DEPENDENCY_OF` relationship
-    types (the mapper had the wiring since milestone 007 —
-    readers now emit the typed variants).
-  - **SPDX 3.0.1**: `scope` field on `dependsOn` relationships
-    carrying `LifecycleScopeType` (`development` / `build` /
-    `test`).
-  Per-ecosystem 4-way classifiers: cargo `[dev-dependencies]`
-  → Development, `[build-dependencies]` → Build; gem `:test`
-  group → Test, other non-default groups → Development;
-  maven `<scope>test</scope>` → Test, `<scope>provided</scope>`
-  → Build; Go test-only imports → Test;
-  npm/Poetry/Pipfile → Development. New
-  `apply_lifecycle_scope_to_edges` helper rewrites generic
-  `DependsOn` edges to typed variants based on target's
-  `lifecycle_scope`. C6 row deleted; new C42 row added; B2
-  updated; parity-extractor wiring swapped.
-
-  **Migration**: SBOM consumers filtering on
-  `mikebom:dev-dependency = true` migrate to:
-  CDX → `components[].scope = "excluded"` or
-  `mikebom:lifecycle-scope` property; SPDX 2.3 → native
-  `DEV/BUILD/TEST_DEPENDENCY_OF` relationship types; SPDX 3
-  → `relationships[].scope` field.
-
-- **LifecycleScope data model + behavior-preserving rename**
-  (milestone 052/part-1, prerequisite for part-2). Replaced
-  `is_dev: Option<bool>` everywhere with
-  `lifecycle_scope: Option<LifecycleScope>` (4-variant enum:
-  Runtime, Development, Build, Test). Added `TestDependsOn`
-  variant to `RelationshipType`. Cross-cutting field rename
-  across 44 files. Constitution v1.4.0 amendment bundled
-  (Principle V "standards-native fields take precedence"
-  clause).
-
-### Added
-
-- **`mikebom:not-linked` annotation on Go source-tier entries
-  not confirmed by binary BuildInfo** (milestone 050). When
-  `mikebom sbom scan` finds both a Go binary and source-tier
-  `pkg:golang` entries (from go.sum) in the same rootfs, every
-  go.sum entry whose `(name, version)` is NOT in the binary's
-  `runtime/debug.BuildInfo` is now annotated with
-  `mikebom:not-linked = true`. Consumers wanting the strict
-  "what shipped" view filter on this property; consumers
-  wanting the full lockfile closure get every go.sum entry
-  with rich classification metadata. CDX, SPDX 2.3, and SPDX 3
-  outputs all carry the annotation via the generic
-  `extra_annotations` serialization wired in milestone 048.
-- **Source-tree Go scan: BuildInfo-scope hint when no binary is
-  present**. When `mikebom sbom scan --path <go-project>` finds
-  a `go.mod` but the rootfs has no built Go binary, mikebom
-  emits a one-line `tracing::info` log naming the SBOM scope
-  (full go.sum closure, no `mikebom:not-linked` data) and the
-  workflow that tightens it: `go build`, then re-scan.
-
-### Changed
-
-- **G3 filter (`apply_go_linked_filter`) inverted from drop to
-  tag** (milestone 050). Pre-050 silently dropped go.sum
-  entries not in BuildInfo, throwing away the data with no
-  recovery path. Now G3 tags those entries with
-  `mikebom:not-linked = true` and retains them. SBOM output
-  is strictly more inclusive; consumers narrow scope via the
-  annotation. On `apigatewayv2/config` (with binary present):
-  41 components pre-050 → 65 components post-050, with 24
-  carrying `mikebom:not-linked`. README ecosystem section
-  documents the workflow with audit numbers.
-- **Cargo dev/build deps now tagged via
-  `mikebom:dev-dependency`** (milestone 051 US1). Previously
-  `mikebom sbom scan --path <rust-project>` emitted every
-  `Cargo.lock` entry as a runtime dep — `[dev-dependencies]`
-  (criterion, proptest, etc.) and `[build-dependencies]` (cc,
-  bindgen, etc.) showed up unmarked. The cargo reader now
-  parses every `Cargo.toml` reachable from the lockfile
-  (workspace root + members, including `members =
-  ["crates/*"]` glob expansion) and BFS-walks the resolved dep
-  graph from the union of all `[dependencies]` entries to
-  identify the prod closure. Crates outside that closure are
-  tagged + dropped on `--include-dev=off`. Production-wins-
-  over-dev: a crate reachable via both prod and dev edges is
-  retained as production. Smoke on the mikebom workspace:
-  524 → 505 components default (19 dropped); `--include-dev`
-  recovers all 524 with the dev set carrying the annotation.
-- **Gem development/test groups now tagged via
-  `mikebom:dev-dependency`** (milestone 051 US2). The gem
-  reader now reads three sources of grouping metadata: the
-  `Gemfile.lock` `DEPENDENCIES` block, the project's `Gemfile`
-  (`group :name do ... end` blocks plus inline `gem "...",
-  group: :foo` syntax), and any project-root `*.gemspec` files
-  (`add_development_dependency` calls). Sources are unioned
-  with production-wins semantics. BFS through the lockfile's
-  transitive edges from prod-direct roots produces the prod
-  closure; gems outside it are tagged + dropped on
-  `--include-dev=off`.
-- **Maven test-scope tagging now has explicit regression
-  coverage** (milestone 051 US3). `maven.rs:1786-1823` already
-  drops `<scope>test</scope>` deps in default mode and tags
-  them under `--include-dev`; the new
-  `scan_maven_test_scope_is_tagged_with_include_dev`
-  integration test asserts the contract against future
-  refactors. Zero behavior change.
-
-After milestone 051, every ecosystem mikebom supports
-(cargo, gem, maven, npm, Poetry, Pipfile, Go) honors
-`--include-dev` consistently via the shared C6
-`mikebom:dev-dependency` parity wiring. No new flag, no new
-annotation, no new catalog row.
+- **#101**: remove the deprecated `--include-dev` parse-and-warn
+  shim once the soak window completes (~3 weeks post-052/part-3).
+- **#103**: LICENSE-file detection on the Go main-module
+  (currently emits empty `licenses`; C40 role tag preserves
+  sbomqs licensing-coverage parity).
+- **#104**: per-ecosystem main-modules for npm / cargo / maven /
+  pip / gem (Go-only in milestone 053).
+- **#108**: migrate every filesystem walker to a single shared
+  `safe_walk` helper (milestone 054 kept per-walker patches to
+  minimize blast radius before this release).
+- **#109**: per-ecosystem expansion of the realistic-project CI
+  matrix beyond knative/func (cargo / npm / maven / pip / gem /
+  rpm / deb / apk).
 
 ## [0.1.0-alpha.9] — 2026-05-01
 

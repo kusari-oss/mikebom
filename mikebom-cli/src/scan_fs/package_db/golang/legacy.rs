@@ -27,7 +27,10 @@ use std::path::{Path, PathBuf};
 
 use mikebom_common::types::purl::{encode_purl_segment, Purl};
 
-use super::PackageDbEntry;
+// `super` is now `golang/` (not `package_db/`) post-milestone-055 T008
+// directory promotion. Import via crate-absolute path so the reference
+// is unambiguous regardless of where this module nests in the tree.
+use crate::scan_fs::package_db::PackageDbEntry;
 
 /// Max depth for the recursive project-root search. Matches the npm
 /// walker's budget — enough to cover monorepo shapes without running
@@ -115,6 +118,13 @@ impl GoModCache {
         try_add(rootfs.join("usr/local/go/pkg/mod"), &mut roots);
 
         GoModCache { roots }
+    }
+
+    /// True when no cache roots were discovered. Used by the
+    /// milestone 055 resolver to short-circuit step 2 (cache walk)
+    /// when there's no cache to walk.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.roots.is_empty()
     }
 
     /// Read `<cache>/cache/download/<escaped>/@v/<version>.mod` and
@@ -472,12 +482,43 @@ fn build_golang_purl(module: &str, version: &str) -> Option<Purl> {
 /// cache at `<GOMODCACHE>/cache/download/<escaped>/@v/<version>.mod`
 /// when `cache` can resolve it — otherwise the transitive entry stays
 /// edge-less.
+// Backward-compat wrapper for the milestone 049/053 unit tests. The
+// production path in `read()` uses
+// `build_entries_from_go_module_with_lookup` directly with a
+// `ModuleGraphMap`-backed closure (T025); this wrapper preserves the
+// pre-055 cache-only behavior for the existing tests so they continue
+// to verify cache-walk semantics in isolation. `#[allow(dead_code)]`
+// because rustc's dead-code analysis runs on the production-binary
+// compile (tests excluded) — the function IS used, just only by tests.
+#[allow(dead_code)]
 pub(crate) fn build_entries_from_go_module(
     doc: &GoModDocument,
     sums: &[GoSumEntry],
     source_path: &str,
     cache: &GoModCache,
 ) -> Vec<PackageDbEntry> {
+    build_entries_from_go_module_with_lookup(doc, sums, source_path, |p, v| {
+        cache_lookup_depends(cache, p, v)
+    })
+}
+
+/// Like `build_entries_from_go_module`, but lets the caller supply the
+/// transitive-edge lookup. Used by the post-T025 `read()` path: it
+/// builds a `ModuleGraphMap` once per scan via `GraphResolver::resolve`,
+/// then passes a closure that consults the map.
+///
+/// `lookup_depends` receives `(resolved_path, resolved_version)` AFTER
+/// `apply_replace_and_exclude` and returns the ordered list of direct-
+/// require module paths to attach to the entry's `depends` field.
+pub(crate) fn build_entries_from_go_module_with_lookup<F>(
+    doc: &GoModDocument,
+    sums: &[GoSumEntry],
+    source_path: &str,
+    lookup_depends: F,
+) -> Vec<PackageDbEntry>
+where
+    F: Fn(&str, &str) -> Vec<String>,
+{
     let mut out = Vec::new();
     let mut seen_purls: HashSet<String> = HashSet::new();
 
@@ -517,7 +558,7 @@ pub(crate) fn build_entries_from_go_module(
         // an empty `depends` vec; the scan_fs resolver drops dangling
         // targets so only modules actually observed in go.sum become
         // dependsOn edges.
-        let depends = cache_lookup_depends(cache, &resolved_path, &resolved_version);
+        let depends = lookup_depends(&resolved_path, &resolved_version);
         // Attach the module's `h1:` dirhash as a SHA-256 component
         // hash. This isn't a tarball hash — it's SHA-256 over a
         // sorted manifest of per-file hashes (see
@@ -567,6 +608,12 @@ pub(crate) fn build_entries_from_go_module(
 /// tell post-hoc which of the upstream module's deps ended up in the
 /// current project's build graph — better to emit the full edge set
 /// and let the scan-wide dedup drop dangling targets).
+///
+/// Dead-code-allowed because the production `read()` path uses the
+/// milestone 055 `GraphResolver`'s cache walk instead. This function
+/// is preserved for the milestone 053 backward-compat wrapper above
+/// (used by unit tests).
+#[allow(dead_code)]
 fn cache_lookup_depends(cache: &GoModCache, module: &str, version: &str) -> Vec<String> {
     let Some(text) = cache.read_mod_file(module, version) else {
         return Vec::new();
@@ -883,10 +930,64 @@ pub fn read(rootfs: &Path, _include_dev: bool) -> (Vec<PackageDbEntry>, GoScanSi
     // test-only imports.
     let mut test_imports: HashSet<String> = HashSet::new();
     let mut main_module_emitted = 0usize;
+    // Milestone 055 (T024 + T025): build the GraphResolver once per
+    // scan and reuse it across project roots. The resolver's
+    // 4-step ladder produces a `ModuleGraphMap` that supersedes the
+    // per-entry `cache_lookup_depends()` lookup of milestone 053 —
+    // edges populate from `$GOMODCACHE` (when present) AND from the
+    // proxy fetch (`$GOPROXY`, default `proxy.golang.org`) when the
+    // cache misses. Sync throughout (R3 deviation: the resolver lives
+    // inside this sync chain). `--offline` plumbing is the T010
+    // followup — for now we hard-code `false` and let `$GOPROXY=off`
+    // be the user's offline knob; T024/T025 leaves a TODO marker in
+    // `package_db/mod.rs::read_all` covering the flag-thread.
+    use crate::scan_fs::package_db::golang::graph_resolver::{
+        GraphResolver, GraphResolverConfig, WorkspaceContext,
+    };
+    let resolver = GraphResolver::new(GraphResolverConfig::default());
+
     for (project_root, doc, sums) in &parsed_roots {
         let go_sum_path = project_root.join("go.sum");
         let source_path = go_sum_path.to_string_lossy().into_owned();
-        let entries = build_entries_from_go_module(doc, sums, &source_path, &cache);
+
+        // Build the workspace context + resolve the transitive graph
+        // for this project root once. The map is then consulted by the
+        // per-entry closure passed into
+        // `build_entries_from_go_module_with_lookup`.
+        let ctx = WorkspaceContext::from_parts(
+            project_root.clone(),
+            doc,
+            sums,
+            /* offline = */ false,
+        );
+        let graph_map = match resolver.resolve(&ctx, &cache) {
+            Ok(m) => m,
+            Err(e) => {
+                tracing::warn!(
+                    project_root = %project_root.display(),
+                    error = %e,
+                    "Go transitive-edge resolver failed; falling back to empty edge set"
+                );
+                Default::default()
+            }
+        };
+
+        let entries = build_entries_from_go_module_with_lookup(
+            doc,
+            sums,
+            &source_path,
+            |path, version| {
+                let id = crate::scan_fs::package_db::golang::module_id::ModuleId::new(
+                    path.to_string(),
+                    version.to_string(),
+                );
+                graph_map
+                    .requires(&id)
+                    .iter()
+                    .map(|m| m.path().to_string())
+                    .collect()
+            },
+        );
         for entry in entries {
             let purl_key = entry.purl.as_str().to_string();
             if seen_purls.insert(purl_key) {

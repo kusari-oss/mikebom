@@ -1,0 +1,3 @@
+Synthesized .mod files served by the wiremock proxy in
+mikebom-cli/tests/go_transitive_edges.rs (milestone 055 FR-012).
+Populated incrementally during T026.

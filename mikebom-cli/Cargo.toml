@@ -185,6 +185,11 @@ tempfile = "3"
 # specs/010-spdx-output-support/research.md R5. Pure Rust — no C deps;
 # verified to not break the no_c_dependencies regression test.
 jsonschema = { version = "0.46", default-features = false }
+# Milestone 055 — hermetic HTTP fixture for the Go transitive-edges
+# resolver's proxy-fetch path (FR-011 / FR-012). Pure Rust, async,
+# integrates with tokio. Dev-only — never ships in the production
+# binary. See specs/055-go-transitive-edges/research.md R9.
+wiremock = "0.6"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Activated by the `ebpf-tracing` feature. Combined with the target

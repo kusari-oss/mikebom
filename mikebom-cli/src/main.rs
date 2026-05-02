@@ -156,6 +156,19 @@ async fn main() -> anyhow::Result<std::process::ExitCode> {
 
     let cli = Cli::parse();
 
+    // Milestone 055 (T010): expose --offline as MIKEBOM_OFFLINE env var
+    // so the Go transitive-edge resolver in `scan_fs::package_db::
+    // golang::graph_resolver::WorkspaceContext::from_parts` can honor
+    // it without requiring the multi-test-fixture refactor of plumbing
+    // a `bool` parameter through `scan_path` → `read_all` → `golang::
+    // read`. Future cleanup: replace this env-var bridge with a proper
+    // signature parameter when threading through the broader scan API.
+    if cli.offline {
+        // SAFETY: single-threaded prelude before any async runtime
+        // workers spawn — env mutation here is race-free.
+        std::env::set_var("MIKEBOM_OFFLINE", "1");
+    }
+
     // Milestone 052/part-3: deprecation warning for --include-dev.
     // The flag still parses (back-compat — automation that bakes it
     // in continues to work) but has no effect post-052: the new

@@ -138,9 +138,9 @@ description: "Tasks for milestone 055 — Go transitive dependency edges, anchor
 
 **Independent Test**: Trigger the realistic-project CI job in a PR. Verify it reports the per-fixture edge count and fails on a synthetic regression (e.g., a one-line change to `step3_proxy_fetch_for_each_missing` that returns empty).
 
-- [ ] T036 [US3] Locate the milestone 054 realistic-project CI job (likely `.github/workflows/realistic-projects.yml` or an extension of `ci.yml`). Add a post-scan step that parses the resulting SBOM (CDX or SPDX, whichever the job already emits) and counts transitive edges among `pkg:golang` components. Assert ≥ 200 for `knative/func @ knative-v1.22.0` per SC-003. On assertion failure, log: `"Go transitive edges regressed: knative/func produced N edges (expected ≥ 200)."`
+- [X] T036 [US3] Locate the milestone 054 realistic-project CI job (likely `.github/workflows/realistic-projects.yml` or an extension of `ci.yml`). Add a post-scan step that parses the resulting SBOM (CDX or SPDX, whichever the job already emits) and counts transitive edges among `pkg:golang` components. Assert ≥ 200 for `knative/func @ knative-v1.22.0` per SC-003. On assertion failure, log: `"Go transitive edges regressed: knative/func produced N edges (expected ≥ 200)."`
 
-- [ ] T037 [US3] Document the expected edge-count threshold in `specs/055-go-transitive-edges/realistic-project-baseline.md` (small new file in the spec dir) — captures the SC-003 baseline, when it was measured, on which platform, and the upstream tag pinned for measurement. Future tag bumps (knative/func updates) update this file alongside the assertion threshold.
+- [X] T037 [US3] Document the expected edge-count threshold in `specs/055-go-transitive-edges/realistic-project-baseline.md` (small new file in the spec dir) — captures the SC-003 baseline, when it was measured, on which platform, and the upstream tag pinned for measurement. Future tag bumps (knative/func updates) update this file alongside the assertion threshold.
 
 **Checkpoint**: All three stories functional. The CI matrix protects against regressions.
 

@@ -164,27 +164,49 @@ impl CycloneDxBuilder {
         &self,
         components: &[ResolvedComponent],
     ) -> anyhow::Result<serde_json::Value> {
-        // Milestone 053 FR-001a: the Go main-module is emitted via
-        // CDX `metadata.component` per Constitution Principle V (native
-        // BOM-subject construct). Skip it here so it does NOT also
-        // appear as a sibling in the top-level `components[]` array —
-        // sibling-emission is the pre-053 pattern this milestone
-        // replaces. Edges from the main-module to direct requires
-        // continue to emit via `dependencies[]` because the existing
-        // edge-emission loop reads relationships keyed by the main-
-        // module's PURL, which `metadata.component.bom-ref` matches.
-        let is_go_main_module = |c: &ResolvedComponent| {
+        // Milestones 053 (Go) + 064 (cargo) FR-001a: a main-module is
+        // emitted via CDX `metadata.component` per Constitution
+        // Principle V (native BOM-subject construct). Skip it here so
+        // it does NOT also appear as a sibling in the top-level
+        // `components[]` array — sibling-emission is the pre-053
+        // pattern these milestones replace. Edges from the main-
+        // module to direct deps continue to emit via `dependencies[]`
+        // because the existing edge-emission loop reads relationships
+        // keyed by the main-module's PURL, which
+        // `metadata.component.bom-ref` matches.
+        //
+        // **Multi-main-module case (cargo workspace, polyglot)**:
+        // when N > 1 main-modules exist, NONE are promoted to
+        // `metadata.component` (see `metadata.rs` — the placeholder
+        // path is used instead). In that case all N main-modules
+        // MUST emit normally in `components[]` so consumers can find
+        // every workspace member. We detect this by counting the
+        // main-modules: skip from `components[]` only when there's
+        // exactly one (matching `metadata.rs`'s promotion predicate).
+        let main_module_count = components
+            .iter()
+            .filter(|c| {
+                c.extra_annotations
+                    .get("mikebom:component-role")
+                    .and_then(|v| v.as_str())
+                    == Some("main-module")
+            })
+            .count();
+        let is_main_module = |c: &ResolvedComponent| {
             c.extra_annotations
                 .get("mikebom:component-role")
                 .and_then(|v| v.as_str())
                 == Some("main-module")
+        };
+        let is_promoted_main_module = |c: &ResolvedComponent| {
+            main_module_count == 1 && is_main_module(c)
         };
 
         // First pass: identify top-level PURLs so we can route children
         // that reference valid parents. Orphans fall back to top-level.
         let top_level_purls: std::collections::HashSet<String> = components
             .iter()
-            .filter(|c| c.parent_purl.is_none() && !is_go_main_module(c))
+            .filter(|c| c.parent_purl.is_none() && !is_promoted_main_module(c))
             .map(|c| c.purl.as_str().to_string())
             .collect();
 
@@ -205,7 +227,7 @@ impl CycloneDxBuilder {
         for component in components {
             // Milestone 053: skip the Go main-module — it lives in
             // `metadata.component`, not `components[]`.
-            if is_go_main_module(component) {
+            if is_promoted_main_module(component) {
                 continue;
             }
             // Decide this entry's bom-ref: plain PURL when top-level,

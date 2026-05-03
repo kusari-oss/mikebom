@@ -142,28 +142,59 @@ pub fn build_metadata(
     //
     // Priority ladder for the metadata.component subject (most-
     // precise wins):
-    //   1. Milestone 053: a Go main-module component is present (any
-    //      ResolvedComponent carrying `mikebom:component-role:
-    //      "main-module"` in its extra annotations) — use its real
-    //      `pkg:golang/<module>@<version>` PURL. Per FR-001a this is
-    //      the standards-native CDX placement (Trivy's pattern).
+    //   1. Milestones 053 (Go) + 064 (cargo): any main-module component
+    //      is present (any ResolvedComponent carrying
+    //      `mikebom:component-role: "main-module"` in its extra
+    //      annotations) — use its real `pkg:<ecosystem>/...@<ver>`
+    //      PURL. Per FR-001a this is the standards-native CDX
+    //      placement (Trivy's pattern). The predicate is C40-tag-
+    //      driven, so any future ecosystem (issue #104: npm, pip,
+    //      maven, gem) inherits this slot automatically once it
+    //      emits a main-module entry. When multiple main-modules
+    //      exist (cargo workspace, polyglot scans), the FIRST one
+    //      sorted by walker order is selected here — but the
+    //      polyglot super-root path in `document.rs` / `builder.rs`
+    //      is what consumers should rely on for the multi-root case.
     //   2. M3 — Maven scan-target-coord identified by the JAR walker
     //      (either target-name match or fat-jar heuristic): use the
     //      `pkg:maven/<g>/<a>@<v>` coord — far more useful than the
     //      generic placeholder for Maven Central advisory mapping.
     //   3. Default — `pkg:generic/<target>@<version>` placeholder for
-    //      non-Go-non-Maven scan subjects.
-    let go_main_module: Option<&ResolvedComponent> = components
+    //      non-main-module-bearing scan subjects.
+    // Count all main-modules in the scan. CDX `metadata.component` is
+    // singular, so it can only host ONE component. If exactly one
+    // main-module exists (single-crate scans, single-go.mod scans),
+    // promote it to `metadata.component`. If multiple main-modules
+    // exist (cargo workspace with N members per milestone 064; rare
+    // go.work multi-module), fall through to the synthetic-placeholder
+    // path so all N main-modules can emit naturally as siblings in
+    // `components[]` and be co-targeted by `documentDescribes` /
+    // `dependsOn` from the placeholder. This is the simplest correct
+    // CDX shape for the workspace-multi-member case; Trivy's "Root:
+    // true" pattern doesn't generalize cleanly when there's no single
+    // root crate to elect.
+    let main_module_count = components
         .iter()
-        .find(|c| {
+        .filter(|c| {
             c.extra_annotations
                 .get("mikebom:component-role")
                 .and_then(|v| v.as_str())
                 == Some("main-module")
-        });
+        })
+        .count();
+    let main_module: Option<&ResolvedComponent> = if main_module_count == 1 {
+        components.iter().find(|c| {
+            c.extra_annotations
+                .get("mikebom:component-role")
+                .and_then(|v| v.as_str())
+                == Some("main-module")
+        })
+    } else {
+        None
+    };
 
     let (subject_name, subject_version, synthetic_component_purl) =
-        if let Some(c) = go_main_module {
+        if let Some(c) = main_module {
             (
                 c.name.clone(),
                 c.version.clone(),
@@ -202,7 +233,7 @@ pub fn build_metadata(
     // alphanumerics → underscore). sbomqs's schema validator runs CPE
     // validation on metadata.component and flags empty/absent fields
     // as invalid.
-    let synthetic_component_cpe = if let Some(c) = go_main_module {
+    let synthetic_component_cpe = if let Some(c) = main_module {
         c.cpes
             .first()
             .cloned()
@@ -258,7 +289,7 @@ pub fn build_metadata(
             "type": "application",
             "name": subject_name,
             "version": subject_version,
-            "bom-ref": if go_main_module.is_some() {
+            "bom-ref": if main_module.is_some() {
                 // Milestone 053: when the metadata.component is the
                 // Go main-module, its bom-ref MUST equal the PURL so
                 // existing `dependencies[].ref` entries (which key
@@ -284,7 +315,7 @@ pub fn build_metadata(
     // the native field (`type: "application"`) OR the supplementary
     // tag identify the main-module. Also surface
     // `mikebom:sbom-tier: "source"` per FR-006.
-    if let Some(c) = go_main_module {
+    if let Some(c) = main_module {
         let mut comp_props = vec![json!({
             "name": "mikebom:component-role",
             "value": "main-module",

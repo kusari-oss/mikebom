@@ -41,6 +41,7 @@ Auto-generated from all feature plans. Last updated: 2026-05-03
 - N/A — all state in-process per scan; no persistence (matches every milestone since 002). (064-cargo-main-module)
 - Rust stable (workspace toolchain inherited from milestones 001–065; no nightly required). + Existing only — `serde_json` (already used by `npm/walk.rs`), `tracing`, `anyhow`. **No new crates.** No subprocess calls. (066-npm-main-module)
 - Rust stable (workspace toolchain inherited; no nightly). + Existing only — `toml = "0.8"` (already used by `mikebom-cli/src/scan_fs/package_db/cargo.rs:305` and indirectly elsewhere), `serde`/`serde_json`, `tracing`, `anyhow`. **No new crates.** No subprocess calls. (068-pip-main-module)
+- Rust stable; no nightly. + Existing only — no new crates. Reuses `parse_gemspec_full` (regex-based pure-Rust gemspec parser at `gem.rs:947`), `build_gem_purl` (PURL helper), `parse_gemspec_groups` (dep-section extractor for FR-007 edge classification). (069-gem-main-module)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -103,9 +104,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 069-gem-main-module: Added Rust stable; no nightly. + Existing only — no new crates. Reuses `parse_gemspec_full` (regex-based pure-Rust gemspec parser at `gem.rs:947`), `build_gem_purl` (PURL helper), `parse_gemspec_groups` (dep-section extractor for FR-007 edge classification).
 - 068-pip-main-module: Added Rust stable (workspace toolchain inherited; no nightly). + Existing only — `toml = "0.8"` (already used by `mikebom-cli/src/scan_fs/package_db/cargo.rs:305` and indirectly elsewhere), `serde`/`serde_json`, `tracing`, `anyhow`. **No new crates.** No subprocess calls.
 - 066-npm-main-module: Added Rust stable (workspace toolchain inherited from milestones 001–065; no nightly required). + Existing only — `serde_json` (already used by `npm/walk.rs`), `tracing`, `anyhow`. **No new crates.** No subprocess calls.
-- 064-cargo-main-module: Added Rust stable (workspace toolchain inherited from milestones 001–063; no nightly required for this user-space-only work). + Existing only — `toml = "0.8"` (already used by `mikebom-cli/src/scan_fs/package_db/cargo.rs:305`), `serde`/`serde_json`, `tracing`, `anyhow`. **No new crates.** No subprocess calls (manifest-only resolution; the `git describe` ladder from milestone 053 is *not* needed because `[package].version` is always declared in cargo manifests).
 
 
 <!-- MANUAL ADDITIONS START -->

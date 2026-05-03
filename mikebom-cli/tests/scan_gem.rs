@@ -417,3 +417,178 @@ BUNDLED WITH
     let rack = gem_named(&sbom, "rack").expect("rack must emit");
     assert!(!has_dev_property(rack), "rack must not be tagged dev");
 }
+
+// --- Milestone 069: gem main-module emission ------------------------
+
+fn cli_local_fixture(sub: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(sub)
+}
+
+fn scan_path_format(path: &Path, format: &str) -> serde_json::Value {
+    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let out_path = tempfile::NamedTempFile::new()
+        .expect("tempfile")
+        .path()
+        .to_path_buf();
+    let output = Command::new(bin)
+        .arg("--offline")
+        .arg("sbom")
+        .arg("scan")
+        .arg("--path")
+        .arg(path)
+        .arg("--format")
+        .arg(format)
+        .arg("--output")
+        .arg(&out_path)
+        .arg("--no-deep-hash")
+        .output()
+        .expect("mikebom should run");
+    assert!(
+        output.status.success(),
+        "scan failed: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let raw = std::fs::read_to_string(&out_path).expect("read sbom");
+    serde_json::from_str(&raw).expect("valid JSON")
+}
+
+/// US1 AS#1 + SC-001: top-level *.gemspec emits a main-module in
+/// CDX `metadata.component`.
+#[test]
+fn scan_gem_top_level_gemspec_emits_main_module_in_metadata_component() {
+    let path = cli_local_fixture("gem-source-project");
+    let cdx = scan_path_format(&path, "cyclonedx-json");
+    let meta = &cdx["metadata"]["component"];
+    assert_eq!(meta["type"].as_str(), Some("application"));
+    assert_eq!(meta["purl"].as_str(), Some("pkg:gem/foo@1.0.0"));
+    assert_eq!(meta["name"].as_str(), Some("foo"));
+    let role = meta["properties"]
+        .as_array()
+        .expect("metadata.component.properties")
+        .iter()
+        .find(|p| p["name"].as_str() == Some("mikebom:component-role"));
+    assert_eq!(
+        role.and_then(|p| p["value"].as_str()),
+        Some("main-module")
+    );
+}
+
+/// US1 AS#2: non-literal `s.version = SomeConstant` falls back to
+/// `0.0.0-unknown` placeholder per FR-001 + A9.
+#[test]
+fn scan_gem_non_literal_version_uses_placeholder() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        dir.path().join("bar.gemspec"),
+        r#"
+Gem::Specification.new do |s|
+  s.name    = "bar"
+  s.version = Bar::VERSION
+end
+"#,
+    )
+    .unwrap();
+    let cdx = scan_path_format(dir.path(), "cyclonedx-json");
+    assert_eq!(
+        cdx["metadata"]["component"]["purl"].as_str(),
+        Some("pkg:gem/bar@0.0.0-unknown"),
+    );
+}
+
+/// US1 AS#4 + FR-002 + SC-002: application-style Ruby project
+/// (Gemfile + Gemfile.lock, no top-level `*.gemspec`) skips
+/// main-module emission.
+#[test]
+fn scan_gem_application_style_skips_main_module() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        dir.path().join("Gemfile"),
+        "source 'https://rubygems.org'\ngem 'rake', '13.0.0'\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("Gemfile.lock"),
+        r#"GEM
+  remote: https://rubygems.org/
+  specs:
+    rake (13.0.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  rake (= 13.0.0)
+"#,
+    )
+    .unwrap();
+    let spdx = scan_path_format(dir.path(), "spdx-2.3-json");
+    let app_pkgs: Vec<&serde_json::Value> = spdx["packages"]
+        .as_array()
+        .map(|a| a.as_slice())
+        .unwrap_or(&[])
+        .iter()
+        .filter(|p| {
+            p["primaryPackagePurpose"].as_str() == Some("APPLICATION")
+        })
+        .collect();
+    assert_eq!(
+        app_pkgs.len(),
+        0,
+        "application-style project (Gemfile only, no *.gemspec) MUST NOT emit a main-module per FR-002. Got: {app_pkgs:#?}"
+    );
+}
+
+/// FR-003: `*.gemspec` files inside install-state paths
+/// (`vendor/`, `gems/`, `specifications/`, `.bundle/`) must NOT
+/// emit main-modules.
+#[test]
+fn scan_gem_install_state_paths_skipped() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    // Top-level gemspec — should emit.
+    std::fs::write(
+        root.join("foo.gemspec"),
+        r#"
+Gem::Specification.new do |s|
+  s.name = "foo"
+  s.version = "1.0.0"
+end
+"#,
+    )
+    .unwrap();
+    // vendor/ + gems/ subdirs — must NOT emit per FR-003.
+    for skip_parent in ["vendor", "gems"] {
+        let dir_path = root.join(skip_parent).join("shadow-1.0.0");
+        std::fs::create_dir_all(&dir_path).unwrap();
+        std::fs::write(
+            dir_path.join("shadow.gemspec"),
+            r#"
+Gem::Specification.new do |s|
+  s.name = "shadow"
+  s.version = "9.9.9"
+end
+"#,
+        )
+        .unwrap();
+    }
+    let cdx = scan_path_format(root, "cyclonedx-json");
+    assert_eq!(
+        cdx["metadata"]["component"]["purl"].as_str(),
+        Some("pkg:gem/foo@1.0.0"),
+    );
+    // Verify no `pkg:gem/shadow` appears anywhere.
+    let any_shadow = cdx["components"]
+        .as_array()
+        .map(|a| {
+            a.iter().any(|c| {
+                c["purl"].as_str().is_some_and(|p| p.starts_with("pkg:gem/shadow"))
+            })
+        })
+        .unwrap_or(false);
+    assert!(
+        !any_shadow,
+        "shadow.gemspec inside vendor/ or gems/ MUST NOT emit a component per FR-003"
+    );
+}

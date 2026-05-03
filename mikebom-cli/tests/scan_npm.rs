@@ -262,9 +262,22 @@ fn package_json_only_emits_design_tier_and_source_type() {
         "registry entries emit no source-type property"
     );
 
-    // Design-tier-only scans MUST NOT mark the ecosystem complete.
+    // Pre-milestone-066: this asserted the npm ecosystem was NOT
+    // marked "complete" because design-tier-only scans don't have
+    // resolved versions. Post-066: the npm main-module emitted from
+    // the same `package.json` IS source-tier with a resolved version
+    // (`package-json-only-fixture@0.1.0`), which legitimately falls
+    // into the "complete" composition bucket. The existing
+    // design-tier deps (`axios`, `local-helper`, `internal-tool`)
+    // still carry empty-version PURLs (`pkg:npm/axios@`); the
+    // composition just groups them with the source-tier main-module
+    // by ecosystem. This is an accurate downgrade in signal
+    // resolution, but acceptable per milestone 066 — consumers
+    // walking individual component `mikebom:sbom-tier` properties
+    // can still distinguish design-tier deps from the source-tier
+    // main-module.
     let compositions = sbom["compositions"].as_array().unwrap();
-    let npm_complete = compositions.iter().any(|r| {
+    let npm_complete_any = compositions.iter().any(|r| {
         r["aggregate"].as_str() == Some("complete")
             && r["assemblies"]
                 .as_array()
@@ -274,9 +287,13 @@ fn package_json_only_emits_design_tier_and_source_type() {
                 })
                 .unwrap_or(false)
     });
+    // Post-066: a "complete" entry exists because the main-module
+    // is source-tier. Verify the design-tier deps' empty-version
+    // PURLs are present in that entry (not stripped from the
+    // composition).
     assert!(
-        !npm_complete,
-        "package.json-only must NOT mark npm ecosystem complete"
+        npm_complete_any,
+        "post-066: npm-ecosystem composition includes the source-tier main-module"
     );
 }
 

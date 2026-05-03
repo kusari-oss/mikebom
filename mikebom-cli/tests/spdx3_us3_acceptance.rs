@@ -237,13 +237,25 @@ fn scenario_4_npm_fixture_has_purl_parity_between_cdx_and_spdx3() {
         serde_json::from_str(&std::fs::read_to_string(&spdx3_path).unwrap())
             .unwrap();
 
-    let cdx_npm_purls: BTreeSet<String> = cdx["components"]
+    // Milestone 066: the npm main-module lives in CDX
+    // `metadata.component` (per FR-001a, milestones 053+064+066),
+    // not as a sibling in `components[]`. Include it in the CDX
+    // PURL set so the SPDX 3 ⇄ CDX parity comparison stays
+    // symmetric — SPDX 3 puts the main-module Package in the
+    // top-level `@graph` array regardless of metadata-component
+    // semantics.
+    let mut cdx_npm_purls: BTreeSet<String> = cdx["components"]
         .as_array()
         .unwrap()
         .iter()
         .filter_map(|c| c["purl"].as_str().map(String::from))
         .filter(|p| p.starts_with("pkg:npm/"))
         .collect();
+    if let Some(meta_purl) = cdx["metadata"]["component"]["purl"].as_str() {
+        if meta_purl.starts_with("pkg:npm/") {
+            cdx_npm_purls.insert(meta_purl.to_string());
+        }
+    }
 
     // SPDX 3 carries PURLs on software_Package.software_packageUrl.
     // Filter to npm-only to match the CDX filter — milestone 011 emits

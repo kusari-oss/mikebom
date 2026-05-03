@@ -121,6 +121,85 @@ pub fn read(
         }
     }
 
+    // Milestone 066: emit one main-module per `package.json` with `name`
+    // (skipping `private: true` + no version per #104). Augment-existing-
+    // or-emit-new pattern mirrors cargo (064 T011) — when a same-PURL
+    // lockfile-derived entry already exists, layer the C40 supplementary
+    // tag + `sbom_tier: source` + `parent_purl: None` on top while
+    // preserving the lockfile's `depends`. When no lockfile entry
+    // collided, emit a net-new main-module (library packages without
+    // committed lockfiles).
+    let mut main_modules_emitted = 0usize;
+    for project_root in candidate_project_roots(rootfs) {
+        let Some(synthesized) = walk::build_npm_main_module_entry(&project_root) else {
+            continue;
+        };
+        let purl_key = synthesized.purl.as_str().to_string();
+        if let Some(existing) = entries.iter_mut().find(|e| e.purl.as_str() == purl_key) {
+            // Augment in-place: layer C40 tag + sbom_tier:source over
+            // any existing same-PURL entry.
+            for (k, v) in synthesized.extra_annotations.iter() {
+                existing
+                    .extra_annotations
+                    .entry(k.clone())
+                    .or_insert_with(|| v.clone());
+            }
+            if existing.sbom_tier.is_none() {
+                existing.sbom_tier = synthesized.sbom_tier.clone();
+            }
+            // Merge synthesized depends into existing depends, dedup.
+            let existing_deps: std::collections::HashSet<String> =
+                existing.depends.iter().cloned().collect();
+            for d in &synthesized.depends {
+                if !existing_deps.contains(d) {
+                    existing.depends.push(d.clone());
+                }
+            }
+            // Mark as top-level — main-modules are linker roots,
+            // never children of another component.
+            existing.parent_purl = None;
+            main_modules_emitted += 1;
+        } else if seen_purls.insert(purl_key) {
+            entries.push(synthesized);
+            main_modules_emitted += 1;
+        }
+    }
+
+    // Milestone 066 same-PURL dedup. Collapses same-PURL collisions
+    // (rare for npm given `node_modules/` exclusion in
+    // should_skip_descent, but defensive). Non-main-module entries
+    // are untouched (already deduped by `seen_purls`).
+    let dedup_drops = walk::dedup_npm_main_modules_by_purl(&mut entries);
+    if !dedup_drops.is_empty() {
+        let dropped_paths: Vec<String> = dedup_drops
+            .iter()
+            .map(|d| d.dropped_path.clone())
+            .collect();
+        let kept_path = dedup_drops
+            .first()
+            .map(|d| d.kept_path.clone())
+            .unwrap_or_default();
+        let example_purl = dedup_drops
+            .first()
+            .map(|d| d.purl.clone())
+            .unwrap_or_default();
+        tracing::warn!(
+            count = dedup_drops.len(),
+            example_purl = %example_purl,
+            kept = %kept_path,
+            dropped = ?dropped_paths,
+            "npm: deduped same-PURL package.json files",
+        );
+    }
+    if main_modules_emitted > 0 {
+        tracing::info!(
+            rootfs = %rootfs.display(),
+            main_modules_emitted,
+            same_purl_duplicates_dropped = dedup_drops.len(),
+            "npm: emitted main-module components",
+        );
+    }
+
     Ok(entries)
 }
 

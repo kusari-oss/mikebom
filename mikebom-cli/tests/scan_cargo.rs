@@ -473,3 +473,153 @@ checksum = "abcd1234"
         "workspace member's dev-dep dropped under --exclude-scope dev,build,test",
     );
 }
+
+// --- Milestone 064: cargo main-module emission ------------------------
+
+/// US1 AS#1 + SC-001: a single-crate cargo project with `[package]`
+/// emits exactly one main-module component with the manifest-derived
+/// PURL placed in CDX `metadata.component`.
+#[test]
+fn scan_cargo_single_crate_emits_main_module_in_metadata_component() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        r#"
+[package]
+name = "demo-app"
+version = "1.2.3"
+edition = "2021"
+"#,
+    )
+    .unwrap();
+    let (output, _tmp, sbom_path) = run_scan_with_output(dir.path());
+    assert!(
+        output.status.success(),
+        "scan failed: stderr={}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let raw = std::fs::read_to_string(&sbom_path).expect("read sbom");
+    let sbom: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
+    // metadata.component MUST be the main-module per FR-001a.
+    let meta = &sbom["metadata"]["component"];
+    assert_eq!(meta["type"].as_str(), Some("application"));
+    assert_eq!(meta["purl"].as_str(), Some("pkg:cargo/demo-app@1.2.3"));
+    assert_eq!(meta["name"].as_str(), Some("demo-app"));
+    assert_eq!(meta["version"].as_str(), Some("1.2.3"));
+    // C40 supplementary tag must be on metadata.component.properties.
+    let props = meta["properties"]
+        .as_array()
+        .expect("metadata.component.properties array");
+    let role = props
+        .iter()
+        .find(|p| p["name"].as_str() == Some("mikebom:component-role"));
+    assert!(
+        role.is_some(),
+        "C40 mikebom:component-role property missing from metadata.component"
+    );
+    assert_eq!(
+        role.unwrap()["value"].as_str(),
+        Some("main-module"),
+        "C40 value must be \"main-module\""
+    );
+    // Same PURL must NOT also appear in components[] (FR-001a).
+    let components = sbom["components"]
+        .as_array()
+        .map(|a| a.as_slice())
+        .unwrap_or(&[]);
+    assert!(
+        !components
+            .iter()
+            .any(|c| c["purl"].as_str() == Some("pkg:cargo/demo-app@1.2.3")),
+        "main-module's PURL must not double-emit in components[]"
+    );
+}
+
+/// US1 AS#3: `version.workspace = true` resolves against the
+/// enclosing workspace root's `[workspace.package].version`.
+#[test]
+fn scan_cargo_workspace_inherited_version_resolves() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/cargo-workspace");
+    let (output, _tmp, sbom_path) = run_scan_with_output(&path);
+    assert!(
+        output.status.success(),
+        "scan failed: stderr={}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let raw = std::fs::read_to_string(&sbom_path).expect("read sbom");
+    let sbom: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
+    let main_module_purls: Vec<String> = sbom["components"]
+        .as_array()
+        .map(|a| a.as_slice())
+        .unwrap_or(&[])
+        .iter()
+        .filter(|c| {
+            c["properties"]
+                .as_array()
+                .map(|p| {
+                    p.iter().any(|prop| {
+                        prop["name"].as_str() == Some("mikebom:component-role")
+                            && prop["value"].as_str() == Some("main-module")
+                    })
+                })
+                .unwrap_or(false)
+        })
+        .filter_map(|c| c["purl"].as_str().map(|s| s.to_string()))
+        .collect();
+    // Both members carry the workspace-inherited version (0.5.0).
+    assert!(
+        main_module_purls.iter().any(|p| p == "pkg:cargo/a@0.5.0"),
+        "expected pkg:cargo/a@0.5.0 in main-module set: {main_module_purls:?}"
+    );
+    assert!(
+        main_module_purls.iter().any(|p| p == "pkg:cargo/b@0.5.0"),
+        "expected pkg:cargo/b@0.5.0 in main-module set: {main_module_purls:?}"
+    );
+    // Neither uses the 0.0.0-unknown placeholder — workspace inheritance
+    // is the whole point of FR-001's resolver step 2.
+    assert!(
+        !main_module_purls
+            .iter()
+            .any(|p| p.contains("0.0.0-unknown")),
+        "no main-module should fall back to placeholder when workspace \
+         inheritance is resolvable: {main_module_purls:?}"
+    );
+}
+
+/// FR-002: workspace-only `Cargo.toml` (no `[package]`) MUST NOT emit
+/// a main-module for the root. Only members emit.
+#[test]
+fn scan_cargo_workspace_only_root_emits_no_main_module_for_root() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/cargo-workspace");
+    let (_output, _tmp, sbom_path) = run_scan_with_output(&path);
+    let raw = std::fs::read_to_string(&sbom_path).expect("read sbom");
+    let sbom: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
+    // No main-module should carry the workspace-root's name (the dir
+    // is named "cargo-workspace"; no [package] declared at that
+    // level, so no `pkg:cargo/cargo-workspace@*` should emit).
+    let main_modules: Vec<&serde_json::Value> = sbom["components"]
+        .as_array()
+        .map(|a| a.as_slice())
+        .unwrap_or(&[])
+        .iter()
+        .filter(|c| {
+            c["properties"]
+                .as_array()
+                .map(|p| {
+                    p.iter().any(|prop| {
+                        prop["name"].as_str() == Some("mikebom:component-role")
+                            && prop["value"].as_str() == Some("main-module")
+                    })
+                })
+                .unwrap_or(false)
+        })
+        .collect();
+    assert_eq!(
+        main_modules.len(),
+        2,
+        "expected exactly 2 main-modules (members a + b); workspace root \
+         (no [package]) MUST be skipped per FR-002. Got: {main_modules:?}"
+    );
+}

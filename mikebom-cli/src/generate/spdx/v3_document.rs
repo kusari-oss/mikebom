@@ -92,7 +92,7 @@ pub fn build_document(
     // Empty-scan case: synthesize a root Package so the document
     // is still structurally valid (matches SPDX 2.3 path's
     // synthesize-root behavior for sbomqs parity).
-    let (root_iri, synthetic_root_added) = pick_root_iri(
+    let (root_iris, synthetic_root_added) = pick_root_iri(
         scan,
         &doc_iri,
         &package_iri_by_purl,
@@ -124,7 +124,7 @@ pub fn build_document(
         "creationInfo": CREATION_INFO_ID,
         "name": scan.target_name,
         "dataLicense": "https://spdx.org/licenses/CC0-1.0",
-        "rootElement": [root_iri.clone()],
+        "rootElement": root_iris.clone(),
         "comment": scope_comment,
     });
     if let Some(locator) = openvex_locator {
@@ -184,13 +184,12 @@ pub fn build_document(
     ));
     all_relationships.extend(license_relationships);
     if !synthetic_root_added {
-        if let Some(describes) = super::v3_relationships::build_describes_relationship(
+        let describes_rels = super::v3_relationships::build_describes_relationships(
             &doc_iri,
-            &root_iri,
+            &root_iris,
             CREATION_INFO_ID,
-        ) {
-            all_relationships.push(describes);
-        }
+        );
+        all_relationships.extend(describes_rels);
     }
     all_relationships.sort_by(|a, b| {
         let key = |v: &Value| v["spdxId"].as_str().unwrap_or("").to_string();
@@ -245,10 +244,32 @@ fn pick_root_iri(
     package_iri_by_purl: &std::collections::BTreeMap<String, String>,
     packages: &mut Vec<Value>,
     components: &[ResolvedComponent],
-) -> (String, bool) {
+) -> (Vec<String>, bool) {
+    // Milestones 053 (Go) + 064 (cargo) FR-008 + #127: prefer
+    // main-module-tagged components as root elements. SPDX 3.0.1's
+    // `rootElement` is a plural array, so multi-main-module
+    // workspaces (cargo workspace members, polyglot scans) emit one
+    // root entry per main-module.
+    let main_module_iris: Vec<String> = components
+        .iter()
+        .filter(|c| {
+            c.parent_purl.is_none()
+                && c.extra_annotations
+                    .get("mikebom:component-role")
+                    .and_then(|v| v.as_str())
+                    == Some("main-module")
+        })
+        .filter_map(|c| package_iri_by_purl.get(c.purl.as_str()).cloned())
+        .collect();
+    if !main_module_iris.is_empty() {
+        let mut sorted = main_module_iris;
+        sorted.sort();
+        return (sorted, false);
+    }
+
     if let Some(c) = components.iter().find(|c| c.name == scan.target_name) {
         if let Some(iri) = package_iri_by_purl.get(c.purl.as_str()) {
-            return (iri.clone(), false);
+            return (vec![iri.clone()], false);
         }
     }
 
@@ -285,7 +306,7 @@ fn pick_root_iri(
         ],
     });
     packages.insert(0, synth_pkg);
-    (synth_iri, true)
+    (vec![synth_iri], true)
 }
 
 /// Replace characters that aren't legal in a PURL name with `-`.

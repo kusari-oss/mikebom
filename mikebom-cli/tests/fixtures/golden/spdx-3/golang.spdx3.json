@@ -22,30 +22,10 @@
       "dataLicense": "https://spdx.org/licenses/CC0-1.0",
       "name": "simple-module",
       "rootElement": [
-        "https://mikebom.kusari.dev/spdx3/doc-CHOG2S52QU7CEJEIX5ZQFJEL/pkg-root-LIZGGP3G6P24VW23"
+        "https://mikebom.kusari.dev/spdx3/doc-CHOG2S52QU7CEJEIX5ZQFJEL/pkg-4BC3TYO5L6QI7GXM"
       ],
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-CHOG2S52QU7CEJEIX5ZQFJEL",
       "type": "SpdxDocument"
-    },
-    {
-      "creationInfo": "_:creation-info",
-      "externalIdentifier": [
-        {
-          "externalIdentifierType": "cpe23",
-          "identifier": "cpe:2.3:a:mikebom:simple-module:0.0.0:*:*:*:*:*:*:*",
-          "type": "ExternalIdentifier"
-        },
-        {
-          "externalIdentifierType": "packageUrl",
-          "identifier": "pkg:generic/simple-module@0.0.0",
-          "type": "ExternalIdentifier"
-        }
-      ],
-      "name": "simple-module",
-      "software_packageUrl": "pkg:generic/simple-module@0.0.0",
-      "software_packageVersion": "0.0.0",
-      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-CHOG2S52QU7CEJEIX5ZQFJEL/pkg-root-LIZGGP3G6P24VW23",
-      "type": "software_Package"
     },
     {
       "creationInfo": "_:creation-info",
@@ -455,6 +435,16 @@
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-CHOG2S52QU7CEJEIX5ZQFJEL/rel-GVI6GIAVOIJFKZX5",
       "to": [
         "https://mikebom.kusari.dev/spdx3/doc-CHOG2S52QU7CEJEIX5ZQFJEL/pkg-FQD3O6TFIGWWRCL5"
+      ],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:creation-info",
+      "from": "https://mikebom.kusari.dev/spdx3/doc-CHOG2S52QU7CEJEIX5ZQFJEL",
+      "relationshipType": "describes",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-CHOG2S52QU7CEJEIX5ZQFJEL/rel-GVW54BLM2IDY5H3L",
+      "to": [
+        "https://mikebom.kusari.dev/spdx3/doc-CHOG2S52QU7CEJEIX5ZQFJEL/pkg-4BC3TYO5L6QI7GXM"
       ],
       "type": "Relationship"
     },

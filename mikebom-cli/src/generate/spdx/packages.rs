@@ -400,11 +400,18 @@ fn component_to_package(
     let (license_declared, decl_extracted) = reduce_license_vec(&c.licenses);
     let (license_concluded, conc_extracted) = reduce_license_vec(&c.concluded_licenses);
 
-    // Milestone 053 FR-001a (SPDX 2.3 placement): components carrying
-    // `mikebom:component-role: main-module` (catalog row C40) are the
-    // workspace's main-module — set the native SPDX 2.3 §7.24
-    // `primaryPackagePurpose: APPLICATION` field. All other components
-    // leave the field as None so existing goldens stay byte-identical.
+    // Milestones 053 (Go) + 064 (cargo) FR-001a (SPDX 2.3 placement):
+    // components carrying `mikebom:component-role: main-module`
+    // (catalog row C40) are a workspace's main-module — set the
+    // native SPDX 2.3 §7.24 `primaryPackagePurpose: APPLICATION`
+    // field. All other components leave the field as None so
+    // existing goldens stay byte-identical. The predicate is
+    // C40-tag-driven, so any future ecosystem (issue #104: npm, pip,
+    // maven, gem) inherits this slot automatically once it emits a
+    // main-module entry. SPDX 2.3 has no singular "BOM subject"
+    // slot like CDX `metadata.component`, so multi-main-module
+    // workspaces simply emit ALL main-modules with `APPLICATION`
+    // purpose and `documentDescribes[]` carries them all.
     let primary_package_purpose = c
         .extra_annotations
         .get("mikebom:component-role")

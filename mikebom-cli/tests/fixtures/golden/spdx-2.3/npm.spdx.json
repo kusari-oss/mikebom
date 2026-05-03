@@ -45,7 +45,7 @@
     }
   ],
   "creationInfo": {
-    "comment": "Scope: manifest (declared transitives included). Observed lifecycle phases: operations. Per-component scope detail in mikebom:sbom-tier annotations.",
+    "comment": "Scope: manifest (declared transitives included). Observed lifecycle phases: operations, pre-build. Per-component scope detail in mikebom:sbom-tier annotations.",
     "created": "1970-01-01T00:00:00Z",
     "creators": [
       "Tool: mikebom-0.1.0-alpha.11",
@@ -54,33 +54,11 @@
   },
   "dataLicense": "CC0-1.0",
   "documentDescribes": [
-    "SPDXRef-DocumentRoot-NSRG2OKHSHF4FJO7"
+    "SPDXRef-Package-IZGDOM2QHWPWWLEX"
   ],
-  "documentNamespace": "https://mikebom.kusari.dev/spdx/TZUTYPCJT6P2FGSRPP7RWDRC3F7UV7F4",
+  "documentNamespace": "https://mikebom.kusari.dev/spdx/VH43LH4QT2YFG5YDJPRX56WUICZEYDID",
   "name": "node-modules-walk",
   "packages": [
-    {
-      "SPDXID": "SPDXRef-DocumentRoot-NSRG2OKHSHF4FJO7",
-      "downloadLocation": "NOASSERTION",
-      "externalRefs": [
-        {
-          "referenceCategory": "PACKAGE-MANAGER",
-          "referenceLocator": "pkg:generic/node-modules-walk@0.0.0",
-          "referenceType": "purl"
-        },
-        {
-          "referenceCategory": "SECURITY",
-          "referenceLocator": "cpe:2.3:a:mikebom:node-modules-walk:0.0.0:*:*:*:*:*:*:*",
-          "referenceType": "cpe23Type"
-        }
-      ],
-      "filesAnalyzed": false,
-      "licenseConcluded": "NOASSERTION",
-      "licenseDeclared": "NOASSERTION",
-      "name": "node-modules-walk",
-      "supplier": "Organization: mikebom contributors",
-      "versionInfo": "0.0.0"
-    },
     {
       "SPDXID": "SPDXRef-Package-TXLIZUEJRNELTNPP",
       "annotations": [
@@ -121,6 +99,54 @@
       "licenseDeclared": "MIT",
       "name": "express",
       "versionInfo": "4.18.2"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-IZGDOM2QHWPWWLEX",
+      "annotations": [
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.11",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:sbom-tier\",\"value\":\"source\"}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.11",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"path+file://<WORKSPACE>/tests/fixtures/npm/node-modules-walk\"]}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.11",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.identity\",\"value\":{\"confidence\":0.85,\"technique\":\"package-database\"}}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.11",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:component-role\",\"value\":\"main-module\"}"
+        }
+      ],
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:npm/node-modules-walk-fixture@0.1.0",
+          "referenceType": "purl"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:node-modules-walk-fixture:node-modules-walk-fixture:0.1.0:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "name": "node-modules-walk-fixture",
+      "primaryPackagePurpose": "APPLICATION",
+      "versionInfo": "0.1.0"
     },
     {
       "SPDXID": "SPDXRef-Package-M4HOORJPEJNNEAJV",
@@ -166,7 +192,7 @@
   ],
   "relationships": [
     {
-      "relatedSpdxElement": "SPDXRef-DocumentRoot-NSRG2OKHSHF4FJO7",
+      "relatedSpdxElement": "SPDXRef-Package-IZGDOM2QHWPWWLEX",
       "relationshipType": "DESCRIBES",
       "spdxElementId": "SPDXRef-DOCUMENT"
     },
@@ -174,6 +200,16 @@
       "relatedSpdxElement": "SPDXRef-Package-M4HOORJPEJNNEAJV",
       "relationshipType": "DEPENDS_ON",
       "spdxElementId": "SPDXRef-Package-TXLIZUEJRNELTNPP"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-TXLIZUEJRNELTNPP",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-Package-IZGDOM2QHWPWWLEX"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-M4HOORJPEJNNEAJV",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-Package-IZGDOM2QHWPWWLEX"
     }
   ],
   "spdxVersion": "SPDX-2.3"

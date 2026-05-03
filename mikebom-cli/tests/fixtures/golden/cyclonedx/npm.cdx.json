@@ -87,10 +87,12 @@
       "aggregate": "complete",
       "assemblies": [
         "pkg:npm/express@4.18.2",
+        "pkg:npm/node-modules-walk-fixture@0.1.0",
         "pkg:npm/safe-buffer@5.2.1"
       ],
       "dependencies": [
         "pkg:npm/express@4.18.2",
+        "pkg:npm/node-modules-walk-fixture@0.1.0",
         "pkg:npm/safe-buffer@5.2.1"
       ]
     },
@@ -110,7 +112,7 @@
   "dependencies": [
     {
       "dependsOn": [
-        "pkg:npm/express@4.18.2"
+        "pkg:npm/node-modules-walk-fixture@0.1.0"
       ],
       "ref": "node-modules-walk@0.0.0"
     },
@@ -119,6 +121,13 @@
         "pkg:npm/safe-buffer@5.2.1"
       ],
       "ref": "pkg:npm/express@4.18.2"
+    },
+    {
+      "dependsOn": [
+        "pkg:npm/express@4.18.2",
+        "pkg:npm/safe-buffer@5.2.1"
+      ],
+      "ref": "pkg:npm/node-modules-walk-fixture@0.1.0"
     },
     {
       "dependsOn": [],
@@ -132,12 +141,26 @@
       }
     ],
     "component": {
-      "bom-ref": "node-modules-walk@0.0.0",
-      "cpe": "cpe:2.3:a:mikebom:node-modules-walk:0.0.0:*:*:*:*:*:*:*",
-      "name": "node-modules-walk",
-      "purl": "pkg:generic/node-modules-walk@0.0.0",
+      "bom-ref": "pkg:npm/node-modules-walk-fixture@0.1.0",
+      "cpe": "cpe:2.3:a:node-modules-walk-fixture:node-modules-walk-fixture:0.1.0:*:*:*:*:*:*:*",
+      "name": "node-modules-walk-fixture",
+      "properties": [
+        {
+          "name": "mikebom:component-role",
+          "value": "main-module"
+        },
+        {
+          "name": "mikebom:sbom-tier",
+          "value": "source"
+        },
+        {
+          "name": "mikebom:source-files",
+          "value": "path+file://<WORKSPACE>/tests/fixtures/npm/node-modules-walk"
+        }
+      ],
+      "purl": "pkg:npm/node-modules-walk-fixture@0.1.0",
       "type": "application",
-      "version": "0.0.0"
+      "version": "0.1.0"
     },
     "licenses": [
       {
@@ -149,6 +172,9 @@
     "lifecycles": [
       {
         "phase": "operations"
+      },
+      {
+        "phase": "pre-build"
       }
     ],
     "properties": [

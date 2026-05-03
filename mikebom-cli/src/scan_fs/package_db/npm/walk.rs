@@ -247,6 +247,164 @@ pub(crate) fn parse_root_package_json(
     out
 }
 
+// ---------------------------------------------------------------------------
+// Milestone 066 — npm source-tree main-module component
+// ---------------------------------------------------------------------------
+
+/// Record describing a duplicate main-module dropped during dedup,
+/// returned in batch from `dedup_npm_main_modules_by_purl` for
+/// caller-side `tracing::warn!` emission. Mirrors cargo milestone 064.
+#[derive(Debug, Clone)]
+pub(crate) struct DroppedDuplicate {
+    pub purl: String,
+    pub kept_path: String,
+    pub dropped_path: String,
+}
+
+/// Build the npm main-module entry for a single `package.json`.
+///
+/// Returns `None` when:
+/// - The manifest has no `name` field (FR-001).
+/// - The manifest has `private: true` AND no `version` field (per
+///   issue #104's explicit guidance — the author has signaled "not
+///   a publishable artifact").
+///
+/// Otherwise emits a `PackageDbEntry` with:
+/// - PURL `pkg:npm/<name>@<version>` (or `pkg:npm/%40<scope>/<name>@<version>`
+///   for scoped names) via `build_npm_purl` which already handles
+///   PURL scope encoding.
+/// - `version` is the literal `package.json#version` if declared,
+///   else the literal `0.0.0-unknown` placeholder per spec Q1
+///   (matches cargo's milestone-064 ladder behavior).
+/// - `parent_purl: None` (top-level — FR-001a).
+/// - `sbom_tier: Some("source")` (FR-006).
+/// - `extra_annotations` carries `mikebom:component-role: main-module`
+///   (C40, FR-004).
+/// - `licenses: vec![]` (FR-005; license detection is #103 follow-up).
+/// - `depends` populated from `dependencies`/`devDependencies`/
+///   `peerDependencies`/`optionalDependencies` keys (FR-007).
+pub(crate) fn build_npm_main_module_entry(
+    project_root: &Path,
+) -> Option<PackageDbEntry> {
+    let manifest_path = project_root.join("package.json");
+    let text = std::fs::read_to_string(&manifest_path).ok()?;
+    let parsed: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let name = parsed.get("name").and_then(|v| v.as_str())?;
+    let version_field = parsed.get("version").and_then(|v| v.as_str());
+    let is_private = parsed
+        .get("private")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    // FR-001 + #104: skip when author has signaled "not a publishable
+    // artifact" via private: true + no version. Workspace roots
+    // commonly use this pattern; their members emit per-member
+    // main-modules separately via FR-002.
+    if is_private && version_field.is_none() {
+        return None;
+    }
+    // FR-001 + spec Q1: literal version → use it; missing → placeholder.
+    // npm has no equivalent of cargo's `version.workspace = true`
+    // inheritance, so the resolution ladder is two-step (literal →
+    // placeholder) instead of cargo's three-step.
+    let version = version_field.unwrap_or("0.0.0-unknown");
+    let purl = build_npm_purl(name, version)?;
+    let mut extra_annotations: std::collections::BTreeMap<String, serde_json::Value> =
+        Default::default();
+    extra_annotations.insert(
+        "mikebom:component-role".to_string(),
+        serde_json::Value::String("main-module".to_string()),
+    );
+    let source_path = format!("path+file://{}", project_root.display());
+    // Collect direct-dep names from the four npm dep sections per
+    // FR-007. The existing edge-emission loop in scan_fs/mod.rs
+    // resolves these to PURLs via name_to_purl; dangling-target deps
+    // (e.g., workspace `*` ranges that resolve to in-tree members
+    // but the names happen to differ) are silently dropped per the
+    // existing convention.
+    let mut depends: Vec<String> = Vec::new();
+    for section in [
+        "dependencies",
+        "devDependencies",
+        "peerDependencies",
+        "optionalDependencies",
+    ] {
+        if let Some(obj) = parsed.get(section).and_then(|v| v.as_object()) {
+            for key in obj.keys() {
+                depends.push(key.clone());
+            }
+        }
+    }
+    Some(PackageDbEntry {
+        purl,
+        name: name.to_string(),
+        version: version.to_string(),
+        arch: None,
+        source_path,
+        depends,
+        maintainer: None,
+        licenses: Vec::new(),
+        lifecycle_scope: None,
+        requirement_range: None,
+        source_type: None,
+        buildinfo_status: None,
+        evidence_kind: None,
+        binary_class: None,
+        binary_stripped: None,
+        linkage_kind: None,
+        detected_go: None,
+        confidence: None,
+        binary_packed: None,
+        raw_version: None,
+        parent_purl: None,
+        npm_role: None,
+        co_owned_by: None,
+        hashes: Vec::new(),
+        sbom_tier: Some("source".to_string()),
+        shade_relocation: None,
+        extra_annotations,
+    })
+}
+
+/// Dedup main-module entries by PURL, preserving the first occurrence
+/// (deterministic on the existing alphabetical walker order). Returns
+/// the list of dropped duplicates for caller-side `tracing::warn!`
+/// emission. Predicate is C40-tag-driven; non-main-module entries
+/// are untouched.
+///
+/// Mirrors `cargo::dedup_main_modules_by_purl` from milestone 064.
+pub(crate) fn dedup_npm_main_modules_by_purl(
+    entries: &mut Vec<PackageDbEntry>,
+) -> Vec<DroppedDuplicate> {
+    let mut dropped: Vec<DroppedDuplicate> = Vec::new();
+    let mut seen: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    let mut keep: Vec<PackageDbEntry> = Vec::with_capacity(entries.len());
+    for entry in std::mem::take(entries) {
+        let is_main = entry
+            .extra_annotations
+            .get("mikebom:component-role")
+            .and_then(|v| v.as_str())
+            == Some("main-module");
+        if !is_main {
+            keep.push(entry);
+            continue;
+        }
+        let purl = entry.purl.as_str().to_string();
+        if let Some(kept_path) = seen.get(&purl) {
+            dropped.push(DroppedDuplicate {
+                purl: purl.clone(),
+                kept_path: kept_path.clone(),
+                dropped_path: entry.source_path.clone(),
+            });
+        } else {
+            seen.insert(purl, entry.source_path.clone());
+            keep.push(entry);
+        }
+    }
+    *entries = keep;
+    dropped
+}
+
 fn classify_npm_source(range: &str) -> Option<String> {
     if range.starts_with("file:") || range.starts_with('.') || range.starts_with('/') {
         Some("local".to_string())

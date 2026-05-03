@@ -708,10 +708,76 @@ pub fn read(rootfs: &Path, include_dev: bool) -> Vec<PackageDbEntry> {
             out.push(entry);
         }
     }
+
+    // Milestone 069 — Phase A: emit one main-module per top-level
+    // `*.gemspec` (FR-001). Augment-existing-or-emit-new pattern
+    // mirrors cargo (064) / npm (066) / pip (068). When a same-PURL
+    // Gemfile.lock-derived entry exists, layer C40 + parent_purl: None
+    // on top while preserving the existing entry's (richer) `depends`
+    // list. When no same-PURL match exists, emit net-new.
+    let mut main_modules_emitted = 0usize;
+    for gemspec_path in find_top_level_gemspecs(rootfs) {
+        let Some(synthesized) = build_gem_main_module_entry(&gemspec_path) else {
+            continue;
+        };
+        let purl_key = synthesized.purl.as_str().to_string();
+        if let Some(existing) = out.iter_mut().find(|e| e.purl.as_str() == purl_key) {
+            for (k, v) in synthesized.extra_annotations.iter() {
+                existing
+                    .extra_annotations
+                    .entry(k.clone())
+                    .or_insert_with(|| v.clone());
+            }
+            existing.parent_purl = None;
+            // Merge synthesized depends, dedup against existing.
+            let existing_deps: HashSet<String> =
+                existing.depends.iter().cloned().collect();
+            for d in &synthesized.depends {
+                if !existing_deps.contains(d) {
+                    existing.depends.push(d.clone());
+                }
+            }
+            if existing.sbom_tier.is_none() {
+                existing.sbom_tier = synthesized.sbom_tier.clone();
+            }
+            main_modules_emitted += 1;
+        } else if seen_purls.insert(purl_key) {
+            out.push(synthesized);
+            main_modules_emitted += 1;
+        }
+    }
+
+    // Milestone 069 same-PURL dedup (rare given install-state path
+    // exclusion in `find_top_level_gemspecs`, but defensive).
+    let dedup_drops = dedup_gem_main_modules_by_purl(&mut out);
+    if !dedup_drops.is_empty() {
+        let dropped_paths: Vec<String> = dedup_drops
+            .iter()
+            .map(|d| d.dropped_path.clone())
+            .collect();
+        let kept_path = dedup_drops
+            .first()
+            .map(|d| d.kept_path.clone())
+            .unwrap_or_default();
+        let example_purl = dedup_drops
+            .first()
+            .map(|d| d.purl.clone())
+            .unwrap_or_default();
+        tracing::warn!(
+            count = dedup_drops.len(),
+            example_purl = %example_purl,
+            kept = %kept_path,
+            dropped = ?dropped_paths,
+            "gem: deduped same-PURL *.gemspec files",
+        );
+    }
+
     if !out.is_empty() {
         tracing::info!(
             rootfs = %rootfs.display(),
             entries = out.len(),
+            main_modules_emitted,
+            same_purl_duplicates_dropped = dedup_drops.len(),
             tagged_dev,
             dropped_when_no_include_dev = dropped,
             include_dev,
@@ -719,6 +785,205 @@ pub fn read(rootfs: &Path, include_dev: bool) -> Vec<PackageDbEntry> {
         );
     }
     out
+}
+
+// ---------------------------------------------------------------------------
+// Milestone 069 — gem source-tree main-module component
+// ---------------------------------------------------------------------------
+
+/// Record describing a duplicate main-module dropped during dedup,
+/// returned in batch from `dedup_gem_main_modules_by_purl` for
+/// caller-side `tracing::warn!` emission. Mirrors cargo (064) /
+/// npm (066) / pip (068).
+#[derive(Debug, Clone)]
+pub(crate) struct GemDroppedDuplicate {
+    pub purl: String,
+    pub kept_path: String,
+    pub dropped_path: String,
+}
+
+/// Walk `rootfs` for top-level project `*.gemspec` files. Excludes
+/// install-state paths (`vendor/`, `gems/`, `specifications/`,
+/// `.bundle/`) per FR-003. Distinct from `find_gemspecs`, which
+/// targets `specifications/` directories for the dep-emission path.
+///
+/// Output is in deterministic walk order (alphabetical via
+/// `read_dir`-then-sort) so the dedup-by-PURL pass is host-agnostic.
+fn find_top_level_gemspecs(rootfs: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut visited: HashSet<PathBuf> = HashSet::new();
+    walk_for_top_level_gemspecs(rootfs, 0, &mut visited, &mut out);
+    out
+}
+
+fn walk_for_top_level_gemspecs(
+    dir: &Path,
+    depth: usize,
+    visited: &mut HashSet<PathBuf>,
+    out: &mut Vec<PathBuf>,
+) {
+    if depth >= MAX_GEMSPEC_WALK_DEPTH {
+        return;
+    }
+    let key = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    if !visited.insert(key) {
+        tracing::debug!(
+            path = %dir.display(),
+            "walker: cycle/visited skip (top-level gemspec discovery)",
+        );
+        return;
+    }
+    let Ok(read_dir) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut entries: Vec<_> = read_dir.flatten().collect();
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
+        let path = entry.path();
+        if path.is_file() {
+            // Match any `*.gemspec` at this level.
+            if path
+                .extension()
+                .and_then(|s| s.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("gemspec"))
+                .unwrap_or(false)
+            {
+                out.push(path);
+            }
+        } else if path.is_dir() {
+            let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            // Standard skip set + install-state-specific paths per FR-003.
+            if should_skip_descent(name)
+                || matches!(
+                    name,
+                    "vendor" | "gems" | "specifications" | ".bundle"
+                )
+            {
+                continue;
+            }
+            walk_for_top_level_gemspecs(&path, depth + 1, visited, out);
+        }
+    }
+}
+
+/// Build the gem main-module entry for a single top-level `*.gemspec`.
+///
+/// Lenient parse: extracts `s.name` (or `spec.name`) and `s.version`
+/// (or `spec.version`) literal-string assignments. Returns `None`
+/// when `name` is unparseable (no fallback identity). When `name`
+/// is present but `version` is non-literal (constant ref, expression),
+/// emits with the literal `0.0.0-unknown` placeholder per FR-001
+/// step 2 + Assumption A1.
+///
+/// Mikebom does NOT execute the gemspec as Ruby code (A9). Only
+/// literal-string assignments are recognized; everything else falls
+/// through to the placeholder.
+fn build_gem_main_module_entry(gemspec_path: &Path) -> Option<PackageDbEntry> {
+    let text = std::fs::read_to_string(gemspec_path).ok()?;
+    // Lenient extraction — same predicates as `parse_gemspec_full` at
+    // gem.rs:947 but version is optional (placeholder fallback).
+    let mut name: Option<String> = None;
+    let mut version_literal: Option<String> = None;
+    for raw_line in text.lines() {
+        let line = raw_line.trim();
+        if let Some(v) = strip_assignment(line, "name") {
+            if let Some(literal) = extract_string_literal(v) {
+                if !literal.is_empty() {
+                    name = Some(literal);
+                }
+            }
+        } else if let Some(v) = strip_assignment(line, "version") {
+            if let Some(literal) = extract_string_literal(v) {
+                if !literal.is_empty() {
+                    version_literal = Some(literal);
+                }
+            }
+        }
+    }
+    let name = name?;
+    let version = version_literal.unwrap_or_else(|| "0.0.0-unknown".to_string());
+    let purl = build_gem_purl(&name, &version)?;
+    let mut extra_annotations: std::collections::BTreeMap<String, serde_json::Value> =
+        Default::default();
+    extra_annotations.insert(
+        "mikebom:component-role".to_string(),
+        serde_json::Value::String("main-module".to_string()),
+    );
+    let manifest_dir = gemspec_path.parent()?;
+    let source_path = format!("path+file://{}", manifest_dir.display());
+    // Direct-dep names from `s.add_dependency` / `s.add_runtime_dependency`
+    // / `s.add_development_dependency` per FR-007. Reuses
+    // `parse_gemspec_groups`, which returns name → groups; flatten the
+    // keys into a single Vec.
+    let groups = parse_gemspec_groups(gemspec_path);
+    let depends: Vec<String> = groups.into_keys().collect();
+    Some(PackageDbEntry {
+        purl,
+        name,
+        version,
+        arch: None,
+        source_path,
+        depends,
+        maintainer: None,
+        licenses: Vec::new(),
+        lifecycle_scope: None,
+        requirement_range: None,
+        source_type: None,
+        buildinfo_status: None,
+        evidence_kind: None,
+        binary_class: None,
+        binary_stripped: None,
+        linkage_kind: None,
+        detected_go: None,
+        confidence: None,
+        binary_packed: None,
+        raw_version: None,
+        parent_purl: None,
+        npm_role: None,
+        co_owned_by: None,
+        hashes: Vec::new(),
+        sbom_tier: Some("source".to_string()),
+        shade_relocation: None,
+        extra_annotations,
+    })
+}
+
+/// Dedup main-module entries by PURL, preserving the first occurrence.
+/// Mirrors cargo's `dedup_main_modules_by_purl` from milestone 064 T010.
+/// Predicate is C40-tag-driven; non-main-module gem entries are
+/// untouched even if their PURLs would collide.
+pub(crate) fn dedup_gem_main_modules_by_purl(
+    entries: &mut Vec<PackageDbEntry>,
+) -> Vec<GemDroppedDuplicate> {
+    let mut dropped: Vec<GemDroppedDuplicate> = Vec::new();
+    let mut seen: HashMap<String, String> = HashMap::new();
+    let mut keep: Vec<PackageDbEntry> = Vec::with_capacity(entries.len());
+    for entry in std::mem::take(entries) {
+        let is_main = entry
+            .extra_annotations
+            .get("mikebom:component-role")
+            .and_then(|v| v.as_str())
+            == Some("main-module");
+        if !is_main {
+            keep.push(entry);
+            continue;
+        }
+        let purl = entry.purl.as_str().to_string();
+        if let Some(kept_path) = seen.get(&purl) {
+            dropped.push(GemDroppedDuplicate {
+                purl: purl.clone(),
+                kept_path: kept_path.clone(),
+                dropped_path: entry.source_path.clone(),
+            });
+        } else {
+            seen.insert(purl, entry.source_path.clone());
+            keep.push(entry);
+        }
+    }
+    *entries = keep;
+    dropped
 }
 
 /// Production-wins union: a gem with empty group set in ANY source
@@ -1579,5 +1844,198 @@ end
         let specs = find_gemspecs(tmp.path());
         assert!(locks.is_empty());
         assert!(specs.is_empty());
+    }
+
+    // -------------------------------------------------------------------
+    // Milestone 069 — main-module emission helpers (T007)
+    // -------------------------------------------------------------------
+
+    fn write_gemspec(dir: &std::path::Path, filename: &str, contents: &str) -> PathBuf {
+        std::fs::create_dir_all(dir).unwrap();
+        let path = dir.join(filename);
+        std::fs::write(&path, contents).unwrap();
+        path
+    }
+
+    #[test]
+    fn build_gem_main_module_literal_name_and_version() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = write_gemspec(
+            tmp.path(),
+            "foo.gemspec",
+            r#"
+Gem::Specification.new do |s|
+  s.name    = "foo"
+  s.version = "1.2.3"
+end
+"#,
+        );
+        let entry = build_gem_main_module_entry(&path).unwrap();
+        assert_eq!(entry.purl.as_str(), "pkg:gem/foo@1.2.3");
+        assert_eq!(entry.name, "foo");
+        assert_eq!(entry.version, "1.2.3");
+        assert_eq!(entry.parent_purl, None);
+        assert_eq!(entry.sbom_tier.as_deref(), Some("source"));
+        assert_eq!(
+            entry
+                .extra_annotations
+                .get("mikebom:component-role")
+                .and_then(|v| v.as_str()),
+            Some("main-module"),
+        );
+    }
+
+    #[test]
+    fn build_gem_main_module_non_literal_version_falls_back_to_placeholder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = write_gemspec(
+            tmp.path(),
+            "bar.gemspec",
+            r#"
+Gem::Specification.new do |s|
+  s.name    = "bar"
+  s.version = Bar::VERSION
+end
+"#,
+        );
+        let entry = build_gem_main_module_entry(&path).unwrap();
+        assert_eq!(entry.purl.as_str(), "pkg:gem/bar@0.0.0-unknown");
+        assert_eq!(entry.version, "0.0.0-unknown");
+    }
+
+    #[test]
+    fn build_gem_main_module_freeze_chained_literal_resolves() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = write_gemspec(
+            tmp.path(),
+            "freezy.gemspec",
+            r#"
+Gem::Specification.new do |s|
+  s.name    = "freezy".freeze
+  s.version = "2.0.0".freeze
+end
+"#,
+        );
+        let entry = build_gem_main_module_entry(&path).unwrap();
+        assert_eq!(entry.purl.as_str(), "pkg:gem/freezy@2.0.0");
+        assert_eq!(entry.name, "freezy");
+        assert_eq!(entry.version, "2.0.0");
+    }
+
+    #[test]
+    fn build_gem_main_module_unparseable_name_returns_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = write_gemspec(
+            tmp.path(),
+            "noname.gemspec",
+            r#"
+Gem::Specification.new do |s|
+  s.version = "1.0.0"
+  # name is set dynamically — no fallback identity available
+  s.name = compute_name()
+end
+"#,
+        );
+        // No literal `s.name = "..."` → return None per FR-001 step 3.
+        assert!(build_gem_main_module_entry(&path).is_none());
+    }
+
+    #[test]
+    fn find_top_level_gemspecs_excludes_install_state_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        // Top-level gemspec — must be discovered.
+        write_gemspec(root, "myproj.gemspec", r#"
+Gem::Specification.new do |s|
+  s.name = "myproj"
+  s.version = "1.0.0"
+end
+"#);
+        // Install-state paths — must be skipped per FR-003.
+        for skip_parent in ["vendor", "gems", "specifications", ".bundle"] {
+            write_gemspec(
+                &root.join(skip_parent),
+                "shadow.gemspec",
+                r#"
+Gem::Specification.new do |s|
+  s.name = "shadow"
+  s.version = "9.9.9"
+end
+"#,
+            );
+        }
+        let found = find_top_level_gemspecs(root);
+        let names: Vec<&str> = found
+            .iter()
+            .filter_map(|p| p.file_name().and_then(|s| s.to_str()))
+            .collect();
+        assert!(names.contains(&"myproj.gemspec"), "expected myproj.gemspec; got {names:?}");
+        assert!(
+            !names.contains(&"shadow.gemspec"),
+            "shadow.gemspec inside install-state path must be excluded; got {names:?}"
+        );
+    }
+
+    fn make_gem_main_module_entry(name: &str, version: &str, source_path: &str) -> PackageDbEntry {
+        let purl = build_gem_purl(name, version).unwrap();
+        let mut extra: std::collections::BTreeMap<String, serde_json::Value> =
+            Default::default();
+        extra.insert(
+            "mikebom:component-role".to_string(),
+            serde_json::Value::String("main-module".to_string()),
+        );
+        PackageDbEntry {
+            purl,
+            name: name.to_string(),
+            version: version.to_string(),
+            arch: None,
+            source_path: source_path.to_string(),
+            depends: Vec::new(),
+            maintainer: None,
+            licenses: Vec::new(),
+            lifecycle_scope: None,
+            requirement_range: None,
+            source_type: None,
+            buildinfo_status: None,
+            evidence_kind: None,
+            binary_class: None,
+            binary_stripped: None,
+            linkage_kind: None,
+            detected_go: None,
+            confidence: None,
+            binary_packed: None,
+            raw_version: None,
+            parent_purl: None,
+            npm_role: None,
+            co_owned_by: None,
+            hashes: Vec::new(),
+            sbom_tier: Some("source".to_string()),
+            shade_relocation: None,
+            extra_annotations: extra,
+        }
+    }
+
+    #[test]
+    fn dedup_gem_main_modules_no_collision_returns_empty() {
+        let mut entries = vec![
+            make_gem_main_module_entry("a", "1.0.0", "/tmp/a.gemspec"),
+            make_gem_main_module_entry("b", "1.0.0", "/tmp/b.gemspec"),
+        ];
+        let drops = dedup_gem_main_modules_by_purl(&mut entries);
+        assert_eq!(entries.len(), 2);
+        assert!(drops.is_empty());
+    }
+
+    #[test]
+    fn dedup_gem_main_modules_two_same_purl_keeps_first() {
+        let mut entries = vec![
+            make_gem_main_module_entry("foo", "1.2.3", "/tmp/proj/foo.gemspec"),
+            make_gem_main_module_entry("foo", "1.2.3", "/tmp/proj/dup/foo.gemspec"),
+        ];
+        let drops = dedup_gem_main_modules_by_purl(&mut entries);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].source_path, "/tmp/proj/foo.gemspec");
+        assert_eq!(drops.len(), 1);
+        assert_eq!(drops[0].dropped_path, "/tmp/proj/dup/foo.gemspec");
     }
 }

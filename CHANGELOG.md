@@ -7,9 +7,127 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
-_No unreleased changes since v0.1.0-alpha.10._
+_No unreleased changes since v0.1.0-alpha.11._
 
 
+
+## [0.1.0-alpha.11] — 2026-05-02
+
+A focused release on the Go ecosystem covering five milestones shipped
+since alpha.10 (~1 day later). Closes the issue #102 residual gap
+(transitive edges in offline / empty-cache scans), fixes a graph
+topology lie identified during the #113 review, and adds the
+Constitution-Principle-X transparency signal so consumers can
+interpret partial graphs correctly. Also adds Layer-1 LICENSE
+detection for the Go main-module per #103.
+
+### Headline changes
+
+- **Go transitive dependency edges work in offline + empty-cache
+  scans.** Pre-055, scanning a Go project with `--offline` and an
+  empty `$GOMODCACHE` produced an SBOM whose transitive components
+  carried `dependsOn: []` — issue #102's residual gap after
+  milestone 053. Post-055, a 4-step resolution ladder
+  (`go mod graph` → `$GOMODCACHE` walk → proxy.golang.org fetch →
+  graceful no-edges fallthrough) supplies edges from at least one
+  source on every typical scan. Honors `$GOPROXY`, `$GOPRIVATE`,
+  `$GONOSUMCHECK`. Differentiator vs. peers: Trivy / Syft / cdxgen
+  all degrade in the "no `go` toolchain AND no cache" cell;
+  mikebom is the only static SBOM tool that produces the full Go
+  transitive graph there. (Milestone 055; PR #114.)
+
+- **Go main-module dependency-graph topology no longer lies about
+  direct vs indirect.** Pre-059, the synthetic main-module
+  emitted ALL `require` lines from `go.mod` as direct edges
+  (including those marked `// indirect`). Consumers asking "what
+  does this project directly use?" got the wrong answer.
+  Post-059, main-module emits ONLY non-`// indirect` requires as
+  direct edges; `// indirect` modules are reached transitively via
+  the milestone 055 resolver, or become orphans (Trivy-style
+  trade-off) when the resolver can't supply transitive edges.
+  Closes #113. (Milestone 059; PR #118.)
+
+- **Graph-completeness transparency signal (Principle X).** The
+  cost of milestone 059's correctness fix is that orphan
+  components appear in offline + empty-cache scans. Pre-061,
+  consumers couldn't tell "dead dep" from "mikebom couldn't
+  resolve." Post-061, the SBOM signals the limitation natively:
+  a document-level `mikebom:graph-completeness` annotation
+  (`complete` / `partial`) + a `mikebom:graph-completeness-reason`
+  free-text summary, plus per-component `mikebom:orphan-reason`
+  on each orphan with the classification (`unresolved-indirect-
+  require` / `private-module` / `proxy-fetch-failed`). Closes
+  #119. (Milestone 061; PR #121.)
+
+- **Go main-module LICENSE detection (Layer 1).** Closes
+  milestone 053 FR-005's deferral. The synthetic main-module
+  component now carries the project's own license expression
+  populated from `LICENSE` / `LICENSE.md` / `LICENSE.txt` /
+  `COPYING` / British `LICENCE` files at the workspace root via
+  SPDX-License-Identifier header scan. Default-on; ~30–50% of
+  high-profile Go projects ship the SPDX header. Closes #103.
+  (Milestone 057; PR #116.)
+
+- **Realistic-project CI gate now asserts Go transitive edges.**
+  Milestone 054's `knative/func` regression job gains a second
+  scan (without `--offline`) that counts `pkg:golang →
+  pkg:golang` `dependsOn` edges and fails the gate if the count
+  drops below the floor. Catches future regressions in milestone
+  055's resolver. (T036/T037 of milestone 055; PR #115.)
+
+### Breaking changes for SBOM consumers
+
+- **Go main-module's `dependsOn` set shrinks** for every Go
+  project that has `// indirect` requires in its `go.mod`. For
+  the simple-module test fixture, main-module's outgoing edges
+  drop from 10 to 5. SBOM consumers that count main-module's
+  direct edges should expect smaller numbers per the new (and
+  correct) topology. Indirect components are still present in
+  `components[]`; consumers walking the graph beyond direct deps
+  should follow `dependsOn` from each direct dep transitively.
+  See #118 description for migration notes.
+
+- **Two new CDX `metadata.properties[]` entries appear on every
+  Go-touching scan**: `mikebom:graph-completeness` and (when
+  partial) `mikebom:graph-completeness-reason`. Equivalents
+  appear in SPDX 2.3 + SPDX 3 document-level annotations.
+  Cross-format consumers that strict-validate `metadata.properties`
+  / `annotations[]` length should expect 1–2 additional entries.
+  See `docs/reference/sbom-format-mapping.md` C44.
+
+- **New per-component property `mikebom:orphan-reason`** appears
+  on Go components that the resolver couldn't reach. Three-state
+  semantics: absent ⇒ component is reachable. Catalog row C45.
+
+### Milestones in this release
+
+- **055**: Go transitive dependency edges, anchored on go.sum
+  (4-step ladder). Closes #102's residual gap. PR #114.
+- **055 follow-up (T036/T037)**: realistic-project CI gate for
+  Go transitive edges. PR #115.
+- **057**: Go main-module LICENSE detection (Layer 1). Closes
+  #103. PR #116.
+- **059**: Go main-module dependency-graph topology fix —
+  direct edges only. Closes #113. PR #118.
+- **061**: SBOM graph-completeness transparency signal. Closes
+  #119. PR #121.
+
+### Follow-ups (open issues)
+
+- **#104**: per-ecosystem main-modules for npm / cargo / maven /
+  pip / gem (alpha.11 remains Go-only); when those land they'll
+  inherit the Layer-1 LICENSE scanner from milestone 057 and
+  the graph-completeness signal pattern from milestone 061.
+- **#108**: migrate every filesystem walker to a single shared
+  `safe_walk` helper (still deferred from milestone 054).
+- **#109**: per-ecosystem expansion of the realistic-project CI
+  matrix beyond knative/func.
+- **#111**: umbrella transitive-dep correctness audit across
+  all ecosystems (only Go addressed in alpha.11).
+- **Layer 2** for Go LICENSE detection (content-based matcher
+  via askalono or similar, for projects without SPDX headers
+  like knative/func itself) — not yet tracked; file if real
+  users hit a wall.
 
 ## [0.1.0-alpha.10] — 2026-05-02
 

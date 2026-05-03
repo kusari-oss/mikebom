@@ -133,27 +133,31 @@ pub fn build_containment_relationships(
     out
 }
 
-/// Build the single `describes` Relationship from the SpdxDocument
-/// to its root Package, mirroring SPDX 2.3's `documentDescribes`
-/// shape.
-pub fn build_describes_relationship(
+/// Build the `describes` Relationship(s) from the SpdxDocument to its
+/// root Package(s), mirroring SPDX 2.3's `documentDescribes` shape.
+/// Multi-root case (cargo workspace, polyglot scans with multiple
+/// per-ecosystem main-modules) emits one `describes` Relationship per
+/// root — SPDX 3.0.1's `to` field is a plural array on the
+/// Relationship, but emitting one Relationship per `(from, to)` pair
+/// keeps the spdxId determinism + sort-by-spdxId convention simple.
+pub fn build_describes_relationships(
     doc_iri: &str,
-    root_package_iri: &str,
+    root_package_iris: &[String],
     creation_info_id: &str,
-) -> Option<Value> {
-    if doc_iri == root_package_iri {
-        // Degenerate empty-scan case: document and root are the
-        // same IRI. No describes edge — the document describes
-        // itself implicitly via `rootElement`.
-        return None;
-    }
-    Some(build_relationship(
-        doc_iri,
-        "describes",
-        root_package_iri,
-        doc_iri,
-        creation_info_id,
-    ))
+) -> Vec<Value> {
+    root_package_iris
+        .iter()
+        .filter(|iri| iri.as_str() != doc_iri)
+        .map(|iri| {
+            build_relationship(
+                doc_iri,
+                "describes",
+                iri.as_str(),
+                doc_iri,
+                creation_info_id,
+            )
+        })
+        .collect()
 }
 
 /// Sort Relationship elements by their spdxId for determinism.

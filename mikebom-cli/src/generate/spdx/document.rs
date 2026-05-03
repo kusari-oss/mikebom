@@ -273,28 +273,38 @@ pub fn build_document(
         .copied()
         .collect();
 
-    let (root_id, synthetic_root) = if main_module_indices.len() == 1 {
-        // Case 0a: single Go main-module → use it as root.
+    let (root_ids, synthetic_root) = if main_module_indices.len() == 1 {
+        // Case 0a: single main-module → use it as root.
         let idx = main_module_indices[0];
         let purl = &artifacts.components[idx].purl;
-        (SpdxId::for_purl(purl), None)
+        (vec![SpdxId::for_purl(purl)], None)
     } else if main_module_indices.len() > 1 {
-        // Case 0b: multiple main-modules (go.work monorepo) →
-        // synthesize a super-root. The relationships builder will
-        // emit one DESCRIBES per main-module via the multi-DESCRIBES
-        // path documented in FR-008.
-        let (id, root) = synthesize_root(artifacts.target_name, &namespace);
-        (id, Some(root))
+        // Case 0b (milestones 053 + 064 FR-008 + #127): multiple main-
+        // modules (cargo workspace members, go.work monorepo, polyglot
+        // scans). NO synthetic super-root needed for SPDX 2.3 — the
+        // `documentDescribes[]` array is plural by design and the
+        // DESCRIBES relationship type is many-to-many. Each main-
+        // module gets its own SPDXRef-DOCUMENT DESCRIBES edge,
+        // emitted in deterministic PURL-string-sorted order so
+        // goldens stay byte-identical across hosts.
+        let mut ids: Vec<SpdxId> = main_module_indices
+            .iter()
+            .map(|&i| SpdxId::for_purl(&artifacts.components[i].purl))
+            .collect();
+        // Sort by SPDXID's canonical string (a deterministic function
+        // of the PURL) so the order is host-agnostic.
+        ids.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+        (ids, None)
     } else {
         match top_level.len() {
             0 => {
                 let (id, root) = synthesize_root(artifacts.target_name, &namespace);
-                (id, Some(root))
+                (vec![id], Some(root))
             }
             1 => {
                 let idx = top_level[0];
                 let purl = &artifacts.components[idx].purl;
-                (SpdxId::for_purl(purl), None)
+                (vec![SpdxId::for_purl(purl)], None)
             }
             _ => {
                 // Prefer a top-level component whose name matches the
@@ -303,10 +313,10 @@ pub fn build_document(
                     artifacts.components[i].name == artifacts.target_name
                 }) {
                     let purl = &artifacts.components[*idx].purl;
-                    (SpdxId::for_purl(purl), None)
+                    (vec![SpdxId::for_purl(purl)], None)
                 } else {
                     let (id, root) = synthesize_root(artifacts.target_name, &namespace);
-                    (id, Some(root))
+                    (vec![id], Some(root))
                 }
             }
         }
@@ -320,7 +330,7 @@ pub fn build_document(
     }
 
     let relationships =
-        super::relationships::build_relationships(artifacts, &root_id);
+        super::relationships::build_relationships(artifacts, &root_ids);
 
     // Two creator entries: a `Tool:` identifying mikebom (used
     // throughout the document as the `annotator` field on every
@@ -356,7 +366,7 @@ pub fn build_document(
         annotations,
         external_document_refs: Vec::new(),
         has_extracted_licensing_infos,
-        document_describes: vec![root_id],
+        document_describes: root_ids,
     }
 }
 

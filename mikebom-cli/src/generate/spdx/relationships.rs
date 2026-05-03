@@ -86,17 +86,24 @@ pub struct SpdxRelationship {
 ///    resolvable) are dropped rather than producing dangling edges.
 pub fn build_relationships(
     artifacts: &ScanArtifacts<'_>,
-    root: &SpdxId,
+    roots: &[SpdxId],
 ) -> Vec<SpdxRelationship> {
     let mut out: Vec<SpdxRelationship> = Vec::new();
 
-    // 1. Document describes the root.
-    out.push(SpdxRelationship {
-        source: SpdxId::document(),
-        target: root.clone(),
-        kind: SpdxRelationshipType::Describes,
-        comment: None,
-    });
+    // 1. Document describes the root(s). Multi-root case (cargo
+    //    workspace, polyglot scans with multiple per-ecosystem main-
+    //    modules) emits one DESCRIBES edge per root — SPDX 2.3
+    //    `documentDescribes[]` is plural by design and the
+    //    DESCRIBES relationship type is many-to-many. Single-root
+    //    case (the dominant flow) emits exactly one edge as before.
+    for root in roots {
+        out.push(SpdxRelationship {
+            source: SpdxId::document(),
+            target: root.clone(),
+            kind: SpdxRelationshipType::Describes,
+            comment: None,
+        });
+    }
 
     // Build a PURL→SpdxId map once so dependency edges don't re-hash
     // each PURL. BTreeMap keeps iteration deterministic if we ever
@@ -288,7 +295,7 @@ mod tests {
         let comps: Vec<ResolvedComponent> = vec![];
         let arts = mk_artifacts(&comps, &[], &integ);
         let root = SpdxId::synthetic_root("AAAAAAAAAAAAAAAA");
-        let rels = build_relationships(&arts, &root);
+        let rels = build_relationships(&arts, std::slice::from_ref(&root));
         assert_eq!(rels.len(), 1);
         assert_eq!(rels[0].source, SpdxId::document());
         assert_eq!(rels[0].target, root);
@@ -310,7 +317,7 @@ mod tests {
         let rels_arr = [rel];
         let arts = mk_artifacts(&comps, &rels_arr, &integ);
         let root = SpdxId::for_purl(&comps[0].purl);
-        let rels = build_relationships(&arts, &root);
+        let rels = build_relationships(&arts, std::slice::from_ref(&root));
         let dep = rels
             .iter()
             .find(|r| r.kind == SpdxRelationshipType::DependsOn)
@@ -334,7 +341,7 @@ mod tests {
         let rels_arr = [rel];
         let arts = mk_artifacts(&comps, &rels_arr, &integ);
         let root = SpdxId::for_purl(&comps[0].purl);
-        let rels = build_relationships(&arts, &root);
+        let rels = build_relationships(&arts, std::slice::from_ref(&root));
         let dev = rels
             .iter()
             .find(|r| r.kind == SpdxRelationshipType::DevDependencyOf)
@@ -353,7 +360,7 @@ mod tests {
         let comps = vec![parent, child];
         let arts = mk_artifacts(&comps, &[], &integ);
         let root = SpdxId::for_purl(&comps[0].purl);
-        let rels = build_relationships(&arts, &root);
+        let rels = build_relationships(&arts, std::slice::from_ref(&root));
         let contains = rels
             .iter()
             .find(|r| r.kind == SpdxRelationshipType::Contains)
@@ -371,7 +378,7 @@ mod tests {
         let comps = vec![child];
         let arts = mk_artifacts(&comps, &[], &integ);
         let root = SpdxId::synthetic_root("AAAAAAAAAAAAAAAA");
-        let rels = build_relationships(&arts, &root);
+        let rels = build_relationships(&arts, std::slice::from_ref(&root));
         // Only the DESCRIBES edge; the orphan containment is dropped.
         assert_eq!(rels.len(), 1);
         assert_eq!(rels[0].kind, SpdxRelationshipType::Describes);
@@ -392,7 +399,7 @@ mod tests {
         let rels_arr = [rel];
         let arts = mk_artifacts(&comps, &rels_arr, &integ);
         let root = SpdxId::for_purl(&comps[0].purl);
-        let rels = build_relationships(&arts, &root);
+        let rels = build_relationships(&arts, std::slice::from_ref(&root));
         // Only the DESCRIBES edge remains.
         assert_eq!(rels.len(), 1);
     }

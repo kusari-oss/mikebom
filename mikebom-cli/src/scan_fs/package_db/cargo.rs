@@ -242,6 +242,204 @@ fn parse_authors_from_cargo_toml(text: &str) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
+// Milestone 064 — Cargo source-tree main-module component
+// ---------------------------------------------------------------------------
+
+/// Map from absolute workspace-root `Cargo.toml` directory to that
+/// workspace's `[workspace.package].version` (when declared). Used to
+/// resolve `version.workspace = true` in member-crate manifests per
+/// FR-001 + Assumption A2 of milestone 064.
+#[derive(Debug, Default)]
+pub(crate) struct WorkspaceContext {
+    versions: HashMap<PathBuf, String>,
+}
+
+impl WorkspaceContext {
+    /// Build the context by examining every passed manifest path for a
+    /// `[workspace.package].version` declaration. Manifest files that
+    /// don't declare one (the common case for member crates) contribute
+    /// nothing; the resulting map is keyed by the manifest's parent
+    /// directory so member-crate lookups via `lookup_for_member` can
+    /// walk-up by path-prefix to find the enclosing workspace.
+    pub(crate) fn build_from_manifests(manifests: &[PathBuf]) -> Self {
+        let mut versions = HashMap::new();
+        for manifest_path in manifests {
+            let Ok(text) = std::fs::read_to_string(manifest_path) else {
+                continue;
+            };
+            let Ok(parsed) = toml::from_str::<toml::Value>(&text) else {
+                continue;
+            };
+            let Some(version) = parsed
+                .get("workspace")
+                .and_then(|w| w.get("package"))
+                .and_then(|p| p.get("version"))
+                .and_then(|v| v.as_str())
+            else {
+                continue;
+            };
+            let Some(parent_dir) = manifest_path.parent() else {
+                continue;
+            };
+            versions.insert(parent_dir.to_path_buf(), version.to_string());
+        }
+        Self { versions }
+    }
+
+    /// Look up the workspace-inherited `[workspace.package].version`
+    /// for a member manifest by walking up from the member's manifest
+    /// directory until a workspace root is found. Returns `None` if no
+    /// enclosing workspace declares the version.
+    fn lookup_for_member(&self, member_manifest_dir: &Path) -> Option<&str> {
+        let mut cursor = Some(member_manifest_dir);
+        while let Some(dir) = cursor {
+            if let Some(version) = self.versions.get(dir) {
+                return Some(version.as_str());
+            }
+            cursor = dir.parent();
+        }
+        None
+    }
+}
+
+/// Resolve the cargo main-module's version per FR-001 + Assumption A2:
+/// 1. If `[package].version` is a literal string → return verbatim.
+/// 2. If `[package].version.workspace = true` → look up workspace root.
+/// 3. Otherwise → `0.0.0-unknown` placeholder (cross-host determinism).
+fn resolve_cargo_main_module_version(
+    manifest_dir: &Path,
+    package_table: &toml::Value,
+    workspace: &WorkspaceContext,
+) -> String {
+    let version = package_table.get("version");
+    if let Some(s) = version.and_then(|v| v.as_str()) {
+        return s.to_string();
+    }
+    if version
+        .and_then(|v| v.get("workspace"))
+        .and_then(|v| v.as_bool())
+        == Some(true)
+    {
+        if let Some(resolved) = workspace.lookup_for_member(manifest_dir) {
+            return resolved.to_string();
+        }
+    }
+    "0.0.0-unknown".to_string()
+}
+
+/// Build the cargo main-module entry for a single `Cargo.toml`. Returns
+/// `None` when the manifest has no `[package]` table (workspace-only
+/// roots — FR-002) or when `name` cannot be resolved. Per FR-001 +
+/// FR-001a + FR-004 + FR-005 + FR-006, the entry carries:
+/// - PURL `pkg:cargo/<name>@<resolved-version>`
+/// - `mikebom:component-role: "main-module"` (C40, supplementary)
+/// - `sbom_tier = Some("source")` (FR-006)
+/// - `parent_purl = None` (top-level — FR-001a)
+/// - `licenses = vec![]` (FR-005; license detection is #103 follow-up)
+/// - empty `depends` for now; FR-007 wiring populates direct-dep edges
+///   by post-processing each manifest's `[dependencies]` /
+///   `[dev-dependencies]` / `[build-dependencies]` tables (currently
+///   plumbed via the existing scan_fs/mod.rs edge-emission rather than
+///   here, mirroring milestone 053's Go pattern).
+fn build_cargo_main_module_entry(
+    manifest_path: &Path,
+    workspace: &WorkspaceContext,
+) -> Option<PackageDbEntry> {
+    let text = std::fs::read_to_string(manifest_path).ok()?;
+    let parsed: toml::Value = toml::from_str(&text).ok()?;
+    let package = parsed.get("package")?;
+    let name = package.get("name").and_then(|v| v.as_str())?;
+    let manifest_dir = manifest_path.parent()?;
+    let version = resolve_cargo_main_module_version(manifest_dir, package, workspace);
+    let purl = build_cargo_purl(name, &version)?;
+    let mut extra_annotations: std::collections::BTreeMap<String, serde_json::Value> =
+        Default::default();
+    extra_annotations.insert(
+        "mikebom:component-role".to_string(),
+        serde_json::Value::String("main-module".to_string()),
+    );
+    let source_path = format!("path+file://{}", manifest_dir.display());
+    Some(PackageDbEntry {
+        purl,
+        name: name.to_string(),
+        version,
+        arch: None,
+        source_path,
+        depends: Vec::new(),
+        maintainer: None,
+        licenses: Vec::new(),
+        lifecycle_scope: None,
+        requirement_range: None,
+        source_type: Some("workspace".to_string()),
+        buildinfo_status: None,
+        evidence_kind: None,
+        binary_class: None,
+        binary_stripped: None,
+        linkage_kind: None,
+        detected_go: None,
+        confidence: None,
+        binary_packed: None,
+        raw_version: None,
+        parent_purl: None,
+        npm_role: None,
+        co_owned_by: None,
+        hashes: Vec::new(),
+        sbom_tier: Some("source".to_string()),
+        shade_relocation: None,
+        extra_annotations,
+    })
+}
+
+/// Record describing a duplicate main-module dropped during dedup,
+/// returned in batch from `dedup_main_modules_by_purl` for
+/// caller-side `tracing::warn!` emission per spec Clarifications Q1.
+#[derive(Debug, Clone)]
+pub(crate) struct DroppedDuplicate {
+    pub purl: String,
+    pub kept_path: String,
+    pub dropped_path: String,
+}
+
+/// Dedup main-module entries by PURL, preserving the first occurrence
+/// (deterministic on the existing walker order — `discover_workspace_
+/// manifests` returns root-then-members in declaration order). Returns
+/// the list of dropped duplicates for caller-side `tracing::warn!`
+/// emission per FR-001 + spec Clarifications Q1. Non-main-module
+/// entries (the predicate is C40-tag-driven) are left untouched even
+/// if their PURLs would collide with each other.
+pub(crate) fn dedup_main_modules_by_purl(
+    entries: &mut Vec<PackageDbEntry>,
+) -> Vec<DroppedDuplicate> {
+    let mut dropped: Vec<DroppedDuplicate> = Vec::new();
+    let mut seen: HashMap<String, String> = HashMap::new();
+    let mut keep: Vec<PackageDbEntry> = Vec::with_capacity(entries.len());
+    for entry in std::mem::take(entries) {
+        let is_main = entry
+            .extra_annotations
+            .get("mikebom:component-role")
+            .and_then(|v| v.as_str())
+            == Some("main-module");
+        if !is_main {
+            keep.push(entry);
+            continue;
+        }
+        let purl = entry.purl.as_str().to_string();
+        if let Some(kept_path) = seen.get(&purl) {
+            dropped.push(DroppedDuplicate {
+                purl: purl.clone(),
+                kept_path: kept_path.clone(),
+                dropped_path: entry.source_path.clone(),
+            });
+        } else {
+            seen.insert(purl, entry.source_path.clone());
+            keep.push(entry);
+        }
+    }
+    *entries = keep;
+    dropped
+}
+
+// ---------------------------------------------------------------------------
 // Milestone 051 — Cargo.toml dev/build-dep classification (T004-T008)
 // ---------------------------------------------------------------------------
 
@@ -628,12 +826,40 @@ pub fn read(rootfs: &Path, include_dev: bool) -> Result<Vec<PackageDbEntry>, Car
     let mut seen_purls: HashSet<String> = HashSet::new();
     let mut tagged_dev = 0usize;
     let mut dropped = 0usize;
+    let mut main_modules_emitted = 0usize;
+
+    // Milestone 064 — Phase A: discover EVERY Cargo.toml under rootfs
+    // (independent of Cargo.lock presence — library crates without a
+    // committed lockfile must still emit their project-self component
+    // per FR-001). Build the WorkspaceContext from the same set so
+    // version.workspace=true resolution finds the workspace root.
+    // Skipped descent dirs (vendor/, target/, node_modules/, etc.)
+    // mean realistic same-PURL collisions are rare; the dedup pass
+    // below is defensive.
+    let all_manifests = find_cargo_manifests(rootfs);
+    let workspace_ctx = WorkspaceContext::build_from_manifests(&all_manifests);
+    for manifest_path in &all_manifests {
+        if let Some(entry) = build_cargo_main_module_entry(manifest_path, &workspace_ctx) {
+            let purl_key = entry.purl.as_str().to_string();
+            if seen_purls.insert(purl_key) {
+                out.push(entry);
+                main_modules_emitted += 1;
+            }
+        }
+    }
+
+    // Milestone 064 — Phase B: per-lockfile dependency emission
+    // (existing milestone-051 flow). The workspace_sections + workspace_ctx
+    // are rebuilt per-lockfile using `discover_workspace_manifests`
+    // (which honors `[workspace] members = [...]` rather than walking
+    // the filesystem) so dev/build classification works exactly as
+    // before. Main-module emission was already handled in Phase A
+    // above; here we only emit the lockfile-resolved dependency set.
     for lock_path in find_cargo_lockfiles(rootfs) {
-        // Per-lockfile: build the workspace-wide CargoTomlSections by
-        // unioning the root manifest + every workspace member.
+        let manifests = discover_workspace_manifests(&lock_path);
         let mut workspace_sections = CargoTomlSections::default();
-        for manifest_path in discover_workspace_manifests(&lock_path) {
-            if let Some(sections) = parse_cargo_toml(&manifest_path) {
+        for manifest_path in &manifests {
+            if let Some(sections) = parse_cargo_toml(manifest_path) {
                 workspace_sections.union(&sections);
             }
         }
@@ -665,10 +891,38 @@ pub fn read(rootfs: &Path, include_dev: bool) -> Result<Vec<PackageDbEntry>, Car
             }
         }
     }
+    // Milestone 064 same-PURL dedup. With main-modules emitted above,
+    // collapsing same-PURL collisions (vendored copies, examples/
+    // mirrors, target/package extractions) per FR-001 + Q1. Non-main-
+    // module entries are untouched (already deduped by `seen_purls`).
+    let dedup_drops = dedup_main_modules_by_purl(&mut out);
+    if !dedup_drops.is_empty() {
+        let dropped_paths: Vec<String> = dedup_drops
+            .iter()
+            .map(|d| d.dropped_path.clone())
+            .collect();
+        let kept_path = dedup_drops
+            .first()
+            .map(|d| d.kept_path.clone())
+            .unwrap_or_default();
+        let example_purl = dedup_drops
+            .first()
+            .map(|d| d.purl.clone())
+            .unwrap_or_default();
+        tracing::warn!(
+            count = dedup_drops.len(),
+            example_purl = %example_purl,
+            kept = %kept_path,
+            dropped = ?dropped_paths,
+            "cargo: deduped same-PURL Cargo.toml files",
+        );
+    }
     if !out.is_empty() {
         tracing::info!(
             rootfs = %rootfs.display(),
             entries = out.len(),
+            main_modules_emitted,
+            same_purl_duplicates_dropped = dedup_drops.len(),
             tagged_dev,
             dropped_when_no_include_dev = dropped,
             include_dev,
@@ -715,6 +969,66 @@ fn find_cargo_lockfiles(rootfs: &Path) -> Vec<PathBuf> {
     let mut visited: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
     walk_for_cargo_lockfiles(rootfs, 0, &mut visited, &mut out);
     out
+}
+
+/// Walk for every `Cargo.toml` reachable from `rootfs` (subject to
+/// `should_skip_descent` — `vendor/`, `target/`, etc. are pruned).
+/// Used by milestone 064 main-module emission, which is NOT gated on
+/// `Cargo.lock` presence: library crates with no committed lockfile
+/// must still emit a project-self component per FR-001. Output is in
+/// deterministic walk order (alphabetical-like via `read_dir` for a
+/// given platform — preserved for golden cross-host stability via the
+/// dedup-by-PURL convention).
+fn find_cargo_manifests(rootfs: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut visited: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    walk_for_cargo_manifests(rootfs, 0, &mut visited, &mut out);
+    out
+}
+
+fn walk_for_cargo_manifests(
+    dir: &Path,
+    depth: usize,
+    visited: &mut std::collections::HashSet<PathBuf>,
+    out: &mut Vec<PathBuf>,
+) {
+    let manifest = dir.join("Cargo.toml");
+    if manifest.is_file() {
+        out.push(manifest);
+    }
+    if depth >= MAX_PROJECT_ROOT_DEPTH {
+        return;
+    }
+    let key = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    if !visited.insert(key) {
+        tracing::debug!(
+            path = %dir.display(),
+            "walker: cycle/visited skip (manifest discovery)",
+        );
+        return;
+    }
+    let Ok(read_dir) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut entries: Vec<_> = read_dir.flatten().collect();
+    // Sort by file name so the walk order is deterministic across
+    // platforms (read_dir order is filesystem-dependent on macOS vs
+    // Linux). The dedup-by-PURL pass relies on first-discovered-wins
+    // determinism per FR-001.
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if should_skip_descent(name) {
+            continue;
+        }
+        walk_for_cargo_manifests(&path, depth + 1, visited, out);
+    }
 }
 
 /// Milestone 054 FR-001/FR-002/FR-003: canonicalize-keyed visited

@@ -7,7 +7,85 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
-_No unreleased changes since v0.1.0-alpha.11._
+### Changed (BREAKING — SBOM output shape, milestone 064)
+
+- **Cargo SBOMs now identify the project itself** via a synthetic
+  main-module component for every `Cargo.toml` with `[package]`.
+  Pre-064: cargo SBOMs had no project-self component, so consumers
+  could not answer "what is this an SBOM for?" from the bytes alone.
+  Post-064: every cargo crate scan emits a `pkg:cargo/<name>@<version>`
+  component placed in standards-native "BOM subject" slots — CDX
+  `metadata.component` (single-crate) or `components[]` siblings
+  (workspace cases); SPDX `primaryPackagePurpose: APPLICATION` plus
+  `documentDescribes`; SPDX 3.0.1 `software_primaryPurpose:
+  application`. Carries `mikebom:component-role: main-module` (C40)
+  as a supplementary signal per Constitution Principle V.
+
+- **Workspace-only `Cargo.toml` files emit no main-module for the
+  root.** A `Cargo.toml` declaring only `[workspace]` (no
+  `[package]`) is not a publishable crate. Each `[workspace] members
+  = [...]` entry emits its own main-module instead. Crates in
+  `[workspace].exclude` directories that have their own `[package]`
+  ARE emitted (the filesystem walker is authoritative; exclusion is
+  a workspace-build concern, not an SBOM-coverage concern).
+
+- **`version.workspace = true` resolution.** Member crates that
+  inherit their version from `[workspace.package].version` now
+  resolve to the actual workspace-root value in the main-module's
+  PURL. Falls back to the literal `0.0.0-unknown` placeholder when
+  the workspace root is outside the scan's filesystem boundary —
+  same cross-host determinism convention as Go's milestone-053
+  `git describe` ladder step 3.
+
+- **Same-PURL collisions dedup with operator-visible warning.**
+  When two-or-more `Cargo.toml` files resolve to the same
+  `pkg:cargo/<name>@<version>` PURL (vendored copies, `examples/`
+  mirrors, `target/package/` extractions), exactly one main-module
+  emits (deterministic first-discovered-wins) and a `tracing::warn!`
+  lists dropped duplicate paths. Divergent-PURL detection (same
+  PURL, different content hashes — a potential supply-chain signal)
+  deferred to follow-up issue #125.
+
+- **Generator-side hooks generalized.** The milestone-053 CDX
+  `metadata.component` selector and `components[]` exclusion
+  predicates are now C40-tag-driven (filter by
+  `mikebom:component-role: main-module`) instead of Go-PURL-prefix-
+  driven. When the scan contains exactly 1 main-module, it is
+  promoted to `metadata.component`; when N>1 (cargo workspaces,
+  polyglot scans), all N emit as siblings in `components[]` under
+  the existing synthetic super-root.
+
+### Migration
+
+- Consumers reading `metadata.component.purl` for cargo scans now
+  receive `pkg:cargo/<crate-name>@<version>` instead of the
+  pre-064 `pkg:generic/...` placeholder. Update vuln-intersection
+  and licensing tools to recognize the new shape.
+- The C40 supplementary annotation continues to emit unchanged on
+  Go and now extends to cargo. The `mikebom:component-role:
+  main-module` value identifies the project-self component for
+  consumers that filter it from licensing-coverage denominators
+  (sbomqs convention).
+- Per-ecosystem main-module coverage matrix: Go ✅ (053),
+  cargo ✅ (064), npm/pip/maven/gem tracked in #104.
+
+### Known gaps (filed for follow-up)
+
+- **#127** — multi-main-module workspaces (cargo + future polyglot):
+  the synthetic super-root currently lacks outgoing DESCRIBES to
+  the per-member main-modules. Single-main-module scans work
+  correctly. Workspace scans emit the main-modules but
+  `documentDescribes` doesn't surface them through the super-root.
+- **#126** — pre-existing cargo workspace-root edge-emission gap:
+  workspace-root `Cargo.lock` entries declare `dependencies =
+  [...]` but those edges are not emitted to the SBOM. Out of scope
+  for milestone 064; verified by stashing 064 changes and observing
+  the same 0 edges pre- and post-064.
+- **#125** — divergent-PURL detection: when two `Cargo.toml` files
+  claim the same PURL but have different content hashes (potential
+  typosquatting / supply-chain signal), surface a stronger SBOM
+  signal beyond the current `tracing::warn!`.
+
 
 
 

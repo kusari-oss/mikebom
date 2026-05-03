@@ -833,28 +833,21 @@ pub fn read(rootfs: &Path, include_dev: bool) -> Result<Vec<PackageDbEntry>, Car
     // committed lockfile must still emit their project-self component
     // per FR-001). Build the WorkspaceContext from the same set so
     // version.workspace=true resolution finds the workspace root.
-    // Skipped descent dirs (vendor/, target/, node_modules/, etc.)
-    // mean realistic same-PURL collisions are rare; the dedup pass
-    // below is defensive.
+    // We collect main-module PURLs in a set so Phase B (lockfile
+    // emission) can merge the C40 supplementary tag onto same-PURL
+    // entries WITHOUT losing their lockfile-derived `depends` list.
+    // Order matters: Phase B FIRST (builds the dep graph), Phase A
+    // SECOND (adds main-modules for crates not seen in any lockfile,
+    // and tags lockfile-derived workspace-member entries with C40).
     let all_manifests = find_cargo_manifests(rootfs);
     let workspace_ctx = WorkspaceContext::build_from_manifests(&all_manifests);
-    for manifest_path in &all_manifests {
-        if let Some(entry) = build_cargo_main_module_entry(manifest_path, &workspace_ctx) {
-            let purl_key = entry.purl.as_str().to_string();
-            if seen_purls.insert(purl_key) {
-                out.push(entry);
-                main_modules_emitted += 1;
-            }
-        }
-    }
 
     // Milestone 064 — Phase B: per-lockfile dependency emission
-    // (existing milestone-051 flow). The workspace_sections + workspace_ctx
-    // are rebuilt per-lockfile using `discover_workspace_manifests`
+    // (existing milestone-051 flow). The workspace_sections are
+    // rebuilt per-lockfile using `discover_workspace_manifests`
     // (which honors `[workspace] members = [...]` rather than walking
     // the filesystem) so dev/build classification works exactly as
-    // before. Main-module emission was already handled in Phase A
-    // above; here we only emit the lockfile-resolved dependency set.
+    // before. Phase A's main-module emission is layered on top below.
     for lock_path in find_cargo_lockfiles(rootfs) {
         let manifests = discover_workspace_manifests(&lock_path);
         let mut workspace_sections = CargoTomlSections::default();
@@ -891,10 +884,47 @@ pub fn read(rootfs: &Path, include_dev: bool) -> Result<Vec<PackageDbEntry>, Car
             }
         }
     }
-    // Milestone 064 same-PURL dedup. With main-modules emitted above,
-    // collapsing same-PURL collisions (vendored copies, examples/
-    // mirrors, target/package extractions) per FR-001 + Q1. Non-main-
-    // module entries are untouched (already deduped by `seen_purls`).
+
+    // Milestone 064 — Phase A (deferred): main-module emission.
+    // For each Cargo.toml with [package], either:
+    //   (a) augment an existing same-PURL lockfile-derived entry with
+    //       the C40 supplementary tag (preserving its `depends` list,
+    //       which the lockfile resolved correctly); OR
+    //   (b) emit a new main-module entry (for crates without a
+    //       Cargo.lock in scope — library crates, fixture mins).
+    // This ordering avoids losing lockfile-derived dep lists for
+    // workspace members.
+    for manifest_path in &all_manifests {
+        let Some(synthesized) = build_cargo_main_module_entry(manifest_path, &workspace_ctx) else {
+            continue;
+        };
+        let purl_key = synthesized.purl.as_str().to_string();
+        if let Some(existing) = out.iter_mut().find(|e| e.purl.as_str() == purl_key) {
+            // (a) augment in-place with C40 + sbom_tier:source
+            for (k, v) in synthesized.extra_annotations.iter() {
+                existing
+                    .extra_annotations
+                    .entry(k.clone())
+                    .or_insert_with(|| v.clone());
+            }
+            if existing.sbom_tier.is_none() {
+                existing.sbom_tier = synthesized.sbom_tier.clone();
+            }
+            // Mark as top-level (main-modules are linker roots, never
+            // children of another component).
+            existing.parent_purl = None;
+            main_modules_emitted += 1;
+        } else if seen_purls.insert(purl_key) {
+            // (b) net-new main-module (no lockfile entry collided)
+            out.push(synthesized);
+            main_modules_emitted += 1;
+        }
+    }
+
+    // Milestone 064 same-PURL dedup. Collapses same-PURL collisions
+    // (vendored copies, examples/ mirrors, target/package extractions)
+    // per FR-001 + Q1. Non-main-module entries are untouched
+    // (already deduped by `seen_purls`).
     let dedup_drops = dedup_main_modules_by_purl(&mut out);
     if !dedup_drops.is_empty() {
         let dropped_paths: Vec<String> = dedup_drops

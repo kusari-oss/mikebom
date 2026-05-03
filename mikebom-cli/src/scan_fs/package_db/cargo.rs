@@ -1679,7 +1679,7 @@ members = ["a"]
 version = "1.0.0"
 "#,
         );
-        let ctx = WorkspaceContext::build_from_manifests(&[root_path.clone()]);
+        let ctx = WorkspaceContext::build_from_manifests(std::slice::from_ref(&root_path));
         assert_eq!(
             ctx.lookup_for_member(tmp.path()).map(|s| s.to_string()),
             Some("1.0.0".to_string()),

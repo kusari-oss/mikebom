@@ -36,6 +36,19 @@ const OPENVEX_PSEUDO_FORMAT: &str = "openvex";
 /// may opt in in a future milestone, at which point this list grows.
 const OPENVEX_EMITTING_FORMATS: &[&str] = &["spdx-2.3-json"];
 
+/// Enrichment source identifiers for `--enrich-sources`. Selected via
+/// comma-separated list; when provided, only the listed sources run.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+#[clap(rename_all = "kebab-case")]
+pub enum EnrichSource {
+    /// deps.dev license enrichment (declared + observed licenses).
+    DepsDev,
+    /// ClearlyDefined concluded-license enrichment.
+    ClearlyDefined,
+    /// deps.dev transitive dep-graph edge enrichment.
+    DepsDevGraph,
+}
+
 /// Image source for `--image <ref>` resolution. Selected via
 /// `--image-src` (comma-separated, in order of preference).
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -210,6 +223,74 @@ pub struct ScanArgs {
     /// Print a JSON summary to stdout after writing the SBOM.
     #[arg(long)]
     pub json: bool,
+
+    /// Skip ClearlyDefined enrichment (concluded licenses). Keeps
+    /// deps.dev license + dep-graph enrichment active. Use this when
+    /// ClearlyDefined is slow or unreachable but you still want
+    /// deps.dev data. Has no effect when `--offline` is set (all
+    /// enrichment is already disabled).
+    #[arg(long)]
+    pub no_clearly_defined: bool,
+
+    /// Skip deps.dev license enrichment. Keeps ClearlyDefined and
+    /// dep-graph enrichment active. This is the fastest enrichment
+    /// source and rarely needs skipping; the allowlist via
+    /// `--enrich-sources` is the alternative for full control.
+    /// Has no effect when `--offline` is set.
+    #[arg(long)]
+    pub no_deps_dev: bool,
+
+    /// Skip the deps.dev transitive dep-graph enrichment step.
+    /// Keeps deps.dev license enrichment and ClearlyDefined active.
+    /// Useful when the graph response is large or unneeded. Has no
+    /// effect when `--offline` is set.
+    #[arg(long)]
+    pub no_deps_dev_graph: bool,
+
+    /// Comma-separated list of enrichment sources to enable. When
+    /// provided, ONLY the listed sources run (overrides all
+    /// `--no-clearly-defined` / `--no-deps-dev` / `--no-deps-dev-graph`
+    /// flags). Has no effect when `--offline` is set — offline
+    /// disables all network calls.
+    ///
+    /// Example: `--enrich-sources deps-dev,clearly-defined` enables
+    /// license enrichment from both sources but skips dep-graph edges.
+    #[arg(long, value_delimiter = ',', value_name = "SOURCE[,SOURCE...]")]
+    pub enrich_sources: Vec<EnrichSource>,
+}
+
+/// Resolved enrichment-source enablement. Computed from the CLI flags
+/// before any scan work so the decision is testable as a pure function.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EnrichConfig {
+    deps_dev: bool,
+    clearly_defined: bool,
+    deps_dev_graph: bool,
+}
+
+/// Resolve which enrichment sources are enabled from CLI flags.
+///
+/// Rules:
+/// - `--enrich-sources` (when non-empty) is an explicit allowlist that
+///   overrides all `--no-*` flags.
+/// - When `--enrich-sources` is empty, individual `--no-*` flags apply.
+/// - `offline` is NOT checked here — callers gate on it separately so
+///   the inner enrichment functions' own offline short-circuit handles
+///   the no-op path and logs correctly.
+fn resolve_enrich_sources(args: &ScanArgs) -> EnrichConfig {
+    if !args.enrich_sources.is_empty() {
+        EnrichConfig {
+            deps_dev: args.enrich_sources.contains(&EnrichSource::DepsDev),
+            clearly_defined: args.enrich_sources.contains(&EnrichSource::ClearlyDefined),
+            deps_dev_graph: args.enrich_sources.contains(&EnrichSource::DepsDevGraph),
+        }
+    } else {
+        EnrichConfig {
+            deps_dev: !args.no_deps_dev,
+            clearly_defined: !args.no_clearly_defined,
+            deps_dev_graph: !args.no_deps_dev_graph,
+        }
+    }
 }
 
 /// Resolved format-dispatch inputs: the canonical (deduped, in-order)
@@ -784,6 +865,14 @@ pub async fn execute(
         "scan complete"
     );
 
+    // Enrichment source control: resolve which sources are enabled.
+    // `--offline` is handled by each enrichment source's internal
+    // short-circuit (they log "offline, skipping" themselves), so we
+    // don't need to gate here — but we avoid emitting misleading
+    // "skipped (disabled by flags)" messages when the operative cause
+    // is offline mode.
+    let enrich_cfg = resolve_enrich_sources(&args);
+
     // deps.dev enrichment runs after the local scan so it only sees the
     // deduped component set. Components in unsupported ecosystems
     // (deb/apk/generic) are skipped silently inside the enrichment;
@@ -791,10 +880,14 @@ pub async fn execute(
     // warnings, not errors — the scan still produces a valid SBOM if
     // deps.dev is unreachable.
     let deps_dev_client = DepsDevClient::new(std::time::Duration::from_secs(5));
-    let deps_dev_source = DepsDevSource::new(deps_dev_client.clone(), offline);
-    let enriched = enrich_components(&deps_dev_source, &mut components).await;
-    if enriched > 0 {
-        tracing::info!(enriched, "deps.dev added licenses to components");
+    if enrich_cfg.deps_dev {
+        let deps_dev_source = DepsDevSource::new(deps_dev_client.clone(), offline);
+        let enriched = enrich_components(&deps_dev_source, &mut components).await;
+        if enriched > 0 {
+            tracing::info!(enriched, "deps.dev added licenses to components");
+        }
+    } else if !offline {
+        tracing::info!("deps.dev license enrichment skipped (disabled by flags)");
     }
 
     // ClearlyDefined enrichment runs after deps.dev and populates each
@@ -803,13 +896,17 @@ pub async fn execute(
     // CD's coverage is good for npm / cargo / gem / pypi / maven /
     // golang and shaky elsewhere; unsupported ecosystems are skipped
     // silently inside the source.
-    let cd_source = ClearlyDefinedSource::new(offline);
-    let cd_enriched = cd_enrich_components(&cd_source, &mut components).await;
-    if cd_enriched > 0 {
-        tracing::info!(
-            cd_enriched,
-            "ClearlyDefined added concluded licenses to components"
-        );
+    if enrich_cfg.clearly_defined {
+        let cd_source = ClearlyDefinedSource::new(offline);
+        let cd_enriched = cd_enrich_components(&cd_source, &mut components).await;
+        if cd_enriched > 0 {
+            tracing::info!(
+                cd_enriched,
+                "ClearlyDefined added concluded licenses to components"
+            );
+        }
+    } else if !offline {
+        tracing::info!("ClearlyDefined enrichment skipped (disabled by flags)");
     }
 
     // deps.dev transitive dep-graph enrichment fills in edges the
@@ -819,20 +916,24 @@ pub async fn execute(
     // "declared-not-cached"` on any coord not already observed
     // locally; local versions win when deps.dev reports a different
     // version for the same (group, artifact) pair.
-    let new_dep_graph_edges =
-        crate::enrich::deps_dev_graph::enrich_dep_graph(
-            &deps_dev_client,
-            &mut components,
-            offline,
-            effective_include_declared_deps,
-        )
-        .await;
-    if !new_dep_graph_edges.is_empty() {
-        tracing::info!(
-            count = new_dep_graph_edges.len(),
-            "deps.dev added transitive dep-graph edges",
-        );
-        relationships.extend(new_dep_graph_edges);
+    if enrich_cfg.deps_dev_graph {
+        let new_dep_graph_edges =
+            crate::enrich::deps_dev_graph::enrich_dep_graph(
+                &deps_dev_client,
+                &mut components,
+                offline,
+                effective_include_declared_deps,
+            )
+            .await;
+        if !new_dep_graph_edges.is_empty() {
+            tracing::info!(
+                count = new_dep_graph_edges.len(),
+                "deps.dev added transitive dep-graph edges",
+            );
+            relationships.extend(new_dep_graph_edges);
+        }
+    } else if !offline {
+        tracing::info!("deps.dev dep-graph enrichment skipped (disabled by flags)");
     }
 
     // Cross-source dedup pass (Fix A). `scan_fs::scan_path` already ran
@@ -1346,5 +1447,223 @@ mod tests {
                 || err.to_lowercase().contains("possible values"),
             "expected clap to reject unknown image-src value, got: {err}"
         );
+    }
+
+    // ── Enrichment-control flag tests ─────────────────────────────
+
+    #[test]
+    fn no_clearly_defined_flag_parses() {
+        let parsed = <ScanArgsForTest as clap::Parser>::try_parse_from([
+            "scan", "--path", ".", "--no-clearly-defined",
+        ])
+        .unwrap();
+        assert!(parsed.inner.no_clearly_defined);
+        assert!(!parsed.inner.no_deps_dev);
+        assert!(!parsed.inner.no_deps_dev_graph);
+    }
+
+    #[test]
+    fn no_deps_dev_flag_parses() {
+        let parsed = <ScanArgsForTest as clap::Parser>::try_parse_from([
+            "scan", "--path", ".", "--no-deps-dev",
+        ])
+        .unwrap();
+        assert!(parsed.inner.no_deps_dev);
+        assert!(!parsed.inner.no_clearly_defined);
+        assert!(!parsed.inner.no_deps_dev_graph);
+    }
+
+    #[test]
+    fn no_deps_dev_graph_flag_parses() {
+        let parsed = <ScanArgsForTest as clap::Parser>::try_parse_from([
+            "scan", "--path", ".", "--no-deps-dev-graph",
+        ])
+        .unwrap();
+        assert!(!parsed.inner.no_clearly_defined);
+        assert!(parsed.inner.no_deps_dev_graph);
+    }
+
+    #[test]
+    fn all_no_flags_combine() {
+        let parsed = <ScanArgsForTest as clap::Parser>::try_parse_from([
+            "scan",
+            "--path",
+            ".",
+            "--no-clearly-defined",
+            "--no-deps-dev",
+            "--no-deps-dev-graph",
+        ])
+        .unwrap();
+        assert!(parsed.inner.no_clearly_defined);
+        assert!(parsed.inner.no_deps_dev);
+        assert!(parsed.inner.no_deps_dev_graph);
+    }
+
+    #[test]
+    fn enrich_sources_parses_comma_separated() {
+        let parsed = <ScanArgsForTest as clap::Parser>::try_parse_from([
+            "scan",
+            "--path",
+            ".",
+            "--enrich-sources",
+            "deps-dev,clearly-defined",
+        ])
+        .unwrap();
+        assert_eq!(
+            parsed.inner.enrich_sources,
+            vec![EnrichSource::DepsDev, EnrichSource::ClearlyDefined]
+        );
+    }
+
+    #[test]
+    fn enrich_sources_single_value() {
+        let parsed = <ScanArgsForTest as clap::Parser>::try_parse_from([
+            "scan",
+            "--path",
+            ".",
+            "--enrich-sources",
+            "deps-dev-graph",
+        ])
+        .unwrap();
+        assert_eq!(
+            parsed.inner.enrich_sources,
+            vec![EnrichSource::DepsDevGraph]
+        );
+    }
+
+    #[test]
+    fn enrich_sources_rejects_unknown_value() {
+        let err = <ScanArgsForTest as clap::Parser>::try_parse_from([
+            "scan",
+            "--path",
+            ".",
+            "--enrich-sources",
+            "clear-defined",
+        ])
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.to_lowercase().contains("invalid value")
+                || err.to_lowercase().contains("possible values"),
+            "expected clap to reject unknown enrich-sources value, got: {err}"
+        );
+    }
+
+    #[test]
+    fn enrich_sources_defaults_to_empty() {
+        let parsed = <ScanArgsForTest as clap::Parser>::try_parse_from([
+            "scan", "--path", ".",
+        ])
+        .unwrap();
+        assert!(parsed.inner.enrich_sources.is_empty());
+    }
+
+    // ── resolve_enrich_sources logic tests ────────────────────────
+
+    /// Helper: build a minimal ScanArgs with only the enrichment
+    /// fields set, rest defaulted.
+    fn enrich_args(
+        no_deps_dev: bool,
+        no_clearly_defined: bool,
+        no_deps_dev_graph: bool,
+        enrich_sources: Vec<EnrichSource>,
+    ) -> ScanArgs {
+        ScanArgs {
+            path: Some(PathBuf::from(".")),
+            image: None,
+            image_src: vec![],
+            image_platform: None,
+            no_oci_cache: false,
+            oci_cache_size: None,
+            output: vec![],
+            format: vec![],
+            max_file_size: 256 * 1024 * 1024,
+            no_hashes: false,
+            deb_codename: None,
+            no_package_db: false,
+            no_deep_hash: false,
+            json: false,
+            no_clearly_defined,
+            no_deps_dev,
+            no_deps_dev_graph,
+            enrich_sources,
+        }
+    }
+
+    #[test]
+    fn resolve_defaults_all_enabled() {
+        let args = enrich_args(false, false, false, vec![]);
+        let cfg = resolve_enrich_sources(&args);
+        assert_eq!(cfg, EnrichConfig {
+            deps_dev: true,
+            clearly_defined: true,
+            deps_dev_graph: true,
+        });
+    }
+
+    #[test]
+    fn resolve_no_clearly_defined_disables_cd() {
+        let args = enrich_args(false, true, false, vec![]);
+        let cfg = resolve_enrich_sources(&args);
+        assert!(cfg.deps_dev);
+        assert!(!cfg.clearly_defined);
+        assert!(cfg.deps_dev_graph);
+    }
+
+    #[test]
+    fn resolve_no_deps_dev_disables_license_enrichment() {
+        let args = enrich_args(true, false, false, vec![]);
+        let cfg = resolve_enrich_sources(&args);
+        assert!(!cfg.deps_dev);
+        assert!(cfg.clearly_defined);
+        assert!(cfg.deps_dev_graph);
+    }
+
+    #[test]
+    fn resolve_no_deps_dev_graph_disables_graph() {
+        let args = enrich_args(false, false, true, vec![]);
+        let cfg = resolve_enrich_sources(&args);
+        assert!(cfg.deps_dev);
+        assert!(cfg.clearly_defined);
+        assert!(!cfg.deps_dev_graph);
+    }
+
+    #[test]
+    fn resolve_all_no_flags_disables_everything() {
+        let args = enrich_args(true, true, true, vec![]);
+        let cfg = resolve_enrich_sources(&args);
+        assert_eq!(cfg, EnrichConfig {
+            deps_dev: false,
+            clearly_defined: false,
+            deps_dev_graph: false,
+        });
+    }
+
+    #[test]
+    fn resolve_allowlist_overrides_no_flags() {
+        // --enrich-sources clearly-defined --no-clearly-defined
+        // → allowlist wins: CD enabled
+        let args = enrich_args(
+            false,
+            true,  // --no-clearly-defined
+            true,  // --no-deps-dev-graph
+            vec![EnrichSource::ClearlyDefined],
+        );
+        let cfg = resolve_enrich_sources(&args);
+        assert!(!cfg.deps_dev);         // not in allowlist
+        assert!(cfg.clearly_defined);   // in allowlist, overrides --no flag
+        assert!(!cfg.deps_dev_graph);   // not in allowlist
+    }
+
+    #[test]
+    fn resolve_allowlist_subset_only_enables_listed() {
+        let args = enrich_args(
+            false, false, false,
+            vec![EnrichSource::DepsDev, EnrichSource::DepsDevGraph],
+        );
+        let cfg = resolve_enrich_sources(&args);
+        assert!(cfg.deps_dev);
+        assert!(!cfg.clearly_defined); // not in allowlist
+        assert!(cfg.deps_dev_graph);
     }
 }

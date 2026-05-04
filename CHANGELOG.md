@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+## [0.1.0-alpha.13] — 2026-05-03
+
+The **issue #104 closure release.** Three milestones since alpha.12
+ship the final three per-ecosystem main-modules — pip, gem, and
+maven — completing the project-self-identity coverage matrix
+across every ecosystem mikebom supports.
+
 ### Changed (BREAKING — SBOM output shape, milestone 070 — closes #104 in full)
 
 - **Maven project SBOMs now identify the project itself** via a

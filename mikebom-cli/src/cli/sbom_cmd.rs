@@ -6,6 +6,7 @@ use super::enrich::EnrichArgs;
 use super::generate::GenerateArgs;
 use super::parity_cmd::ParityCheckArgs;
 use super::scan_cmd::ScanArgs;
+use super::trace_binding_cmd::TraceBindingArgs;
 use super::verify::VerifyArgs;
 use super::verify_binding_cmd::VerifyBindingArgs;
 
@@ -37,6 +38,12 @@ pub enum SbomSubcommand {
     /// recompute against a source-tier SBOM (milestone 072, FR-005).
     /// Exits non-zero on any verification failure.
     VerifyBinding(VerifyBindingArgs),
+    /// Trace an image-tier component back to its candidate
+    /// source-tier SBOMs (milestone 072, FR-006). For each instance
+    /// of the supplied PURL in the image SBOM, reports the binding
+    /// state against every candidate source SBOM.
+    /// Always exits 0 (informational; not validating).
+    TraceBinding(TraceBindingArgs),
 }
 
 pub async fn execute(
@@ -70,6 +77,9 @@ pub async fn execute(
         SbomSubcommand::ParityCheck(args) => super::parity_cmd::execute(args).await,
         SbomSubcommand::VerifyBinding(args) => {
             super::verify_binding_cmd::execute(args).await
+        }
+        SbomSubcommand::TraceBinding(args) => {
+            super::trace_binding_cmd::execute(args).await
         }
     }
 }

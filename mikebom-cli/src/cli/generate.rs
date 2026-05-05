@@ -63,6 +63,15 @@ pub struct GenerateArgs {
     /// Output generation summary as JSON to stdout
     #[arg(long)]
     pub json: bool,
+
+    /// Milestone 073: identifiers to attach to the emitted
+    /// build-tier SBOM. Forwarded from the `mikebom trace run`
+    /// dedicated identifier flags (`--repo`, `--git-ref`, `--image-id`,
+    /// `--attestation`, `--id <scheme>=<value>`). The list is
+    /// pre-assembled by `cli/run.rs::execute` before calling
+    /// `generate::execute`. Default empty.
+    #[arg(skip)]
+    pub identifiers: Vec<mikebom::binding::identifiers::Identifier>,
 }
 
 pub async fn execute(args: GenerateArgs, offline: bool) -> anyhow::Result<()> {
@@ -133,7 +142,10 @@ pub async fn execute(args: GenerateArgs, offline: bool) -> anyhow::Result<()> {
         // Trace-mode doesn't distinguish dev/prod at capture time.
         include_dev: false,
     };
-    let builder = CycloneDxBuilder::new(cdx_config);
+    let builder = CycloneDxBuilder::new(cdx_config)
+        // Milestone 073 — propagate manual identifier flags to the
+        // builder. Build-tier scans don't auto-detect; manual only.
+        .with_identifiers(args.identifiers.clone());
     let bom = builder.build(
         &components,
         &relationships,

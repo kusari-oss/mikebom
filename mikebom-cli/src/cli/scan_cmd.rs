@@ -277,6 +277,389 @@ pub struct ScanArgs {
     /// to verify the binding after emission.
     #[arg(long, value_name = "PATH")]
     pub bind_to_source: Option<PathBuf>,
+
+    /// Attach a `repo:` identifier — source repository identity
+    /// (URL or git-style ssh URL). Manual override; if both this
+    /// flag and the auto-detected `repo:` identifier (from `.git/`
+    /// origin remote) produce a value, manual wins per FR-006.
+    /// On the same scan, pass `--git-ref <revision>` to upgrade
+    /// to a `git:<repo-url>#<revision>` identifier (the `git:`
+    /// identifier supersedes — no separate `repo:` is also emitted).
+    #[arg(long = "repo", value_name = "URL")]
+    pub repo: Option<String>,
+
+    /// Pair with `--repo <url>` to emit a `git:<repo>#<revision>`
+    /// identifier (commit/branch/tag-anchored). Cannot be supplied
+    /// without `--repo`. When set, supersedes the bare `repo:`
+    /// identifier — only the `git:` identifier is emitted.
+    #[arg(long = "git-ref", value_name = "REVISION", requires = "repo")]
+    pub git_ref: Option<String>,
+
+    /// Attach an `image:` identifier — image identity in the form
+    /// `[registry/]name[:tag][@sha256:digest]`. Manual override:
+    /// if `--image <PATH>` (the scan input) is also set and
+    /// auto-detection produced an `image:` identifier, the manual
+    /// value wins per FR-006. Named `--image-id` to avoid colliding
+    /// with the `--image <PATH>` scan-input flag.
+    #[arg(long = "image-id", value_name = "REF")]
+    pub image_id: Option<String>,
+
+    /// Attach an `attestation:` identifier — in-toto attestation
+    /// IRI. Manual only; no auto-detection equivalent.
+    #[arg(long = "attestation", value_name = "IRI")]
+    pub attestation: Option<String>,
+
+    /// Attach a user-defined identifier in `<scheme>=<value>` form.
+    /// Repeatable. The `<scheme>` MUST match regex
+    /// `^[a-z][a-z0-9_-]*$` (FR-004) and MUST NOT collide with a
+    /// built-in scheme (`repo`, `git`, `image`, `attestation`) —
+    /// use the dedicated `--repo` / `--git-ref` / `--image-id` /
+    /// `--attestation` flags for those. The `<value>` is the
+    /// remainder after the first `=`; values may contain `=`
+    /// characters.
+    ///
+    /// User-defined identifiers ride the `mikebom:identifiers`
+    /// document-level annotation per Constitution Principle V's
+    /// documented-exception path; SPDX 3 carries them natively in
+    /// `Element.externalIdentifier[]`.
+    ///
+    /// Worked example: `--id acme_corp_id=svc-alpha-123 --id
+    /// internal_ticket=PROJ-456`.
+    ///
+    /// See `docs/reference/identifiers.md` for the full per-format
+    /// carrier table and decode recipes.
+    #[arg(
+        long = "id",
+        action = clap::ArgAction::Append,
+        value_name = "SCHEME=VALUE",
+        value_parser = parse_user_defined_id_flag,
+    )]
+    pub id: Vec<mikebom::binding::identifiers::Identifier>,
+}
+
+/// Parse a `--id <scheme>=<value>` flag for a user-defined identifier.
+///
+/// Errors at clap parse time on:
+/// - missing `=` separator
+/// - empty scheme or value
+/// - scheme failing the FR-004 regex (`InvalidSchemeName`)
+/// - scheme matching one of the built-in schemes (`repo`, `git`,
+///   `image`, `attestation`) — operator is directed to the
+///   dedicated `--repo` / `--git-ref` / `--image-id` /
+///   `--attestation` flag instead.
+///
+/// Built-in schemes are EXPLICITLY rejected here so users get a
+/// clear error pointing at the right flag instead of a
+/// soft-fail-to-opaque downgrade. The `--id` flag is for
+/// user-defined namespaces only.
+fn parse_user_defined_id_flag(
+    raw: &str,
+) -> Result<mikebom::binding::identifiers::Identifier, String> {
+    use mikebom::binding::identifiers::{
+        BuiltinScheme, Identifier, IdentifierError, IdentifierKind, IdentifierValue, SchemeName,
+    };
+    let Some(idx) = raw.find('=') else {
+        return Err(format!(
+            "--id value missing `=` separator: {raw:?} \
+             (expected form: --id <scheme>=<value>)"
+        ));
+    };
+    let scheme_str = &raw[..idx];
+    let value_str = &raw[idx + 1..];
+    let scheme = SchemeName::new(scheme_str.to_string())
+        .map_err(|e: IdentifierError| e.to_string())?;
+    if let Some(b) = BuiltinScheme::from_scheme_name(&scheme) {
+        return Err(format!(
+            "--id rejects the built-in scheme `{}` — use the dedicated \
+             flag instead (--repo / --git-ref / --image-id / --attestation). \
+             --id is for user-defined schemes only.",
+            b.as_str()
+        ));
+    }
+    let value =
+        IdentifierValue::new(value_str.to_string()).map_err(|e: IdentifierError| e.to_string())?;
+    Ok(Identifier::from_parts_with_label(
+        scheme,
+        value,
+        IdentifierKind::UserDefined,
+        None,
+    ))
+}
+
+/// Translate the dedicated built-in flags into the `Identifier`
+/// list. Returns the manual identifiers in the supply order
+/// `[repo-or-git, image, attestation, ...user-defined]`. The
+/// `repo`/`git-ref` pair collapses into a single `git:` identifier
+/// when `--git-ref` is set; otherwise emits a `repo:` identifier.
+///
+/// Each identifier is constructed via `Identifier::parse` (so the
+/// FR-004 scheme validation + soft-fail value validation paths run
+/// uniformly). Validation failure soft-fails to opaque
+/// `IdentifierKind::UserDefined` per VR-005 — same behavior as the
+/// old single-flag path.
+fn assemble_manual_identifiers(args: &ScanArgs) -> Vec<mikebom::binding::identifiers::Identifier> {
+    let mut out: Vec<mikebom::binding::identifiers::Identifier> = Vec::new();
+    // (1) repo / git-ref: when --git-ref is set, emit only the git:
+    // form; otherwise emit a bare repo: form.
+    if let Some(repo_url) = args.repo.as_deref() {
+        let raw = if let Some(rev) = args.git_ref.as_deref() {
+            format!("git:{repo_url}#{rev}")
+        } else {
+            format!("repo:{repo_url}")
+        };
+        match mikebom::binding::identifiers::Identifier::parse(&raw) {
+            Ok(id) => out.push(id),
+            Err(e) => tracing::warn!(
+                error = %e,
+                raw = %raw,
+                "failed to parse manual --repo/--git-ref identifier; skipping"
+            ),
+        }
+    }
+    if let Some(image) = args.image_id.as_deref() {
+        let raw = format!("image:{image}");
+        match mikebom::binding::identifiers::Identifier::parse(&raw) {
+            Ok(id) => out.push(id),
+            Err(e) => tracing::warn!(
+                error = %e,
+                raw = %raw,
+                "failed to parse manual --image-id identifier; skipping"
+            ),
+        }
+    }
+    if let Some(att) = args.attestation.as_deref() {
+        let raw = format!("attestation:{att}");
+        match mikebom::binding::identifiers::Identifier::parse(&raw) {
+            Ok(id) => out.push(id),
+            Err(e) => tracing::warn!(
+                error = %e,
+                raw = %raw,
+                "failed to parse manual --attestation identifier; skipping"
+            ),
+        }
+    }
+    // (2) user-defined --id flags in supply order.
+    for id in &args.id {
+        out.push(id.clone());
+    }
+    out
+}
+
+/// Synthesize an `image:` identifier from the user-supplied `--image`
+/// reference and the extracted-image state. Per the Q3 clarification,
+/// the canonical shape is `image:<registry>/<name>:<tag>@sha256:<digest>`
+/// with documented omissions when components are missing.
+///
+/// This helper attempts:
+/// 1. If the user passed `--image <ref>` and `<ref>` is NOT a tarball
+///    file (i.e., an OCI ref like `docker.io/foo/bar:v1`), parse it
+///    and combine with the extracted manifest_digest to synthesize the
+///    full form.
+/// 2. If the user passed a tarball file, use the extracted `repo_tag`
+///    (typically `name:tag`) plus `manifest_digest`. The registry
+///    portion is omitted when not present in `repo_tag`.
+/// 3. If neither yields a usable shape, emit just the digest:
+///    `image:@sha256:<manifest_digest>` (rare — defensive fallback).
+///
+/// Returns `None` when neither field is populated — the scan still
+/// emits without the auto-detected `image:` identifier.
+fn image_auto_identifier(
+    extracted: Option<&scan_fs::docker_image::ExtractedImage>,
+    image_arg: Option<&Path>,
+) -> Option<mikebom::binding::identifiers::Identifier> {
+    let extracted = extracted?;
+    // Prefer the user-supplied reference when it's an OCI ref (not a
+    // tarball file). Even when a registry pull resolved the reference,
+    // the user-supplied form carries the human-readable
+    // `<registry>/<name>:<tag>` pieces we want in the identifier.
+    let arg_str: Option<&str> = match image_arg {
+        Some(p) => {
+            if p.is_file() {
+                None
+            } else {
+                p.to_str()
+            }
+        }
+        None => None,
+    };
+    let (registry, name, tag) = if let Some(s) = arg_str {
+        parse_image_ref_components(s)
+    } else if let Some(rt) = extracted.repo_tag.as_deref() {
+        // Tarball path: rely on the extracted RepoTags entry.
+        parse_image_ref_components(rt)
+    } else {
+        (None, String::new(), None)
+    };
+    // The manifest digest is the SHA-256 of the docker-save manifest.json.
+    // It's a stable identifier for THIS specific image artifact even if
+    // it differs from the upstream registry's content digest. Operators
+    // who need the registry-side digest can pass `--image-id
+    // <ref>@sha256:<their-digest>` manually; auto-detection's job
+    // is to emit a maximally-informative identifier from what mikebom
+    // can observe.
+    let digest = if extracted.manifest_digest.is_empty() {
+        None
+    } else {
+        Some(extracted.manifest_digest.as_str())
+    };
+    if name.is_empty() && digest.is_none() {
+        return None;
+    }
+    mikebom::binding::identifiers::auto_detect::image_reference_to_identifier(
+        registry.as_deref(),
+        if name.is_empty() {
+            // Fall back to a name pulled from `target_name` (which the
+            // scan has access to elsewhere) — but the safest defensive
+            // choice when we can't extract a name is to skip emission.
+            return None;
+        } else {
+            &name
+        },
+        tag.as_deref(),
+        digest,
+    )
+}
+
+/// Parse an OCI-ish image reference into `(registry, name, tag)`.
+///
+/// Heuristic: if the first `/`-separated segment contains a `.` or `:`,
+/// or is the literal `localhost`, it's a registry; otherwise the whole
+/// thing is the name. The tag is the LAST `:`-separated piece IF that
+/// piece contains no `/`. Digest portions (`@sha256:...`) are stripped
+/// before parsing — the digest is extracted from the docker-save
+/// manifest, not the user-supplied reference.
+fn parse_image_ref_components(raw: &str) -> (Option<String>, String, Option<String>) {
+    // Strip any trailing `@sha256:...` portion — digest is sourced
+    // from the extracted-image state, not the reference string.
+    let raw = match raw.find("@sha256:") {
+        Some(i) => &raw[..i],
+        None => raw,
+    };
+    if raw.is_empty() {
+        return (None, String::new(), None);
+    }
+    // Identify potential registry prefix.
+    let (registry, rest) = match raw.split_once('/') {
+        Some((first, rest)) => {
+            let looks_like_registry =
+                first.contains('.') || first.contains(':') || first == "localhost";
+            if looks_like_registry {
+                (Some(first.to_string()), rest)
+            } else {
+                (None, raw)
+            }
+        }
+        None => (None, raw),
+    };
+    // Now split off the tag — last `:` whose right-hand-side has no `/`.
+    let (name, tag) = if let Some(colon_idx) = rest.rfind(':') {
+        let after = &rest[colon_idx + 1..];
+        if after.contains('/') || after.is_empty() {
+            (rest.to_string(), None)
+        } else {
+            (rest[..colon_idx].to_string(), Some(after.to_string()))
+        }
+    } else {
+        (rest.to_string(), None)
+    };
+    (registry, name, tag)
+}
+
+/// Resolve the final list of identifiers for emission per
+/// FR-006 + FR-009 override-position rule.
+///
+/// The algorithm in detail:
+///
+/// 1. Start with `[auto_detected]` if present, else `[]`.
+/// 2. For each manual entry in supply order, apply one of three
+///    cases:
+///    - **Exact dedup against auto-detected** — when manual matches
+///      the auto-detected entry on `(scheme, value)`, replace in
+///      place. Manual inherits auto-detected position; the
+///      auto-detected `source_label` is dropped; info-log notes the
+///      dedup.
+///    - **Exact dedup against earlier manual** — skip (first-
+///      supplied wins; FR-009 last-clause).
+///    - **Same-scheme-different-value override** — true FR-006
+///      override. Auto-detected entry is dropped (collapsed away);
+///      manual entry is appended in supply order, NOT promoted to
+///      front. Both values are logged at info level.
+///    - **No match** — append in supply order.
+fn resolve_identifiers(
+    auto_detected: Option<mikebom::binding::identifiers::Identifier>,
+    manual: &[mikebom::binding::identifiers::Identifier],
+) -> Vec<mikebom::binding::identifiers::Identifier> {
+    let mut out: Vec<mikebom::binding::identifiers::Identifier> = Vec::new();
+    // Track whether the auto-detected entry has already been supplanted
+    // (by a same-scheme-different-value override). Once supplanted, we
+    // don't re-trigger the override path for subsequent manual entries.
+    let mut auto_detected_active = auto_detected.is_some();
+    if let Some(ref ad) = auto_detected {
+        out.push(ad.clone());
+    }
+    for m in manual {
+        // Step 2a: exact (scheme, value) dedup against any existing
+        // entry. Manual inherits position when matching auto-detected;
+        // first-manual-wins when matching an earlier manual entry.
+        if let Some(idx) = out.iter().position(|e| {
+            e.scheme == m.scheme && e.value == m.value
+        }) {
+            let existing_is_auto_detected = auto_detected_active
+                && idx == 0
+                && auto_detected
+                    .as_ref()
+                    .is_some_and(|ad| ad.scheme == out[idx].scheme && ad.value == out[idx].value);
+            if existing_is_auto_detected {
+                tracing::info!(
+                    scheme = m.scheme.as_str(),
+                    value = m.value.as_str(),
+                    "manual identifier flag matches auto-detected identifier; \
+                     emitting manual in auto-detected position (deduplicated)"
+                );
+                out[idx] = m.clone();
+                // Manual has supplanted the auto-detected entry. The
+                // FR-006 same-scheme-different-value override path
+                // shouldn't fire for later same-scheme manual entries
+                // because the auto-detected entry is no longer present.
+                auto_detected_active = false;
+            } else {
+                tracing::info!(
+                    scheme = m.scheme.as_str(),
+                    value = m.value.as_str(),
+                    "manual identifier flag duplicates an earlier manual \
+                     identifier; first-supplied wins (skipping)"
+                );
+            }
+            continue;
+        }
+        // Step 2b: same-scheme-different-value override against
+        // auto-detected (FR-006).
+        if auto_detected_active {
+            if let Some(ref ad) = auto_detected {
+                if ad.scheme == m.scheme && ad.value != m.value {
+                    if let Some(pos) = out.iter().position(|e| {
+                        e.scheme == ad.scheme && e.value == ad.value
+                    }) {
+                        tracing::info!(
+                            scheme = m.scheme.as_str(),
+                            auto_detected_value = ad.value.as_str(),
+                            manual_value = m.value.as_str(),
+                            "manual identifier flag overrides auto-detected \
+                             entry (same scheme, different value); dropping \
+                             auto-detected, appending manual in supply order"
+                        );
+                        out.remove(pos);
+                    }
+                    auto_detected_active = false;
+                    out.push(m.clone());
+                    continue;
+                }
+            }
+        }
+        // Step 2c: append in supply order.
+        out.push(m.clone());
+    }
+    out
 }
 
 /// Resolved enrichment-source enablement. Computed from the CLI flags
@@ -1065,6 +1448,30 @@ pub async fn execute(
         bloom_filter_false_positive_rate: 0.0,
     };
 
+    // Milestone 073: resolve identifiers — auto-detected
+    // `repo:` (from git origin remote, 3-step fallback) on `--path`
+    // scans, auto-detected `image:<registry>/<name>:<tag>@sha256:<digest>`
+    // on `--image` scans, plus any manual flags
+    // (`--repo` / `--git-ref` / `--image-id` / `--attestation` / `--id`).
+    // Manual entries dedup against auto-detected by `(scheme, value)`
+    // — manual wins, inheriting the auto-detected entry's position.
+    // Order: auto-detected first, then manual in supply order
+    // (per FR-009 / VR-008 / data-model.md).
+    let auto_detected_id: Option<mikebom::binding::identifiers::Identifier> =
+        if args.image.is_some() {
+            // Image-tier auto-detection — synthesize the canonical
+            // `image:` form from the resolved-image fields.
+            image_auto_identifier(_extracted.as_ref(), args.image.as_deref())
+        } else {
+            // Source-tier auto-detection — git-remote 3-step fallback.
+            mikebom::binding::identifiers::auto_detect::auto_detect_repo_identifier(&root_path)
+        };
+    let manual_identifiers = assemble_manual_identifiers(&args);
+    let identifiers = resolve_identifiers(
+        auto_detected_id,
+        &manual_identifiers,
+    );
+
     // Build the neutral artifacts bundle once and hand it to every
     // serializer the user requested — the single-pass guarantee of
     // FR-004 / SC-009.
@@ -1099,6 +1506,9 @@ pub async fn execute(
             .as_ref()
             .filter(|_| args.image.is_some())
             .map(|ctx| &ctx.source_doc_id),
+        // Milestone 073: identifiers — populated by T013's
+        // resolution pipeline before this struct is constructed.
+        identifiers: &identifiers,
     };
     let output_cfg = OutputConfig {
         mikebom_version: env!("CARGO_PKG_VERSION"),
@@ -1695,6 +2105,11 @@ mod tests {
             no_deps_dev_graph,
             enrich_sources,
             bind_to_source: None,
+            repo: None,
+            git_ref: None,
+            image_id: None,
+            attestation: None,
+            id: vec![],
         }
     }
 
@@ -1773,5 +2188,250 @@ mod tests {
         assert!(cfg.deps_dev);
         assert!(!cfg.clearly_defined); // not in allowlist
         assert!(cfg.deps_dev_graph);
+    }
+
+    // ----------------------------------------------------------------
+    // Milestone 073 — identifier resolution pipeline
+    // (T013 unit-test coverage). FR-006 + FR-009 override-position
+    // rule.
+    // ----------------------------------------------------------------
+
+    use mikebom::binding::identifiers::Identifier;
+
+    fn make_id(raw: &str, label: Option<&str>) -> Identifier {
+        let mut id = Identifier::parse(raw).unwrap();
+        id.source_label = label.map(|s| s.to_string());
+        id
+    }
+
+    #[test]
+    fn resolve_auto_detected_only_emits_one_entry() {
+        let auto = make_id("repo:git@github.com:foo/bar.git", Some("auto"));
+        let out = resolve_identifiers(Some(auto.clone()), &[]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].as_wire(), auto.as_wire());
+    }
+
+    #[test]
+    fn resolve_manual_only_emits_in_supply_order() {
+        let m1 = make_id("repo:git@example.com:a.git", None);
+        let m2 = make_id("acme_corp_id:abc123", None);
+        let out = resolve_identifiers(None, &[m1.clone(), m2.clone()]);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].as_wire(), m1.as_wire());
+        assert_eq!(out[1].as_wire(), m2.as_wire());
+    }
+
+    #[test]
+    fn resolve_manual_inherits_auto_detected_position_on_dedup() {
+        // (c) — manual entry with same (scheme, value) as auto-detected
+        // inherits the auto-detected entry's position (front of list).
+        let auto = make_id("repo:git@github.com:foo/bar.git", Some("auto-label"));
+        let manual_dup = make_id("repo:git@github.com:foo/bar.git", None);
+        let manual_other = make_id("acme_corp_id:abc", None);
+        let out = resolve_identifiers(
+            Some(auto.clone()),
+            &[manual_dup.clone(), manual_other.clone()],
+        );
+        assert_eq!(out.len(), 2);
+        // Position 0: manual entry inherits auto-detected slot.
+        assert_eq!(out[0].as_wire(), manual_dup.as_wire());
+        // The replacement carries the manual entry's source_label
+        // (None), not the auto-detected label.
+        assert_eq!(out[0].source_label, None);
+        // Position 1: the other manual entry follows in supply order.
+        assert_eq!(out[1].as_wire(), manual_other.as_wire());
+    }
+
+    #[test]
+    fn resolve_manual_different_value_drops_auto_detected() {
+        // (d) — true override: same scheme, different value. The
+        // auto-detected entry is dropped, manual follows in supply
+        // order (NOT promoted to front).
+        let auto = make_id("repo:git@github.com:o/foo.git", Some("auto"));
+        let manual_override = make_id("repo:git@github.com:m/foo.git", None);
+        let manual_other = make_id("acme_corp_id:abc", None);
+        // Supply order: other first, then override. Override should
+        // append after `other` (no front-of-list migration).
+        let out = resolve_identifiers(
+            Some(auto.clone()),
+            &[manual_other.clone(), manual_override.clone()],
+        );
+        assert_eq!(out.len(), 2);
+        // After auto-detected dropped, the supply order applies:
+        // [other, override].
+        assert_eq!(out[0].as_wire(), manual_other.as_wire());
+        assert_eq!(out[1].as_wire(), manual_override.as_wire());
+    }
+
+    #[test]
+    fn resolve_two_manual_with_same_scheme_value_first_wins() {
+        // (e) — manual-vs-manual collision on (scheme, value):
+        // first-supplied wins.
+        let m1 = make_id("acme_corp_id:abc123", None);
+        let m2 = make_id("acme_corp_id:abc123", None);
+        let out = resolve_identifiers(None, &[m1.clone(), m2.clone()]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].as_wire(), m1.as_wire());
+    }
+
+    // ----------------------------------------------------------------
+    // parse_user_defined_id_flag — `--id` value parsing
+    // ----------------------------------------------------------------
+
+    #[test]
+    fn parse_user_defined_id_flag_accepts_user_defined_scheme() {
+        let id = parse_user_defined_id_flag("acme_corp_id=abc123").unwrap();
+        assert_eq!(id.scheme.as_str(), "acme_corp_id");
+        assert_eq!(id.value.as_str(), "abc123");
+        assert!(matches!(
+            id.kind,
+            mikebom::binding::identifiers::IdentifierKind::UserDefined
+        ));
+    }
+
+    #[test]
+    fn parse_user_defined_id_flag_value_can_contain_equals() {
+        // Split-on-first-`=` rule: trailing `=`s belong to the value.
+        let id = parse_user_defined_id_flag("acme_corp_id=key=val=foo").unwrap();
+        assert_eq!(id.scheme.as_str(), "acme_corp_id");
+        assert_eq!(id.value.as_str(), "key=val=foo");
+    }
+
+    #[test]
+    fn parse_user_defined_id_flag_rejects_missing_separator() {
+        let err = parse_user_defined_id_flag("acme_corp_id_no_eq").unwrap_err();
+        assert!(
+            err.contains("missing `=` separator"),
+            "expected missing-separator error; got {err}"
+        );
+    }
+
+    #[test]
+    fn parse_user_defined_id_flag_rejects_empty_value() {
+        let err = parse_user_defined_id_flag("acme_corp_id=").unwrap_err();
+        assert!(
+            err.contains("identifier value is empty"),
+            "expected EmptyValue error; got {err}"
+        );
+    }
+
+    #[test]
+    fn parse_user_defined_id_flag_rejects_invalid_scheme() {
+        let err = parse_user_defined_id_flag("ACME_CORP_ID=abc").unwrap_err();
+        assert!(
+            err.contains("fails regex"),
+            "expected InvalidSchemeName error; got {err}"
+        );
+    }
+
+    #[test]
+    fn parse_user_defined_id_flag_rejects_each_built_in_scheme() {
+        // Per the user-instruction: --id <built-in>=<value> MUST
+        // produce a clap parse error pointing at the dedicated flag.
+        for built_in in ["repo", "git", "image", "attestation"] {
+            let raw = format!("{built_in}=anything");
+            let err = parse_user_defined_id_flag(&raw).unwrap_err();
+            assert!(
+                err.contains("--id rejects the built-in scheme")
+                    && err.contains(built_in)
+                    && err.contains("--repo")
+                    && err.contains("--image-id"),
+                "expected built-in-rejection error pointing at the dedicated flag; got {err}"
+            );
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // assemble_manual_identifiers — translate dedicated flags into Vec
+    // ----------------------------------------------------------------
+
+    #[test]
+    fn assemble_manual_identifiers_repo_only_emits_repo_scheme() {
+        let mut args = enrich_args(false, false, false, vec![]);
+        args.repo = Some("git@github.com:foo/bar.git".to_string());
+        let ids = assemble_manual_identifiers(&args);
+        assert_eq!(ids.len(), 1);
+        assert_eq!(ids[0].as_wire(), "repo:git@github.com:foo/bar.git");
+    }
+
+    #[test]
+    fn assemble_manual_identifiers_repo_plus_git_ref_emits_git_only() {
+        // --repo + --git-ref → ONE git: identifier (supersedes repo:),
+        // not two entries.
+        let mut args = enrich_args(false, false, false, vec![]);
+        args.repo = Some("https://github.com/foo/bar".to_string());
+        args.git_ref = Some("abc1234567890".to_string());
+        let ids = assemble_manual_identifiers(&args);
+        assert_eq!(ids.len(), 1);
+        assert_eq!(
+            ids[0].as_wire(),
+            "git:https://github.com/foo/bar#abc1234567890"
+        );
+    }
+
+    #[test]
+    fn assemble_manual_identifiers_image_attestation_id_in_supply_order() {
+        let mut args = enrich_args(false, false, false, vec![]);
+        args.image_id = Some("docker.io/foo/bar:v1".to_string());
+        args.attestation = Some("https://example.org/att/1".to_string());
+        args.id = vec![
+            parse_user_defined_id_flag("acme_corp_id=svc-alpha").unwrap(),
+            parse_user_defined_id_flag("internal_ticket=PROJ-456").unwrap(),
+        ];
+        let ids = assemble_manual_identifiers(&args);
+        assert_eq!(ids.len(), 4);
+        assert_eq!(ids[0].scheme.as_str(), "image");
+        assert_eq!(ids[1].scheme.as_str(), "attestation");
+        assert_eq!(ids[2].scheme.as_str(), "acme_corp_id");
+        assert_eq!(ids[3].scheme.as_str(), "internal_ticket");
+    }
+
+    // ----------------------------------------------------------------
+    // parse_image_ref_components — image-tier auto-detection helper
+    // ----------------------------------------------------------------
+
+    #[test]
+    fn parse_image_ref_full_form() {
+        let (registry, name, tag) =
+            parse_image_ref_components("docker.io/acme/foo:v1");
+        assert_eq!(registry.as_deref(), Some("docker.io"));
+        assert_eq!(name, "acme/foo");
+        assert_eq!(tag.as_deref(), Some("v1"));
+    }
+
+    #[test]
+    fn parse_image_ref_no_registry() {
+        let (registry, name, tag) = parse_image_ref_components("acme/foo:v1");
+        assert_eq!(registry, None);
+        assert_eq!(name, "acme/foo");
+        assert_eq!(tag.as_deref(), Some("v1"));
+    }
+
+    #[test]
+    fn parse_image_ref_no_tag() {
+        let (registry, name, tag) = parse_image_ref_components("docker.io/acme/foo");
+        assert_eq!(registry.as_deref(), Some("docker.io"));
+        assert_eq!(name, "acme/foo");
+        assert_eq!(tag, None);
+    }
+
+    #[test]
+    fn parse_image_ref_localhost_registry() {
+        let (registry, name, tag) =
+            parse_image_ref_components("localhost:5000/foo:v1");
+        assert_eq!(registry.as_deref(), Some("localhost:5000"));
+        assert_eq!(name, "foo");
+        assert_eq!(tag.as_deref(), Some("v1"));
+    }
+
+    #[test]
+    fn parse_image_ref_strips_trailing_digest() {
+        let (registry, name, tag) = parse_image_ref_components(
+            "docker.io/acme/foo:v1@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        );
+        assert_eq!(registry.as_deref(), Some("docker.io"));
+        assert_eq!(name, "acme/foo");
+        assert_eq!(tag.as_deref(), Some("v1"));
     }
 }

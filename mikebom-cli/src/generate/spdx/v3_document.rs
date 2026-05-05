@@ -138,6 +138,34 @@ pub fn build_document(
             }
         ]);
     }
+    // Milestone 073 — identifiers ride
+    // `Element.externalIdentifier[]` natively per
+    // `contracts/identifiers-annotation.md` C-1 SPDX 3 (the
+    // open-typed multi-identifier model handles BOTH built-in and
+    // user-defined schemes uniformly — no separate annotation
+    // envelope needed on the SPDX 3 side). Order: auto-detected
+    // first, then manual in supply order (per FR-009 / VR-008).
+    if !scan.identifiers.is_empty() {
+        let id_entries: Vec<Value> = scan
+            .identifiers
+            .iter()
+            .map(|id| {
+                let mut entry = json!({
+                    "type": "ExternalIdentifier",
+                    "externalIdentifierType": id.scheme.as_str(),
+                    "identifier": id.value.as_str(),
+                });
+                if let Some(label) = id.source_label.as_deref() {
+                    entry["comment"] = json!(label);
+                } else {
+                    entry["comment"] = json!("manual identifier flag");
+                }
+                entry
+            })
+            .collect();
+        spdx_document["externalIdentifier"] = json!(id_entries);
+    }
+
     // Milestone 072 / T014 — when --bind-to-source was used, attach
     // the standards-native `import[]` ExternalMap pointing at the
     // source-tier SBOM. The `Relationship[built_from]` graph element

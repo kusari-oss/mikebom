@@ -7,6 +7,34 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### Added (milestone 072 PR-B — VEX propagation respects binding strength: US2)
+
+Second of three sequential PRs implementing milestone 072. PR-A delivered the foundation + verification (`mikebom sbom verify-binding`). PR-B delivers **US2**: cross-tier VEX propagation that respects the binding strength PR-A established. PR-C will add operator triage (`mikebom sbom trace-binding`) + the published verifier guide.
+
+User-visible scope this PR:
+
+- **`mikebom sbom enrich --vex-propagation-mode {permissive,caveated,strict}`** (FR-007) — new flag with default `caveated`. Wires real VEX propagation (replacing the pre-072 no-op `--vex-overrides` stub). Pre-072 callers needing exact prior behavior pass `--vex-propagation-mode permissive`. The flag's help text + the `mikebom sbom enrich --help` output document the breaking-change opt-out.
+- **`propagate_vex_with_binding`** engine in `mikebom-cli/src/sbom/mutator.rs` — handles all three modes, applies per-`Directionality` matching (one-to-one when source statement carries `Product.identifiers.cyclonedx-bom-ref` / `spdx-spdxid`; one-to-many broadcast when source is pre-072 PURL-only). Emits per-instance `affects[]` entries on the target CDX `vulnerabilities[]` array.
+- **Per-instance VEX emission** (FR-008) — propagated OpenVEX statements populate `OpenVexProduct.identifiers` with the target instance's `cyclonedx-bom-ref` / `spdx-spdxid` keys. Pre-072 OpenVEX consumers see byte-identical wire shape (the field is `skip_serializing_if_empty` from PR-A); post-072 consumers can apply VEX statements at instance granularity.
+- **`mikebom:vex-binding-status: unverified` caveat** (FR-009) — when `caveated` mode propagates onto a non-`verified` instance, every `affects[]` entry on the target CDX `vulnerabilities[]` row carries this sibling annotation per `contracts/openvex-instance-identifiers.md` C-5. Operators reading the SBOM see exactly which propagated statements lack verified bindings.
+- **Refusal-rationale annotations** — `strict` mode refuses to propagate onto non-`verified` instances. The refused (vulnerability, instance) pairs are recorded under a new `mikebom:vex-propagation-refusals` document-level property carrying a structured per-refusal record (`vulnerability`, `purl`, `bom_ref`, `binding_strength`, `reason`). The command exits non-zero per VR-006 so CI pipelines can gate on strict-mode outcomes; the SBOM is still written so operators can audit the refusal rationale.
+- **`mikebom-cli/tests/binding_drift.rs`** — 2 tests: strict-mode refusal on weak binding (exit non-zero, no `vulnerabilities[]` entry, refusal annotation present); strict-mode acceptance on verified binding.
+- **`mikebom-cli/tests/vex_per_instance.rs`** — 1 test, the canonical worked-example regression (US2 AS#4 / SC-003): two instances of `pkg:golang/golang.org/x/net@v0.28.0` (verified-bound + unbound), `caveated`-mode propagation correctly produces clean propagation on the bound instance and caveated propagation on the unbound instance.
+
+### Changed — VEX propagation default flips from no-op to `caveated`
+
+- Pre-072: `mikebom sbom enrich --vex-overrides <path>` was a documented no-op — the legacy flag did nothing. Post-072: same flag combination triggers real propagation in `caveated` mode by default. Callers depending on the no-op behavior pass `--vex-propagation-mode permissive` to disable binding-strength-aware caveats. Strictly speaking, this is a behavior change rather than a "breaking change in output that previously existed" — pre-072 there was no propagation output at all. Documented in spec SC-008 + the `--vex-propagation-mode` flag's help text.
+
+### Migration
+
+- No SBOM output shape change for callers that don't pass `--vex-overrides`. The 27 alpha.14 byte-identity goldens remain byte-identical.
+- Callers passing `--vex-overrides` previously got nothing in the output; now they get propagated VEX statements with binding-aware caveats by default.
+
+### Out of scope (deferred to PR-C)
+
+- `mikebom sbom trace-binding` operator-triage subcommand (FR-006 / US3) — PR-C.
+- `docs/reference/cross-tier-binding.md` published verifier guide (FR-010) — PR-C, lands when the full contract surface is implemented.
+
 ### Added (milestone 072 PR-A — cross-tier SBOM binding: foundation + US1)
 
 This is the first of three sequential PRs implementing milestone 072. PR-A delivers the **foundational binding contract + US1** (verify image's foo == source's foo). PR-B will add US2 (`mikebom sbom enrich --vex-propagation-mode` + per-instance OpenVEX). PR-C will add US3 (`mikebom sbom trace-binding`). User-visible scope this PR:

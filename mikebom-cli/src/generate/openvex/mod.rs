@@ -52,22 +52,29 @@ pub fn serialize_openvex(
     // Group advisories by id so one CVE that affects three
     // components emits one statement with three products[] — the
     // OpenVEX idiom, not three separate statements.
+    //
+    // Milestone 072 / T019: populate `OpenVexProduct.identifiers`
+    // with the `purl` key (always — equal to the legacy `@id`
+    // field). The `cyclonedx-bom-ref` and `spdx-spdxid` keys are
+    // NOT populated here because at this emit-side construction
+    // site we don't yet know which paired SBOM (CDX vs SPDX) the
+    // sidecar will accompany — the per-format per-instance
+    // identifier lookup happens at propagation time (T020) when
+    // the target SBOM is known. Per `contracts/openvex-instance-
+    // identifiers.md` C-1, `purl` alone is the documented baseline.
     let mut products_by_advisory: BTreeMap<String, Vec<OpenVexProduct>> =
         BTreeMap::new();
     for c in artifacts.components {
         for adv in &c.advisories {
+            let purl = c.purl.as_str().to_string();
+            let mut identifiers = std::collections::BTreeMap::new();
+            identifiers.insert("purl".to_string(), purl.clone());
             products_by_advisory
                 .entry(adv.id.clone())
                 .or_default()
                 .push(OpenVexProduct {
-                    id: c.purl.as_str().to_string(),
-                    // Milestone 072 / FR-008: pre-PR-A emission
-                    // path doesn't yet populate per-instance
-                    // identifiers (that ships with PR-B's
-                    // propagation engine, T020). Empty map is
-                    // skip-serialized so wire shape stays
-                    // byte-identical to alpha.14.
-                    identifiers: std::collections::BTreeMap::new(),
+                    id: purl,
+                    identifiers,
                 });
         }
     }

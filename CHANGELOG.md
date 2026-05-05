@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+## [0.1.0-alpha.15] — 2026-05-05
+
+The **milestone 072 closure release.** Three sequential PRs (#140, #141, #142) shipped end-to-end cross-tier SBOM binding. With this release, an operator can: (a) emit image-tier SBOMs with verifiable cross-tier binding metadata; (b) verify the binary in the image matches the source SBOM via `mikebom sbom verify-binding`; (c) propagate VEX statements safely from source to image, with binding-strength-aware caveats by default; (d) triage which source SBOM (if any) describes a build that produced an image-tier component via `mikebom sbom trace-binding`; (e) hand external auditors `docs/reference/cross-tier-binding.md` and the binding-fixtures/ reference set so they can write their own verifier without mikebom source-code access.
+
+The user's two specific worries are both addressed: "we cannot verify the binary running in the image matches the version that the source or build SBOM is built for" → `verify-binding`; "a vulnerability in the source has a VEX against it but the image actually has the vuln through some other path" → per-instance VEX with `caveated`-mode propagation default.
+
 ### Milestone 072 — cross-tier SBOM binding (closed by PR-C)
 
 With PR-C merged, **milestone 072 is fully closed**: US1 (verify image's foo == source's foo) + US2 (VEX propagation respects binding strength) + US3 (operator triage via `trace-binding`) + the published verifier guide. The three-PR sequence (PR-A foundation + US1, PR-B US2, PR-C US3 + docs) implements every requirement FR-001..FR-012, satisfies every success criterion SC-001..SC-008, and lands the SC-004 published reference fixture set + external-verifier guide that an external auditor can write a working verifier from with zero source-code access.

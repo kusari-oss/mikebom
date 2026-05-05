@@ -7,6 +7,27 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### Milestone 072 — cross-tier SBOM binding (closed by PR-C)
+
+With PR-C merged, **milestone 072 is fully closed**: US1 (verify image's foo == source's foo) + US2 (VEX propagation respects binding strength) + US3 (operator triage via `trace-binding`) + the published verifier guide. The three-PR sequence (PR-A foundation + US1, PR-B US2, PR-C US3 + docs) implements every requirement FR-001..FR-012, satisfies every success criterion SC-001..SC-008, and lands the SC-004 published reference fixture set + external-verifier guide that an external auditor can write a working verifier from with zero source-code access.
+
+### Added (milestone 072 PR-C — operator triage + published verifier guide: US3)
+
+Third and final PR closing out milestone 072. PR-A delivered the foundation + verification (`mikebom sbom verify-binding`). PR-B delivered VEX propagation respecting binding strength. PR-C delivers **US3** (operator triage) and the **FR-010 published verifier guide**.
+
+User-visible scope this PR:
+
+- **`mikebom sbom trace-binding`** subcommand (FR-006) — operator triage tool answering "which source-tier SBOM (if any) corresponds to this image-tier component?". Args: `--component-purl <purl>`, `--image-sbom <path>`, EITHER `--source-sbom <path>` OR `--candidate-sources-dir <dir>` (mutually exclusive), `--format {table,json}` (default `table`). Reports per-instance binding state for every instance of the supplied PURL in the image SBOM. **Always exits 0** (informational, not validating — contrast with `verify-binding` which exits non-zero on hash mismatch). Mirrors the JSON output shape from `quickstart.md` Recipe 6.
+- **`mikebom-cli/tests/binding_trace.rs`** — 3 integration tests covering the Recipe 6 scenarios: (a) component with one bound instance → `verified` with the bound source ID, (b) component with no candidate match → `unknown` with `reason: "source-not-found-in-bind-target"`, (c) two instances (one bound + one unbound) → both returned with their respective binding states.
+- **`docs/reference/cross-tier-binding.md`** (FR-010) — comprehensive published guide for external verifier authors. **The SC-004 deliverable**: an external auditor can write a working verifier from this document alone and validate ≥95% of bindings against the published reference fixture set. Sections cover the binding-hash-v1 algorithm with worked examples for all three strength outcomes, per-ecosystem input-table (cargo / npm / pip / gem / maven / golang), per-format carrier shapes (CDX `properties[]`, SPDX 2.3 `MikebomAnnotationCommentV1` envelope, SPDX 3 `Annotation.statement`, plus standards-native `externalReferences` / `externalDocumentRefs` / `built_from` siblings), the OpenVEX `Product.identifiers` per-instance extension contract, the three VEX propagation modes plus the `affected ⊕ unbound-and-not-explicitly-vexed = affected` aggregation rule, a runnable Python verifier reference implementation (~150 lines, standard-library only), the V1 stability commitment + algo-version policy, and a pointer to the published reference fixtures for verifier-author acceptance testing. Mirrors the milestone-071 `conformance-harness-guide.md` structural model.
+- **`docs/design-notes.md`** updated with a new "Cross-tier SBOM binding (milestone 072)" section pointing operators at the published guide and explaining the operator-visible behavior — when to use `--bind-to-source`, what `verify-binding` / `trace-binding` answer (validation vs. triage), and the migration path for operators using `--vex-overrides` today.
+
+### Migration
+
+- No SBOM output shape change for callers that don't use the milestone-072 commands. All 27 alpha.14 byte-identity goldens remain byte-identical.
+- `trace-binding` is purely additive — a new read-only subcommand that doesn't modify any SBOM.
+- The published `cross-tier-binding.md` guide is documentation-only; it has no runtime impact.
+
 ### Added (milestone 072 PR-B — VEX propagation respects binding strength: US2)
 
 Second of three sequential PRs implementing milestone 072. PR-A delivered the foundation + verification (`mikebom sbom verify-binding`). PR-B delivers **US2**: cross-tier VEX propagation that respects the binding strength PR-A established. PR-C will add operator triage (`mikebom sbom trace-binding`) + the published verifier guide.

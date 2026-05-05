@@ -584,3 +584,113 @@ helper. Until then the pattern above is the canonical reference for
 new ecosystem readers — copy it from the closest existing walker,
 not from a `walkdir` crate dependency (mikebom's Cargo.toml has a
 deliberate minimal-dependency posture).
+
+## Cross-tier SBOM binding (milestone 072)
+
+Mikebom's image-tier and build-tier SBOMs carry a per-component
+`mikebom:source-document-binding` annotation that ties the
+component back to the source-tier SBOM (or earlier-tier SBOM)
+that describes its origin. The contract — a layered binding hash
+of `(vcs-commit, lockfile-sha256, manifest-sha256)` SHA-256'd over
+a canonical JSON envelope — is **stable, deterministic, and
+externally implementable**.
+
+**Authoritative external-verifier guide**: read
+[`docs/reference/cross-tier-binding.md`](./reference/cross-tier-binding.md).
+The guide covers the binding-hash-v1 algorithm with worked
+examples for all three strength outcomes (`verified` / `weak` /
+`unknown`), per-ecosystem input extraction rules, per-format
+carrier shapes (CDX `properties[]`, SPDX 2.3 `MikebomAnnotationCommentV1`
+envelope, SPDX 3 `Annotation.statement`), the OpenVEX 0.2.0
+`Product.identifiers` per-instance extension, the three VEX
+propagation modes, and a runnable Python verifier reference
+implementation. SC-004 is the bar: an external auditor can write a
+working verifier from that doc alone, validated against the
+published reference fixtures at `docs/reference/binding-fixtures/`.
+
+### When to use `--bind-to-source`
+
+`mikebom sbom scan --image <ref> --bind-to-source <source-sbom>`
+emits per-component binding annotations on the resulting image-tier
+SBOM. Each component whose PURL matches a component in the source
+SBOM gets a `SourceDocumentBinding` carrying:
+
+- `source_doc_id` — SHA-256 + optional IRI of the source SBOM
+  document.
+- `hash` — the layered binding hash from Section 1 of the
+  external guide.
+- `strength` — `verified` (3 sides match), `weak` (2 sides
+  match), or `unknown` (insufficient evidence).
+- `reason` — structured rationale for `unknown` strength
+  (`base-layer-system-package`, `sideloaded-binary`,
+  `source-not-found-in-bind-target`, etc.) per FR-003.
+
+Components with no source-tier counterpart get `Unknown { reason:
+"source-not-found-in-bind-target" }` per FR-003 — the unbound
+state is **machine-readable** and explicit, not silent.
+
+`--bind-to-source` is opt-in. Image-tier scans without it produce
+alpha.14-byte-identical output (no annotation, no document-level
+cross-doc reference). Source-tier scans (`--path`) ignore the
+flag with a warning — source-tier SBOMs ARE the binding target,
+not the bound entity, and stay byte-identical to alpha.14.
+
+### What `verify-binding` and `trace-binding` answer
+
+- `mikebom sbom verify-binding --image-sbom <p> --source-sbom <p>` —
+  the **consumer-side** validation. Walks the image SBOM's
+  components, decodes each `mikebom:source-document-binding`
+  annotation, recomputes the hash from the source SBOM's matching
+  component's evidence, and reports per-component pass/fail. Exits
+  **non-zero** on any verification failure per FR-005 / VR-005, so
+  CI lanes can gate on cross-tier identity drift.
+- `mikebom sbom trace-binding --component-purl <purl> --image-sbom <p>
+  --candidate-sources-dir <d>` — the **operator-side** triage tool.
+  Given an image component (e.g., a CVE-flagged transitive dep),
+  reports each instance's binding state against every candidate
+  source SBOM. Always exits **0** — informational, not validating.
+  Useful when an operator asks "which source SBOM (if any)
+  describes the build that produced this binary?"
+
+The two commands are complementary: `verify-binding` answers
+"did the binding round-trip cleanly?" (validation); `trace-binding`
+answers "where did this thing come from?" (triage). Use both in CI
++ audit pipelines.
+
+### `--vex-propagation-mode` default flip — migration for
+operators using `--vex-overrides` today
+
+**Pre-072**: `mikebom sbom enrich --vex-overrides <path>` was a
+documented no-op — the legacy flag did nothing. **Post-072**:
+the same flag combination triggers real propagation in `caveated`
+mode by default. The default flip from implicit-permissive to
+`caveated` IS a behavior change, documented in spec SC-008.
+
+**Migration path** for operators currently using
+`--vex-overrides`:
+
+1. **No action needed** if you accepted the pre-072 no-op
+   behavior (i.e., your VEX statements weren't actually being
+   propagated). Post-072 your statements ARE propagated, with
+   `mikebom:vex-binding-status: unverified` caveats on instances
+   whose binding strength is not `verified`. The aggregate VEX
+   state is **safer** by default — the C-3 aggregation rule
+   surfaces unbound instances as `affected` rather than masking
+   them with a propagated `not_affected`.
+2. **`--vex-propagation-mode permissive`** — opt out of the
+   safer default and restore pre-072 propagation semantics
+   (propagate by PURL alone, no binding check). Use only when a
+   downstream tool genuinely cannot tolerate the new caveats.
+3. **`--vex-propagation-mode strict`** — refuse propagation onto
+   non-`verified` instances entirely. Use when you want CI to
+   gate on cross-tier binding strength (the command exits
+   non-zero on any refused propagation). Refused
+   (vulnerability, instance) pairs are recorded under a
+   document-level `mikebom:vex-propagation-refusals` property
+   for audit.
+
+The 27 alpha.14 byte-identity goldens stay byte-identical because
+the binding emission only fires on `mikebom:sbom-tier: build` or
+`deployed` SBOMs — source-tier SBOMs are unchanged. CI byte-
+identity guards confirm this in
+`mikebom-cli/tests/{cdx,spdx,spdx3}_regression.rs`.

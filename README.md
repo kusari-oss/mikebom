@@ -398,6 +398,93 @@ mikebom sbom enrich project.cdx.json \
 `--include-legacy-rpmdb` (env: `MIKEBOM_INCLUDE_LEGACY_RPMDB=1`).
 See `mikebom sbom <verb> --help` for the full set.
 
+## Cross-tier correlation
+
+When the same software produces multiple SBOMs across its lifecycle —
+a source SBOM scanned from the repo, a build SBOM captured during
+compilation, and an image SBOM scanned from the resulting container —
+external consumers need a way to tell *which goes with which*. mikebom
+ships two complementary mechanisms.
+
+### Stable identifiers (auto-detected)
+
+mikebom attaches scheme-prefixed identifiers to every SBOM it emits.
+The four built-in schemes (`repo:`, `git:`, `image:`, `attestation:`)
+are auto-detected when possible; any operator-defined scheme like
+`acme_corp_id:` rides through unchanged.
+
+**Source-tier and build-tier auto-detect from a git checkout.**
+No flags required. `repo:` comes from `git remote get-url` (origin
+→ upstream → first-listed); the build-tier scan additionally captures
+a commit-anchored `git:` from `git rev-parse HEAD`.
+
+```bash
+cd ~/projects/my-rust-app  # any git checkout
+
+# Source-tier — auto-detects `repo:`
+mikebom sbom scan --path . --output source.cdx.json
+
+# Build-tier — auto-detects `repo:` and `git:<repo-url>#<sha>`
+mikebom trace run -- ./build.sh
+```
+
+**Image-tier auto-detects `image:`** from the resolved registry
+reference + digest:
+
+```bash
+mikebom sbom scan --image my-app:v1 --output image.cdx.json
+```
+
+**External consumers correlate by reading identifier fields directly**
+from `metadata.component.externalReferences[]` (CDX) /
+`Package.externalRefs[]` (SPDX 2.3) / `Element.externalIdentifier[]`
+(SPDX 3):
+
+```bash
+jq '.metadata.component.externalReferences[]
+    | select(.type == "vcs" or .type == "distribution")
+    | {url, comment}' source.cdx.json
+# {
+#   "url": "git@github.com:acme/my-rust-app.git",
+#   "comment": "auto-detected from git remote `origin`"
+# }
+```
+
+Manual overrides (`--repo`, `--git-ref`, `--image-id`,
+`--attestation`, `--id <scheme>=<value>`) win over auto-detect on a
+per-scheme basis. See
+[`docs/reference/identifiers.md`](docs/reference/identifiers.md) for
+the full wire format and per-format extraction recipes.
+
+### Cross-tier SBOM binding (`--bind-to-source`)
+
+A binding is a content-hashed reference embedded in one SBOM that
+points to another. Use it when you want a verifier to be able to
+re-derive that "this image SBOM was built from *this exact* source
+SBOM file" without trusting filename heuristics.
+
+```bash
+# Bind an image SBOM to the source SBOM it was built from.
+mikebom sbom scan --image my-app:v1 \
+    --bind-to-source ./source.cdx.json \
+    --output image.cdx.json
+
+# Verify a binding from anywhere — re-hashes the source SBOM and
+# checks against the embedded reference.
+mikebom sbom verify-binding image.cdx.json --source ./source.cdx.json
+# → PASS — source-document binding verified
+
+# Trace the chain across an arbitrary set of SBOMs without manual
+# lookups (matches by content hash + identifier overlap):
+mikebom sbom trace-binding image.cdx.json --source-dir ./sboms/
+```
+
+The binding annotation lives in standards-native carriers
+(`mikebom:source-document-binding`) so any SPDX/CDX-aware tool can
+extract it. See
+[`docs/reference/cross-tier-binding.md`](docs/reference/cross-tier-binding.md)
+for the full schema and verifier protocol.
+
 ## Experimental: build-time trace (Linux only)
 
 > **Status:** experimental. Requires CAP_BPF + CAP_PERFMON. Adds ~2–3×
@@ -436,11 +523,19 @@ witness-v0.1 attestation format (compatible with `sbomit generate`).
   license resolution, in-toto attestation schema.
 - **[Ecosystems](docs/ecosystems.md)** — per-ecosystem coverage
   matrix (authoritative).
+- **[Identifiers reference](docs/reference/identifiers.md)** — the
+  four built-in schemes, auto-detection rules, per-format wire
+  carriers, decode recipes for external consumers.
+- **[Cross-tier binding reference](docs/reference/cross-tier-binding.md)**
+  — `--bind-to-source` schema, verifier protocol, multi-tier
+  trace flows.
+- **[SBOM format mapping](docs/reference/sbom-format-mapping.md)** —
+  per-feature carrier matrix across CDX 1.6, SPDX 2.3, and SPDX 3.
 - **[Design notes](docs/design-notes.md)** — living architectural
   decisions at the cross-cutting level.
 - **[Changelog](CHANGELOG.md)** — what shipped in which release.
 - **[Specs](specs/)** — per-milestone planning specs
-  (001 build-trace → 009 Maven shade-relocation).
+  (001 build-trace pipeline → 074 build-tier identifier auto-detect).
 
 ## Workspace layout
 

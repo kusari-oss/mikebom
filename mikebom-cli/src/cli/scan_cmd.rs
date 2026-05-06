@@ -565,102 +565,16 @@ fn parse_image_ref_components(raw: &str) -> (Option<String>, String, Option<Stri
     (registry, name, tag)
 }
 
-/// Resolve the final list of identifiers for emission per
-/// FR-006 + FR-009 override-position rule.
-///
-/// The algorithm in detail:
-///
-/// 1. Start with `[auto_detected]` if present, else `[]`.
-/// 2. For each manual entry in supply order, apply one of three
-///    cases:
-///    - **Exact dedup against auto-detected** — when manual matches
-///      the auto-detected entry on `(scheme, value)`, replace in
-///      place. Manual inherits auto-detected position; the
-///      auto-detected `source_label` is dropped; info-log notes the
-///      dedup.
-///    - **Exact dedup against earlier manual** — skip (first-
-///      supplied wins; FR-009 last-clause).
-///    - **Same-scheme-different-value override** — true FR-006
-///      override. Auto-detected entry is dropped (collapsed away);
-///      manual entry is appended in supply order, NOT promoted to
-///      front. Both values are logged at info level.
-///    - **No match** — append in supply order.
-fn resolve_identifiers(
-    auto_detected: Option<mikebom::binding::identifiers::Identifier>,
-    manual: &[mikebom::binding::identifiers::Identifier],
-) -> Vec<mikebom::binding::identifiers::Identifier> {
-    let mut out: Vec<mikebom::binding::identifiers::Identifier> = Vec::new();
-    // Track whether the auto-detected entry has already been supplanted
-    // (by a same-scheme-different-value override). Once supplanted, we
-    // don't re-trigger the override path for subsequent manual entries.
-    let mut auto_detected_active = auto_detected.is_some();
-    if let Some(ref ad) = auto_detected {
-        out.push(ad.clone());
-    }
-    for m in manual {
-        // Step 2a: exact (scheme, value) dedup against any existing
-        // entry. Manual inherits position when matching auto-detected;
-        // first-manual-wins when matching an earlier manual entry.
-        if let Some(idx) = out.iter().position(|e| {
-            e.scheme == m.scheme && e.value == m.value
-        }) {
-            let existing_is_auto_detected = auto_detected_active
-                && idx == 0
-                && auto_detected
-                    .as_ref()
-                    .is_some_and(|ad| ad.scheme == out[idx].scheme && ad.value == out[idx].value);
-            if existing_is_auto_detected {
-                tracing::info!(
-                    scheme = m.scheme.as_str(),
-                    value = m.value.as_str(),
-                    "manual identifier flag matches auto-detected identifier; \
-                     emitting manual in auto-detected position (deduplicated)"
-                );
-                out[idx] = m.clone();
-                // Manual has supplanted the auto-detected entry. The
-                // FR-006 same-scheme-different-value override path
-                // shouldn't fire for later same-scheme manual entries
-                // because the auto-detected entry is no longer present.
-                auto_detected_active = false;
-            } else {
-                tracing::info!(
-                    scheme = m.scheme.as_str(),
-                    value = m.value.as_str(),
-                    "manual identifier flag duplicates an earlier manual \
-                     identifier; first-supplied wins (skipping)"
-                );
-            }
-            continue;
-        }
-        // Step 2b: same-scheme-different-value override against
-        // auto-detected (FR-006).
-        if auto_detected_active {
-            if let Some(ref ad) = auto_detected {
-                if ad.scheme == m.scheme && ad.value != m.value {
-                    if let Some(pos) = out.iter().position(|e| {
-                        e.scheme == ad.scheme && e.value == ad.value
-                    }) {
-                        tracing::info!(
-                            scheme = m.scheme.as_str(),
-                            auto_detected_value = ad.value.as_str(),
-                            manual_value = m.value.as_str(),
-                            "manual identifier flag overrides auto-detected \
-                             entry (same scheme, different value); dropping \
-                             auto-detected, appending manual in supply order"
-                        );
-                        out.remove(pos);
-                    }
-                    auto_detected_active = false;
-                    out.push(m.clone());
-                    continue;
-                }
-            }
-        }
-        // Step 2c: append in supply order.
-        out.push(m.clone());
-    }
-    out
-}
+// Milestone 074 (T005): the previous in-file `resolve_identifiers`
+// was tier-agnostic at the type level (`Option<Identifier>` in,
+// `Vec<Identifier>` out) but its single-auto-detected signature
+// could not represent the build-tier case where two auto-detected
+// entries (`repo:` + `git:`) flow into resolution. The function was
+// promoted to `mikebom::binding::identifiers::resolve_identifiers`
+// with a `Vec<Identifier>`-based signature, applying the same
+// override semantics per-scheme. Source-tier and image-tier callers
+// still pass at most one auto-detected entry; build-tier passes up
+// to two.
 
 /// Resolved enrichment-source enablement. Computed from the CLI flags
 /// before any scan work so the decision is testable as a pure function.
@@ -1467,8 +1381,8 @@ pub async fn execute(
             mikebom::binding::identifiers::auto_detect::auto_detect_repo_identifier(&root_path)
         };
     let manual_identifiers = assemble_manual_identifiers(&args);
-    let identifiers = resolve_identifiers(
-        auto_detected_id,
+    let identifiers = mikebom::binding::identifiers::resolve_identifiers(
+        auto_detected_id.into_iter().collect(),
         &manual_identifiers,
     );
 
@@ -2204,10 +2118,16 @@ mod tests {
         id
     }
 
+    // Milestone 074 (T005): resolve_identifiers moved to
+    // `mikebom::binding::identifiers::resolve_identifiers` with a
+    // `Vec<Identifier>`-based auto-detected param. Tests pass through
+    // an alias so the existing assertions read the same.
+    use mikebom::binding::identifiers::resolve_identifiers;
+
     #[test]
     fn resolve_auto_detected_only_emits_one_entry() {
         let auto = make_id("repo:git@github.com:foo/bar.git", Some("auto"));
-        let out = resolve_identifiers(Some(auto.clone()), &[]);
+        let out = resolve_identifiers(vec![auto.clone()], &[]);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].as_wire(), auto.as_wire());
     }
@@ -2216,7 +2136,7 @@ mod tests {
     fn resolve_manual_only_emits_in_supply_order() {
         let m1 = make_id("repo:git@example.com:a.git", None);
         let m2 = make_id("acme_corp_id:abc123", None);
-        let out = resolve_identifiers(None, &[m1.clone(), m2.clone()]);
+        let out = resolve_identifiers(vec![], &[m1.clone(), m2.clone()]);
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].as_wire(), m1.as_wire());
         assert_eq!(out[1].as_wire(), m2.as_wire());
@@ -2230,7 +2150,7 @@ mod tests {
         let manual_dup = make_id("repo:git@github.com:foo/bar.git", None);
         let manual_other = make_id("acme_corp_id:abc", None);
         let out = resolve_identifiers(
-            Some(auto.clone()),
+            vec![auto.clone()],
             &[manual_dup.clone(), manual_other.clone()],
         );
         assert_eq!(out.len(), 2);
@@ -2254,7 +2174,7 @@ mod tests {
         // Supply order: other first, then override. Override should
         // append after `other` (no front-of-list migration).
         let out = resolve_identifiers(
-            Some(auto.clone()),
+            vec![auto.clone()],
             &[manual_other.clone(), manual_override.clone()],
         );
         assert_eq!(out.len(), 2);
@@ -2270,9 +2190,55 @@ mod tests {
         // first-supplied wins.
         let m1 = make_id("acme_corp_id:abc123", None);
         let m2 = make_id("acme_corp_id:abc123", None);
-        let out = resolve_identifiers(None, &[m1.clone(), m2.clone()]);
+        let out = resolve_identifiers(vec![], &[m1.clone(), m2.clone()]);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].as_wire(), m1.as_wire());
+    }
+
+    // Milestone 074: build-tier multi-auto-detected-entry coverage.
+    #[test]
+    fn resolve_multi_auto_detected_per_scheme_override_only_target_scheme() {
+        // Build-tier scenario: auto-detected [repo:, git:].
+        // Manual --repo with a different value should drop only the
+        // auto-detected `repo:`, leaving the auto-detected `git:`
+        // intact.
+        let auto_repo = make_id("repo:git@github.com:o/foo.git", Some("auto-build-tier"));
+        let auto_git = make_id(
+            "git:git@github.com:o/foo.git#0123456789abcdef0123456789abcdef01234567",
+            Some("auto-build-tier"),
+        );
+        let manual_override_repo = make_id("repo:git@github.com:m/foo.git", None);
+        let out = resolve_identifiers(
+            vec![auto_repo.clone(), auto_git.clone()],
+            std::slice::from_ref(&manual_override_repo),
+        );
+        // Expected: auto-detected `git:` stays at position 0,
+        // manual `repo:` appended at position 1 (supply-order).
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].as_wire(), auto_git.as_wire());
+        assert_eq!(out[1].as_wire(), manual_override_repo.as_wire());
+    }
+
+    #[test]
+    fn resolve_multi_auto_detected_exact_dedup_per_entry() {
+        let auto_repo = make_id("repo:git@github.com:o/foo.git", Some("auto"));
+        let auto_git = make_id(
+            "git:git@github.com:o/foo.git#0123456789abcdef0123456789abcdef01234567",
+            Some("auto"),
+        );
+        // Manual --repo matching the auto-detected one: dedup in place.
+        let manual_dup_repo = make_id("repo:git@github.com:o/foo.git", None);
+        let out = resolve_identifiers(
+            vec![auto_repo.clone(), auto_git.clone()],
+            std::slice::from_ref(&manual_dup_repo),
+        );
+        assert_eq!(out.len(), 2);
+        // Repo at index 0 has been replaced by manual (label is None).
+        assert_eq!(out[0].as_wire(), manual_dup_repo.as_wire());
+        assert_eq!(out[0].source_label, None);
+        // Git remains at index 1, with its auto-detected label.
+        assert_eq!(out[1].as_wire(), auto_git.as_wire());
+        assert_eq!(out[1].source_label.as_deref(), Some("auto"));
     }
 
     // ----------------------------------------------------------------

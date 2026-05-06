@@ -10,8 +10,10 @@ runnable `jq` decode recipes — everything an external implementer
 needs to write a working extractor from this document alone.
 
 **Status**: written 2026-05-05 against mikebom v0.1.0-alpha.16
-(milestone 073). Reflects the alpha.16 identifier-emission contract
-and the post-073 dedicated-flag CLI surface.
+(milestone 073), updated for milestone 074 (build-tier identifier
+auto-detection, this milestone). Reflects the post-073 dedicated-flag
+CLI surface and the milestone-074 build-tier auto-detection
+symmetry with source-tier.
 
 **Naming note**: this document was originally drafted as
 "source-identifiers" — anchoring on the most common case (source
@@ -29,8 +31,7 @@ name — see `cross-tier-binding.md`.
   binding guide (binding hash, per-component verifier flow, VEX
   propagation modes). Identifiers and source-document
   bindings are sibling concerns: identifiers carry stable identity;
-  bindings carry per-component cross-tier provenance. Milestone 074
-  will resolve identifiers to source-SBOM file paths.
+  bindings carry per-component cross-tier provenance.
 - `docs/reference/conformance-harness-guide.md` — milestone-071
   per-format envelope-decode rules. Read first if you're new to
   mikebom's emission model.
@@ -85,8 +86,16 @@ mikebom sbom scan --image foo.tar \
     --image-id docker.io/acme/foo:v1@sha256:abc... \
     --id acme_corp_id=svc-alpha-123
 
-# Build-tier (trace) with manual identifier — trace doesn't auto-detect.
-mikebom trace run --repo git@github.com:acme/foo.git -- ./build.sh
+# Build-tier (trace) — milestone 074: when invoked in a git
+# checkout, `mikebom trace run` auto-detects `repo:` from the same
+# git remote source-tier picks up, AND additionally a commit-anchored
+# `git:<repo-url>#<sha>` identifier from `git rev-parse HEAD`. No
+# flags required — symmetric with source-tier.
+mikebom trace run -- ./build.sh
+
+# Build-tier with manual override — manual flags win, same as
+# source-tier (FR-004).
+mikebom trace run --repo git@github.com:acme/override.git -- ./build.sh
 ```
 
 ### 1.3 Migration from the pre-073 `--with-source` flag
@@ -335,10 +344,99 @@ logic the same way the old `--with-source` flag did — the
 resolution pipeline operates on `(scheme, value)` pairs after the
 flag-translation step.
 
-Build-tier scans (`mikebom trace run`) do NOT auto-detect — manual
-flags only per FR-008. The build-tier path is opaque to mikebom's
-eBPF observability so there's no analog of the `--path` git remote
-or `--image` resolved reference auto-detection.
+### 4.4 Build-tier auto-detection (milestone 074)
+
+Build-tier scans (`mikebom trace run`) auto-detect symmetrically with
+source-tier. When the invocation cwd is a git checkout, mikebom
+emits up to TWO auto-detected identifiers per invocation:
+
+1. A `repo:` identifier — same 3-step git-remote fallback algorithm
+   as §4.1 (origin → upstream → first-listed).
+2. A `git:<repo-url>#<sha>` identifier — uses the SAME remote URL
+   selected for `repo:`, plus the full 40-character SHA returned by
+   `git rev-parse HEAD` in the invocation cwd.
+
+The `git:` identifier is build-tier-specific. Source-tier `--path`
+scans don't naturally carry a commit anchor (a working tree may have
+uncommitted changes), but build-tier scans almost always correspond
+to a specific HEAD commit — that's the deciding piece of metadata for
+correlating "this image was built from commit X."
+
+The `source_label` strings are distinguishable from source-tier:
+
+```text
+# Source-tier (§4.1)
+"auto-detected from git remote `origin`"
+
+# Build-tier (milestone 074, this section)
+"auto-detected from build-tier git remote `origin`"
+"auto-detected from build-tier `git rev-parse HEAD`"
+```
+
+The `build-tier` substring lets a consumer scanning a flat list of
+identifiers (e.g., `jq` over emitted `externalReferences[]`) tell
+which tier the entry came from without having to consult the
+surrounding `mikebom:sbom-tier` annotation.
+
+When the invocation cwd is not a git checkout, OR has no remotes
+configured, OR `git rev-parse HEAD` fails (e.g., a freshly initialized
+repo with no commits yet), the affected identifier(s) are silently
+skipped with `tracing::info!` log lines. The scan does not fail.
+This mirrors the source-tier soft-fail behavior (§4.1).
+
+Manual flags override per the same FR-006 rules in §4.3 — passing
+`--repo` overrides only the auto-detected `repo:` (the auto-detected
+`git:` still emits with the original auto-detected URL); passing
+`--git-ref` overrides only `git:` (the auto-detected `repo:` is
+unaffected). Passing `--repo <url> --git-ref <rev>` together emits
+a single `git:<url>#<rev>` identifier and overrides both auto-detected
+entries' schemes.
+
+### 4.5 Cross-tier correlation recipe (milestone 074)
+
+The headline use case milestone 074 unlocks: an operator (or external
+tool) holding all three tier SBOMs — source from `mikebom sbom scan
+--path`, build from `mikebom trace run`, image from
+`mikebom sbom scan --image` — can correlate them by reading
+identifier fields directly. No mikebom-side resolver, no index, no
+external registry call.
+
+```bash
+# Three scans, all from the same git checkout at the same commit.
+cd ~/projects/my-rust-app
+
+mikebom sbom scan --path . --format cyclonedx-json \
+    --output cyclonedx-json=/tmp/source.cdx.json
+mikebom trace run -- ./build.sh
+mikebom sbom scan --image my-app:v1 --format cyclonedx-json \
+    --output cyclonedx-json=/tmp/image.cdx.json
+
+# Source `repo:` value
+jq -r '.metadata.component.externalReferences[]
+       | select(.type == "vcs") | .url' /tmp/source.cdx.json
+# git@github.com:acme/my-rust-app.git
+
+# Build `repo:` matches source byte-for-byte (SC-002).
+jq -r '.metadata.component.externalReferences[]
+       | select(.type == "vcs") | .url' /tmp/build.cdx.json | head -1
+# git@github.com:acme/my-rust-app.git
+
+# Build `git:` carries the commit-of-record SHA.
+jq -r '.metadata.component.externalReferences[]
+       | select(.type == "vcs") | .url' /tmp/build.cdx.json | tail -1
+# git@github.com:acme/my-rust-app.git#abc1234567890abcdef1234567890abcdef1234
+
+git -C ~/projects/my-rust-app rev-parse HEAD
+# abc1234567890abcdef1234567890abcdef1234
+```
+
+The cross-tier story: the image was built from the build-tier SBOM
+whose `git:` identifier records commit `abc1234...`, and that commit
+lives in the same `repo:` whose source SBOM the operator has on file.
+Three SBOMs, three identifier slots, one consistent correlation.
+Future milestones may automate the correlation; this milestone lays
+the foundation by making every tier emit its identifiers
+automatically.
 
 ---
 
@@ -522,22 +620,19 @@ preserved.
 
 ---
 
-## Section 8 — Forward pointer to milestone 074
+## Section 8 — Milestone 074 status
 
-This milestone (073) emits identifiers at scan time. Milestone 074's
-`mikebom sbom scan --image foo:v1 --bind-to-source <identifier>`
-will resolve identifier-keyed lookups against a local SBOM directory
-to find the source SBOM that carries the matching identifier.
+Milestone 074 (this milestone) closes the symmetry gap between
+source-tier, image-tier, and build-tier auto-detection. Build-tier
+scans now auto-detect `repo:` and `git:` identifiers from the
+invocation cwd's git state — see §4.4 above and §4.5's cross-tier
+correlation recipe.
 
-The forward-looking contract: every identifier emitted at document
-level via this milestone's mechanisms is parseable, deterministic,
-and survives JSON canonicalization — the bare-minimum properties a
-074-style resolver needs. The `(scheme, value)` extraction recipes
-above are exactly what 074's resolution layer will run against
-candidate source SBOMs to find a match.
-
-This milestone (073) lays the foundation. Milestone 074 will not
-need to change emission-side code — it consumes what's already here.
+A future milestone will automate the cross-tier correlation itself
+(via a local SBOM index, OCI referrers, or external-registry
+resolvers — exact mechanism is yet to be scoped). The cross-tier
+identifier byte-equality this milestone guarantees is the deciding
+substrate that future milestone consumes.
 
 ---
 

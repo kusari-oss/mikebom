@@ -99,9 +99,11 @@ pub struct RunArgs {
     pub json: bool,
 
     /// Attach a `repo:` identifier — source repository identity.
-    /// Manual only on build-tier scans (no auto-detection per FR-008).
-    /// Pair with `--git-ref <revision>` to upgrade to a `git:`
-    /// identifier.
+    /// Build-tier scans auto-detect `repo:` from `git remote get-url`
+    /// when the invocation cwd is a git checkout (milestone 074);
+    /// pass this flag to override the auto-detected value. Pair with
+    /// `--git-ref <revision>` to upgrade to a `git:` identifier (the
+    /// flag overrides the milestone-074 auto-detected `git:` value).
     #[arg(long = "repo", value_name = "URL")]
     pub repo: Option<String>,
 
@@ -191,6 +193,23 @@ pub struct RunArgs {
 }
 
 pub async fn execute(args: RunArgs) -> anyhow::Result<()> {
+    // Milestone 074 — capture the invocation cwd ONCE, before any
+    // subprocess work or trace capture. Wrapped-command later cwd
+    // changes (e.g., the script does `cd build/`) have no effect on
+    // identifier auto-detection — keeps detection deterministic per
+    // FR-009 + spec edge-case "Build cwd vs wrapped-command cwd".
+    let invocation_cwd = std::env::current_dir()?;
+
+    // Milestone 074 — auto-detect build-tier identifiers (`repo:` and
+    // `git:`) from the invocation cwd if it's a git checkout.
+    // Returns a 0/1/2-element vec depending on git remote state and
+    // HEAD commit availability. Non-git or other failure modes
+    // collapse to an empty vec via `tracing::info!` per FR-003.
+    let auto_detected_ids =
+        mikebom::binding::identifiers::auto_detect::auto_detect_build_tier_identifiers(
+            &invocation_cwd,
+        );
+
     // Phase 1: capture the trace → attestation.
     let scan_args = ScanArgs {
         target_pid: None,
@@ -217,13 +236,13 @@ pub async fn execute(args: RunArgs) -> anyhow::Result<()> {
     };
     super::scan::execute(scan_args).await?;
 
-    // Milestone 073 — assemble manual identifiers from the dedicated
-    // flags. Build-tier scans don't auto-detect (per FR-008), so the
-    // resolution pipeline reduces to "manual entries in supply order"
-    // and we can produce the final list directly without invoking
-    // `resolve_identifiers`. Order: repo-or-git → image → attestation
-    // → user-defined --id flags.
-    let mut assembled_ids: Vec<mikebom::binding::identifiers::Identifier> = Vec::new();
+    // Milestone 073/074 — assemble manual identifiers from dedicated
+    // flags. Order: repo-or-git → image → attestation → user-defined
+    // --id flags. Then route through the shared `resolve_identifiers`
+    // helper (milestone 074 T005 refactor) which applies the FR-006
+    // manual-wins precedence + dedup-by-(scheme, value) per scheme
+    // — supporting the build-tier two-auto-detected case.
+    let mut manual_ids: Vec<mikebom::binding::identifiers::Identifier> = Vec::new();
     if let Some(repo_url) = args.repo.as_deref() {
         let raw = if let Some(rev) = args.git_ref.as_deref() {
             format!("git:{repo_url}#{rev}")
@@ -231,7 +250,7 @@ pub async fn execute(args: RunArgs) -> anyhow::Result<()> {
             format!("repo:{repo_url}")
         };
         match mikebom::binding::identifiers::Identifier::parse(&raw) {
-            Ok(id) => assembled_ids.push(id),
+            Ok(id) => manual_ids.push(id),
             Err(e) => tracing::warn!(
                 error = %e,
                 raw = %raw,
@@ -242,7 +261,7 @@ pub async fn execute(args: RunArgs) -> anyhow::Result<()> {
     if let Some(image) = args.image_id.as_deref() {
         let raw = format!("image:{image}");
         match mikebom::binding::identifiers::Identifier::parse(&raw) {
-            Ok(id) => assembled_ids.push(id),
+            Ok(id) => manual_ids.push(id),
             Err(e) => tracing::warn!(
                 error = %e,
                 raw = %raw,
@@ -253,7 +272,7 @@ pub async fn execute(args: RunArgs) -> anyhow::Result<()> {
     if let Some(att) = args.attestation.as_deref() {
         let raw = format!("attestation:{att}");
         match mikebom::binding::identifiers::Identifier::parse(&raw) {
-            Ok(id) => assembled_ids.push(id),
+            Ok(id) => manual_ids.push(id),
             Err(e) => tracing::warn!(
                 error = %e,
                 raw = %raw,
@@ -262,8 +281,10 @@ pub async fn execute(args: RunArgs) -> anyhow::Result<()> {
         }
     }
     for id in &args.id {
-        assembled_ids.push(id.clone());
+        manual_ids.push(id.clone());
     }
+    let assembled_ids =
+        mikebom::binding::identifiers::resolve_identifiers(auto_detected_ids, &manual_ids);
 
     // Phase 2: derive the SBOM from the attestation.
     let generate_args = GenerateArgs {

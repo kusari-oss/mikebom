@@ -301,6 +301,129 @@ impl Identifier {
 }
 
 // ---------------------------------------------------------------------
+// Tier-agnostic resolution pipeline
+// ---------------------------------------------------------------------
+
+/// Resolve the final list of identifiers for emission per
+/// FR-006 + FR-009 override-position rule (milestone 073) and the
+/// build-tier-extended same-rules-applied-per-scheme contract
+/// (milestone 074 — multiple auto-detected entries supported).
+///
+/// **Tier-agnostic.** Source-tier `--path` scans pass at most one
+/// auto-detected entry (`repo:` or `image:`). Build-tier
+/// `mikebom trace run` invocations pass up to two (`repo:` and
+/// `git:`). Image-tier `--image` scans pass up to one (`image:`).
+/// The override semantics apply per-scheme — manual `--repo` overrides
+/// only the auto-detected `repo:`, leaves auto-detected `git:` alone
+/// (and vice versa).
+///
+/// The algorithm in detail:
+///
+/// 1. Start with `auto_detected` in the order supplied by the caller.
+/// 2. For each manual entry in supply order, apply one of three
+///    cases:
+///    - **Exact dedup against auto-detected** — when manual matches
+///      an auto-detected entry on `(scheme, value)`, replace in
+///      place. Manual inherits auto-detected position; the
+///      auto-detected `source_label` is dropped; info-log notes the
+///      dedup.
+///    - **Exact dedup against earlier manual** — skip (first-
+///      supplied wins; FR-009 last-clause).
+///    - **Same-scheme-different-value override** — true FR-006
+///      override. The matching auto-detected entry is dropped
+///      (collapsed away); manual entry is appended in supply order,
+///      NOT promoted to front. Both values are logged at info level.
+///    - **No match** — append in supply order.
+pub fn resolve_identifiers(
+    auto_detected: Vec<Identifier>,
+    manual: &[Identifier],
+) -> Vec<Identifier> {
+    let mut out: Vec<Identifier> = Vec::new();
+    // Track which auto-detected entries are still active (i.e., not
+    // yet supplanted by an exact-dedup or same-scheme-different-value
+    // override). Indices align with `auto_detected`.
+    let mut auto_active: Vec<bool> = vec![true; auto_detected.len()];
+    for ad in &auto_detected {
+        out.push(ad.clone());
+    }
+    for m in manual {
+        // Step 2a: exact (scheme, value) dedup against any existing
+        // entry. Manual inherits position when matching an active
+        // auto-detected entry; first-manual-wins when matching an
+        // earlier manual entry.
+        if let Some(idx) = out
+            .iter()
+            .position(|e| e.scheme == m.scheme && e.value == m.value)
+        {
+            // Determine whether `out[idx]` corresponds to an active
+            // auto-detected entry. Auto-detected entries occupy the
+            // first `auto_detected.len()` positions, *but* their
+            // indices may have been disturbed by `remove(...)` calls
+            // from same-scheme-different-value overrides on earlier
+            // iterations. Track this by matching against the original
+            // `auto_detected` vec.
+            let mut matched_auto_idx: Option<usize> = None;
+            for (i, ad) in auto_detected.iter().enumerate() {
+                if auto_active[i] && ad.scheme == out[idx].scheme && ad.value == out[idx].value {
+                    matched_auto_idx = Some(i);
+                    break;
+                }
+            }
+            if let Some(ai) = matched_auto_idx {
+                tracing::info!(
+                    scheme = m.scheme.as_str(),
+                    value = m.value.as_str(),
+                    "manual identifier flag matches auto-detected identifier; \
+                     emitting manual in auto-detected position (deduplicated)"
+                );
+                out[idx] = m.clone();
+                auto_active[ai] = false;
+            } else {
+                tracing::info!(
+                    scheme = m.scheme.as_str(),
+                    value = m.value.as_str(),
+                    "manual identifier flag duplicates an earlier manual \
+                     identifier; first-supplied wins (skipping)"
+                );
+            }
+            continue;
+        }
+        // Step 2b: same-scheme-different-value override against the
+        // first matching active auto-detected entry (FR-006).
+        let mut overridden: Option<usize> = None;
+        for (i, ad) in auto_detected.iter().enumerate() {
+            if auto_active[i] && ad.scheme == m.scheme && ad.value != m.value {
+                overridden = Some(i);
+                break;
+            }
+        }
+        if let Some(ai) = overridden {
+            let ad = &auto_detected[ai];
+            if let Some(pos) = out
+                .iter()
+                .position(|e| e.scheme == ad.scheme && e.value == ad.value)
+            {
+                tracing::info!(
+                    scheme = m.scheme.as_str(),
+                    auto_detected_value = ad.value.as_str(),
+                    manual_value = m.value.as_str(),
+                    "manual identifier flag overrides auto-detected \
+                     entry (same scheme, different value); dropping \
+                     auto-detected, appending manual in supply order"
+                );
+                out.remove(pos);
+            }
+            auto_active[ai] = false;
+            out.push(m.clone());
+            continue;
+        }
+        // Step 2c: append in supply order.
+        out.push(m.clone());
+    }
+    out
+}
+
+// ---------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------
 

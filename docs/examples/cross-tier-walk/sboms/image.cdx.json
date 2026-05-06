@@ -1,0 +1,75 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "serialNumber": "urn:uuid:00000000-0000-0000-0000-000000000003",
+  "metadata": {
+    "timestamp": "2026-05-06T12:10:00Z",
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "name": "mikebom",
+          "version": "0.1.0-alpha.17"
+        }
+      ]
+    },
+    "component": {
+      "type": "container",
+      "name": "acme/widget-svc",
+      "version": "v1",
+      "bom-ref": "image-root",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "acme/widget-svc:v1@sha256:1111aaaa2222bbbb3333cccc4444dddd5555eeee66667777888899990000aaaa",
+          "comment": "auto-detected from resolved image reference"
+        }
+      ]
+    },
+    "properties": [
+      {"name": "mikebom:sbom-tier", "value": "image"}
+    ]
+  },
+  "components": [
+    {
+      "type": "application",
+      "name": "widget-svc",
+      "version": "1.0.0",
+      "bom-ref": "binary-widget-svc",
+      "purl": "pkg:generic/widget-svc@1.0.0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff66667777888899990000"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "musl",
+      "version": "1.2.4",
+      "bom-ref": "pkg:apk/alpine/musl@1.2.4",
+      "purl": "pkg:apk/alpine/musl@1.2.4",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "9999999999999999999999999999999999999999999999999999999999999999"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ca-certificates",
+      "version": "20240226-r0",
+      "bom-ref": "pkg:apk/alpine/ca-certificates@20240226-r0",
+      "purl": "pkg:apk/alpine/ca-certificates@20240226-r0",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "8888888888888888888888888888888888888888888888888888888888888888"
+        }
+      ]
+    }
+  ]
+}

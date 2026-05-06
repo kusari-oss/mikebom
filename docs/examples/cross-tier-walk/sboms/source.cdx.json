@@ -1,0 +1,57 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "serialNumber": "urn:uuid:00000000-0000-0000-0000-000000000001",
+  "metadata": {
+    "timestamp": "2026-05-06T12:00:00Z",
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "name": "mikebom",
+          "version": "0.1.0-alpha.17"
+        }
+      ]
+    },
+    "component": {
+      "type": "application",
+      "name": "widget-svc",
+      "version": "1.0.0",
+      "bom-ref": "main-module",
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "git@github.com:acme/widget-svc.git",
+          "comment": "auto-detected from git remote `origin`"
+        }
+      ]
+    },
+    "properties": [
+      {"name": "mikebom:sbom-tier", "value": "source"}
+    ]
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "google.golang.org/protobuf",
+      "version": "v1.32.0",
+      "bom-ref": "pkg:golang/google.golang.org/protobuf@v1.32.0",
+      "purl": "pkg:golang/google.golang.org/protobuf@v1.32.0"
+    },
+    {
+      "type": "library",
+      "name": "github.com/spf13/cobra",
+      "version": "v1.8.0",
+      "bom-ref": "pkg:golang/github.com/spf13/cobra@v1.8.0",
+      "purl": "pkg:golang/github.com/spf13/cobra@v1.8.0"
+    },
+    {
+      "type": "library",
+      "name": "github.com/sirupsen/logrus",
+      "version": "v1.9.3",
+      "bom-ref": "pkg:golang/github.com/sirupsen/logrus@v1.9.3",
+      "purl": "pkg:golang/github.com/sirupsen/logrus@v1.9.3"
+    }
+  ]
+}

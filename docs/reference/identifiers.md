@@ -616,6 +616,43 @@ identifiers in a single uniform `externalIdentifier[]` array.
 External consumers that need to distinguish can filter on
 `scheme in ["repo", "git", "image", "attestation"]`.
 
+### 6.3.1 SPDX 3.0.1 — CreationInfo wire-shape note (milestone 078)
+
+mikebom v0.1.0-alpha.16 through v0.1.0-alpha.18 (milestone-073 →
+milestone-077) emitted SPDX 3 `CreationInfo.createdBy[]` referencing
+the `Tool` element directly, which trips the SPDX 3 SHACL constraint
+`Core/createdBy` (range = `Core/Agent`; `Tool` is a sibling class,
+not a subclass). Post-milestone-078 emission corrects this:
+
+- `CreationInfo.createdBy[0]` now references an `Organization`
+  element with `name: "mikebom contributors"` (Agent subclass —
+  satisfies SHACL).
+- `CreationInfo.createdUsing[0]` is a NEW field referencing the
+  same Tool element pre-fix emission carried in `createdBy`. The
+  Tool element's identity (spdxId, name) is unchanged.
+- `SpdxDocument.dataLicense` now resolves (within `@graph`) to a
+  `simplelicensing_LicenseExpression` element (with field
+  `simplelicensing_licenseExpression: "CC0-1.0"`) at IRI
+  `https://spdx.org/licenses/CC0-1.0`, satisfying the SHACL
+  constraint `Core/dataLicense` (range = `SimpleLicensing/
+  AnyLicenseInfo`).
+
+External consumers walking SPDX 3 can extract the publisher from
+`@graph[type=Organization].name` and the producing tool from
+`@graph[type=Tool].name`. Operators wishing to verify the SBOM
+passes external SPDX 3 validators can install
+`scripts/install-spdx3-validate.sh` (the JPEWdev `spdx3-validate`
+Python tool, version-pinned per milestone-078 research) and run:
+
+```bash
+.venv/spdx3-validate/bin/spdx3-validate -j out.spdx3.json
+```
+
+The underlying SHACL validation rules trace back to
+[the official SPDX 3 JSON-LD validation reference](https://github.com/spdx/spdx-3-model/blob/develop/serialization/jsonld/validation.md);
+operators with bespoke conformance harnesses should use those rules
+as the source of truth.
+
 ### 6.4 Python equivalent
 
 ```python

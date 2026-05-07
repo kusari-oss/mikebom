@@ -2,9 +2,18 @@
   "@context": "https://spdx.org/rdf/3.0.1/spdx-context.jsonld",
   "@graph": [
     {
+      "creationInfo": "_:creation-info",
+      "name": "mikebom contributors",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-O3NWIQYQ6HNCJ45OHXT7F4Y3/agent/mikebom-contributors",
+      "type": "Organization"
+    },
+    {
       "@id": "_:creation-info",
       "created": "1970-01-01T00:00:00Z",
       "createdBy": [
+        "https://mikebom.kusari.dev/spdx3/doc-O3NWIQYQ6HNCJ45OHXT7F4Y3/agent/mikebom-contributors"
+      ],
+      "createdUsing": [
         "https://mikebom.kusari.dev/spdx3/doc-O3NWIQYQ6HNCJ45OHXT7F4Y3/tool/mikebom"
       ],
       "specVersion": "3.0.1",
@@ -15,6 +24,12 @@
       "name": "mikebom-0.1.0-alpha.18",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-O3NWIQYQ6HNCJ45OHXT7F4Y3/tool/mikebom",
       "type": "Tool"
+    },
+    {
+      "creationInfo": "_:creation-info",
+      "simplelicensing_licenseExpression": "CC0-1.0",
+      "spdxId": "https://spdx.org/licenses/CC0-1.0",
+      "type": "simplelicensing_LicenseExpression"
     },
     {
       "comment": "Scope: manifest (declared transitives included). Observed lifecycle phases: pre-build. Per-component scope detail in mikebom:sbom-tier annotations.",

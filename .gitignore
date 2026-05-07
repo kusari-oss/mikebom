@@ -42,3 +42,8 @@ mikebom-cli/tests/fixtures/golden/**/*.actual.json
 # Local release-test staging (downloaded tarballs, per-alpha extracts)
 .release-test/
 .claude/scheduled_tasks.lock
+
+# Milestone 078 — JPEWdev `spdx3-validate` Python virtualenv used by
+# the SPDX 3 conformance integration test. Created on demand by
+# scripts/install-spdx3-validate.sh; never committed.
+.venv/

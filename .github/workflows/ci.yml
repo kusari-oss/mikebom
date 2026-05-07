@@ -92,6 +92,18 @@ jobs:
       - name: Add Go bin to PATH
         run: echo "${HOME}/go/bin" >> "$GITHUB_PATH"
 
+      # Milestone 078 — install the JPEWdev `spdx3-validate` Python
+      # tool used by the new `spdx3_conformance` integration test.
+      # Pinned at 0.0.5 per research §2; bumping is a deliberate PR
+      # with proof the new version doesn't surface false positives
+      # (FR-008). Linux is the authoritative gate; macOS lane
+      # intentionally skips this step (Python-toolchain variability is
+      # a known noise vector — see plan.md project-structure decision).
+      - name: Install spdx3-validate
+        run: bash scripts/install-spdx3-validate.sh
+      - name: Set MIKEBOM_REQUIRE_SPDX3_VALIDATOR
+        run: echo "MIKEBOM_REQUIRE_SPDX3_VALIDATOR=1" >> "$GITHUB_ENV"
+
       # Pin `+stable` explicitly on clippy/test so these never fall through
       # to nightly even if something earlier changes the default.
       #
@@ -187,6 +199,14 @@ jobs:
             go install github.com/interlynk-io/sbomqs/v2@v2.0.6
       - name: Add Go bin to PATH
         run: echo "${HOME}/go/bin" >> "$GITHUB_PATH"
+
+      # Milestone 078 — same install + env-var as the regular Linux
+      # lane so the conformance gate runs identically on both Linux
+      # matrix entries.
+      - name: Install spdx3-validate
+        run: bash scripts/install-spdx3-validate.sh
+      - name: Set MIKEBOM_REQUIRE_SPDX3_VALIDATOR
+        run: echo "MIKEBOM_REQUIRE_SPDX3_VALIDATOR=1" >> "$GITHUB_ENV"
 
       - name: Clippy (--features ebpf-tracing)
         run: cargo +stable clippy --workspace --all-targets --features ebpf-tracing -- -D warnings

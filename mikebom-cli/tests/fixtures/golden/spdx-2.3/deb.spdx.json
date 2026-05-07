@@ -4,37 +4,37 @@
     {
       "annotationDate": "1970-01-01T00:00:00Z",
       "annotationType": "OTHER",
-      "annotator": "Tool: mikebom-0.1.0-alpha.20",
+      "annotator": "Tool: mikebom-0.1.0-alpha.21",
       "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:generation-context\",\"value\":\"filesystem-scan\"}"
     },
     {
       "annotationDate": "1970-01-01T00:00:00Z",
       "annotationType": "OTHER",
-      "annotator": "Tool: mikebom-0.1.0-alpha.20",
+      "annotator": "Tool: mikebom-0.1.0-alpha.21",
       "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-ring-buffer-overflows\",\"value\":0}"
     },
     {
       "annotationDate": "1970-01-01T00:00:00Z",
       "annotationType": "OTHER",
-      "annotator": "Tool: mikebom-0.1.0-alpha.20",
+      "annotator": "Tool: mikebom-0.1.0-alpha.21",
       "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-events-dropped\",\"value\":0}"
     },
     {
       "annotationDate": "1970-01-01T00:00:00Z",
       "annotationType": "OTHER",
-      "annotator": "Tool: mikebom-0.1.0-alpha.20",
+      "annotator": "Tool: mikebom-0.1.0-alpha.21",
       "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-uprobe-attach-failures\",\"value\":[]}"
     },
     {
       "annotationDate": "1970-01-01T00:00:00Z",
       "annotationType": "OTHER",
-      "annotator": "Tool: mikebom-0.1.0-alpha.20",
+      "annotator": "Tool: mikebom-0.1.0-alpha.21",
       "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-kprobe-attach-failures\",\"value\":[]}"
     },
     {
       "annotationDate": "1970-01-01T00:00:00Z",
       "annotationType": "OTHER",
-      "annotator": "Tool: mikebom-0.1.0-alpha.20",
+      "annotator": "Tool: mikebom-0.1.0-alpha.21",
       "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"compositions\",\"value\":{\"complete_ecosystems\":[\"deb\"]}}"
     }
   ],
@@ -42,19 +42,19 @@
     "comment": "Scope: manifest (declared transitives included). Observed lifecycle phases: operations. Per-component scope detail in mikebom:sbom-tier annotations.",
     "created": "1970-01-01T00:00:00Z",
     "creators": [
-      "Tool: mikebom-0.1.0-alpha.20",
+      "Tool: mikebom-0.1.0-alpha.21",
       "Organization: mikebom contributors"
     ]
   },
   "dataLicense": "CC0-1.0",
   "documentDescribes": [
-    "SPDXRef-DocumentRoot-A66H3KB2UUYLZZ6H"
+    "SPDXRef-DocumentRoot-MOWST3N7ETRPDSZR"
   ],
-  "documentNamespace": "https://mikebom.kusari.dev/spdx/S3DQBLY7P7NEKYE2Y23TGRVKWX6B4GZX",
+  "documentNamespace": "https://mikebom.kusari.dev/spdx/TH2625X7HYTIRW54MHJ2KWOQ2QEHRXFG",
   "name": "synthetic",
   "packages": [
     {
-      "SPDXID": "SPDXRef-DocumentRoot-A66H3KB2UUYLZZ6H",
+      "SPDXID": "SPDXRef-DocumentRoot-MOWST3N7ETRPDSZR",
       "downloadLocation": "NOASSERTION",
       "externalRefs": [
         {
@@ -81,25 +81,25 @@
         {
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
-          "annotator": "Tool: mikebom-0.1.0-alpha.20",
+          "annotator": "Tool: mikebom-0.1.0-alpha.21",
           "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:sbom-tier\",\"value\":\"deployed\"}"
         },
         {
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
-          "annotator": "Tool: mikebom-0.1.0-alpha.20",
+          "annotator": "Tool: mikebom-0.1.0-alpha.21",
           "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/deb/synthetic/var/lib/dpkg/status\"]}"
         },
         {
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
-          "annotator": "Tool: mikebom-0.1.0-alpha.20",
+          "annotator": "Tool: mikebom-0.1.0-alpha.21",
           "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:cpe-candidates\",\"value\":[\"cpe:2.3:a:debian:libc6:2.36-9:*:*:*:*:*:*:*\",\"cpe:2.3:a:libc6:libc6:2.36-9:*:*:*:*:*:*:*\"]}"
         },
         {
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
-          "annotator": "Tool: mikebom-0.1.0-alpha.20",
+          "annotator": "Tool: mikebom-0.1.0-alpha.21",
           "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.identity\",\"value\":{\"confidence\":0.85,\"technique\":\"package-database\"}}"
         }
       ],
@@ -129,25 +129,25 @@
         {
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
-          "annotator": "Tool: mikebom-0.1.0-alpha.20",
+          "annotator": "Tool: mikebom-0.1.0-alpha.21",
           "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:sbom-tier\",\"value\":\"deployed\"}"
         },
         {
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
-          "annotator": "Tool: mikebom-0.1.0-alpha.20",
+          "annotator": "Tool: mikebom-0.1.0-alpha.21",
           "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/deb/synthetic/var/lib/dpkg/status\"]}"
         },
         {
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
-          "annotator": "Tool: mikebom-0.1.0-alpha.20",
+          "annotator": "Tool: mikebom-0.1.0-alpha.21",
           "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:cpe-candidates\",\"value\":[\"cpe:2.3:a:debian:zlib1g:1\\\\:1.2.13.dfsg-1:*:*:*:*:*:*:*\",\"cpe:2.3:a:zlib1g:zlib1g:1\\\\:1.2.13.dfsg-1:*:*:*:*:*:*:*\"]}"
         },
         {
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
-          "annotator": "Tool: mikebom-0.1.0-alpha.20",
+          "annotator": "Tool: mikebom-0.1.0-alpha.21",
           "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.identity\",\"value\":{\"confidence\":0.85,\"technique\":\"package-database\"}}"
         }
       ],
@@ -174,7 +174,7 @@
   ],
   "relationships": [
     {
-      "relatedSpdxElement": "SPDXRef-DocumentRoot-A66H3KB2UUYLZZ6H",
+      "relatedSpdxElement": "SPDXRef-DocumentRoot-MOWST3N7ETRPDSZR",
       "relationshipType": "DESCRIBES",
       "spdxElementId": "SPDXRef-DOCUMENT"
     }

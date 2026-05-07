@@ -107,27 +107,81 @@ pub fn build_document(
     let fingerprint = scan_fingerprint(scan, cfg);
     let doc_iri = format!("{IRI_BASE}doc-{fingerprint}");
     let tool_iri = format!("{doc_iri}/tool/mikebom");
+    // Milestone 078 — Organization Agent for `CreationInfo.createdBy`.
+    // SPDX 3 SHACL constraint: `Core/createdBy` requires the IRI to
+    // resolve to an `Agent` subclass (Person / Organization /
+    // SoftwareAgent). Pre-fix mikebom emission pointed at a `Tool`
+    // (separate class hierarchy), tripping the SHACL validator and
+    // the Java SPDX library's range check ("Incompatible type for
+    // property Core/createdBy: class core.Agent"). Per spec
+    // clarification 2026-05-06, route `createdBy` to an
+    // `Organization` whose name matches the CDX
+    // `metadata.tools[0].publisher` value, and move the existing
+    // Tool reference to the new `createdUsing` field. Determinism
+    // contract per research §6: IRI is `{doc_iri}/agent/mikebom-
+    // contributors` (path-style, mirroring the Tool IRI scheme).
+    let org_iri = format!("{doc_iri}/agent/mikebom-contributors");
+    // Milestone 078 — `simplelicensing_LicenseExpression` element
+    // for `SpdxDocument.dataLicense`. SPDX 3 SHACL constraint:
+    // `Core/dataLicense` requires the IRI to resolve to a
+    // `SimpleLicensing/AnyLicenseInfo` subclass; pre-fix mikebom
+    // emitted a bare URI string. The IRI value is unchanged
+    // (`https://spdx.org/licenses/CC0-1.0`) — what changes is the
+    // graph now contains a typed element at that IRI. Reuses the
+    // existing per-component license-element pattern from
+    // `v3_licenses.rs` (concrete subclass `simplelicensing_License
+    // Expression` with required field `simplelicensing_license
+    // Expression`; T001(c) confirmed against the SPDX 3 JSON-LD
+    // schema's `simplelicensing_AnyLicenseInfo_derived` enumeration).
+    let data_license_iri = "https://spdx.org/licenses/CC0-1.0";
     let created = cfg
         .created
         .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
     let mut graph: Vec<Value> = Vec::new();
 
-    // 1. CreationInfo.
+    // 1a. Organization Agent — must be present in `@graph` BEFORE
+    //     the CreationInfo references it. Determinism: same scan
+    //     inputs → byte-identical Organization element across
+    //     re-runs (research §6).
+    graph.push(json!({
+        "type": "Organization",
+        "spdxId": org_iri,
+        "creationInfo": CREATION_INFO_ID,
+        "name": "mikebom contributors",
+    }));
+
+    // 1b. CreationInfo. `createdBy` now references the Organization
+    //     IRI (Agent subclass — satisfies SHACL); the existing Tool
+    //     reference moves to the new `createdUsing` field.
     graph.push(json!({
         "type": "CreationInfo",
         "@id": CREATION_INFO_ID,
         "specVersion": "3.0.1",
         "created": created,
-        "createdBy": [tool_iri],
+        "createdBy": [org_iri.clone()],
+        "createdUsing": [tool_iri.clone()],
     }));
 
-    // 2. Tool.
+    // 2. Tool. Identity unchanged from pre-fix emission — only the
+    //    referencing slot on CreationInfo moved.
     graph.push(json!({
         "type": "Tool",
         "spdxId": tool_iri,
         "creationInfo": CREATION_INFO_ID,
         "name": format!("mikebom-{}", cfg.mikebom_version),
+    }));
+
+    // 2b. Milestone 078 — `simplelicensing_LicenseExpression`
+    //     element for the document-level `dataLicense` slot.
+    //     Emitted once per document; the IRI is the SPDX-listed-
+    //     license URL so downstream tools that already understand
+    //     SPDX-listed-license IRIs recognize it.
+    graph.push(json!({
+        "type": "simplelicensing_LicenseExpression",
+        "spdxId": data_license_iri,
+        "creationInfo": CREATION_INFO_ID,
+        "simplelicensing_licenseExpression": "CC0-1.0",
     }));
 
     // Two-pass Package build: (a) precompute the PURL → IRI

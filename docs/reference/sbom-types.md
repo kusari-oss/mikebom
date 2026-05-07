@@ -266,7 +266,7 @@ dependencies). When NO component carries a recognized
 `mikebom:sbom-tier` value:
 
 - **CDX**: `metadata.lifecycles[]` is OMITTED entirely (matches the
-  milestone-047 `metadata_omits_lifecycles_when_no_tiers_present`
+  milestone 047 `metadata_omits_lifecycles_when_no_tiers_present`
   behavior at `cyclonedx/metadata.rs`).
 - **SPDX 2.3**: `creationInfo.comment` shows
   `"Observed lifecycle phases: no lifecycle phases observed."` —
@@ -297,7 +297,7 @@ SPDX 3 `comment`). Detect by absence of these fields.
 The SPDX 3 native `software_Sbom.software_sbomType[]` field was
 introduced in **milestone 081** (mikebom v0.1.0-alpha.22). SBOMs
 emitted by mikebom alpha.6 through alpha.21 have the
-milestone-047 `comment` aggregation but NOT the new
+milestone 047 `comment` aggregation but NOT the new
 `software_Sbom` element. Detect by absence of
 `@graph[].type == "software_Sbom"`. Pre-alpha.22 SPDX 3 SBOMs
 require the `creationInfo.comment` parse-and-translate path
@@ -337,7 +337,7 @@ This document is reachable from:
 - `docs/reference/identifiers.md` — Section "SBOM types and
   lifecycle phases" cross-references this document.
 - `docs/reference/sbom-format-mapping.md` — Section I audit-record
-  appendix lists the milestone-081 entry pointing at this
+  appendix lists the milestone 081 entry pointing at this
   document.
 
 For deeper milestone-design context:
@@ -351,3 +351,14 @@ For deeper milestone-design context:
   the wire-format + CLI contract.
 - `specs/047-document-level-scope-flag/` — the underlying lifecycle
   aggregation infrastructure milestone 081 builds on.
+
+---
+
+## See also
+
+- [Identifiers](identifiers.md) — the four-layer identity model and per-flag
+  identity behavior. Identifiers commonly appear alongside SBOM-type filtering.
+- [Cross-format SBOM mapping](sbom-format-mapping.md) — Section I records the
+  milestone 081 audit conclusion on SBOM-type field positions per format.
+- [Cross-tier binding](cross-tier-binding.md) — per-component cross-tier
+  identity / verifier flow. Bindings carry SBOM-type-relevant provenance.

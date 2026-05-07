@@ -14,7 +14,7 @@ compatible verifier from this document alone.
 
 **Companion documents**:
 
-- `docs/reference/conformance-harness-guide.md` — milestone-071
+- `docs/reference/conformance-harness-guide.md` — milestone 071
   per-format envelope-decode rules + the 7 inherent format-spec
   asymmetries. Read this first if you're new to mikebom's emission
   model.
@@ -184,7 +184,7 @@ verification.
 | **npm** | `git rev-parse HEAD` (no widespread binary-embed convention) | `package-lock.json` bytes; fallback to `yarn.lock` then `pnpm-lock.yaml` if the canonical lockfile is absent | top-level `package.json` bytes | `verified` |
 | **pip** | `git rev-parse HEAD` | `poetry.lock` (Poetry projects); fallback to `pdm.lock` (PDM); fallback to a SHA-256 of the concatenated `--hash=` lines from `requirements*.txt` (PEP 503, alphabetically sorted) | top-level `pyproject.toml` bytes | `verified` |
 | **gem** | `git rev-parse HEAD` | `Gemfile.lock` bytes | top-level `*.gemspec` bytes (project's own gemspec, NOT vendored gemspecs) | `verified` |
-| **maven** | `git rev-parse HEAD` (future: `<scm>` block in `pom.xml`) | NOT POPULATED — Maven has no canonical lockfile in mikebom's milestone-070 emission pattern | top-level `pom.xml` bytes (resolved form after parent inheritance + property substitution per milestone 070) | `weak` (capped — no lockfile) |
+| **maven** | `git rev-parse HEAD` (future: `<scm>` block in `pom.xml`) | NOT POPULATED — Maven has no canonical lockfile in mikebom's milestone 070 emission pattern | top-level `pom.xml` bytes (resolved form after parent inheritance + property substitution per milestone 070) | `weak` (capped — no lockfile) |
 
 **Lockfile + manifest canonicalization rule**: SHA-256 the **raw
 bytes as on disk**. mikebom does NOT re-serialize / re-format
@@ -1028,5 +1028,18 @@ mikebom repo with the specific ambiguity.
     --vex-propagation-mode {permissive,caveated,strict}` —
     binding-aware VEX propagation.
 - **Companion guide**:
-  `docs/reference/conformance-harness-guide.md` — milestone-071
+  `docs/reference/conformance-harness-guide.md` — milestone 071
   per-format envelope-decode rules.
+
+---
+
+## See also
+
+- [Identifiers](identifiers.md) — the four-layer identity model. Sibling
+  concern: identifiers carry stable identity; bindings carry per-component
+  cross-tier provenance.
+- [SBOM types](sbom-types.md) — CISA SBOM Type signaling and the
+  `--sbom-type` flag. Bindings are commonly inspected alongside SBOM-type
+  filtering.
+- [Conformance harness guide](conformance-harness-guide.md) — per-format
+  envelope-decode rules for new mikebom emission consumers.

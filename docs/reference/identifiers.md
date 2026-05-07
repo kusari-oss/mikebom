@@ -12,7 +12,7 @@ needs to write a working extractor from this document alone.
 **Status**: written 2026-05-05 against mikebom v0.1.0-alpha.16
 (milestone 073), updated for milestone 074 (build-tier identifier
 auto-detection, this milestone). Reflects the post-073 dedicated-flag
-CLI surface and the milestone-074 build-tier auto-detection
+CLI surface and the milestone 074 build-tier auto-detection
 symmetry with source-tier.
 
 **Naming note**: this document was originally drafted as
@@ -27,12 +27,12 @@ name — see `cross-tier-binding.md`.
 
 **Companion documents**:
 
-- `docs/reference/cross-tier-binding.md` — milestone-072 cross-tier
+- `docs/reference/cross-tier-binding.md` — milestone 072 cross-tier
   binding guide (binding hash, per-component verifier flow, VEX
   propagation modes). Identifiers and source-document
   bindings are sibling concerns: identifiers carry stable identity;
   bindings carry per-component cross-tier provenance.
-- `docs/reference/conformance-harness-guide.md` — milestone-071
+- `docs/reference/conformance-harness-guide.md` — milestone 071
   per-format envelope-decode rules. Read first if you're new to
   mikebom's emission model.
 - `specs/073-source-identifiers/contracts/` — the source contracts
@@ -100,7 +100,7 @@ mikebom trace run --repo git@github.com:acme/override.git -- ./build.sh
 
 ### 1.3 Migration from the pre-073 `--with-source` flag
 
-The original milestone-073 implementation shipped a single
+The original milestone 073 implementation shipped a single
 `--with-source <scheme>:<value>` flag. Before milestone 073 was
 merged, the CLI was refactored to dedicated flags per built-in scheme
 + a generic `--id` for user-defined schemes. The reasons:
@@ -134,13 +134,13 @@ native-first directive.
 | `attestation:` | In-toto attestation IRI | URL/IRI | `attestation` | `PERSISTENT-ID` | `other` (with `comment: "original-scheme: attestation"`) |
 | `subject:` | Build-tier content-hash subject | `<algo>:<hex>` | `attestation` | `PERSISTENT-ID` | `other` (with `comment: "original-scheme: subject"`) |
 
-The SPDX 3 column reflects the milestone-079 mapping. SPDX 3
+The SPDX 3 column reflects the milestone 079 mapping. SPDX 3
 defines `Core/externalIdentifierType` as a controlled vocabulary
 (`[other, cve, swhid, securityOther, cpe23, packageUrl, gitoid,
 cpe22, urlScheme, email, swid]`) — none of mikebom's built-in
 scheme names are in that set, so they map to `other` with the
 original scheme preserved in the `comment` field. See §6.3.2 below
-for the wire-mapping reference and §6.3.1 for milestone-078's
+for the wire-mapping reference and §6.3.1 for milestone 078's
 SPDX 3 CreationInfo fix that landed in the same conformance
 campaign.
 
@@ -201,7 +201,7 @@ user-defined. They have no native carrier on CDX or SPDX 2.3 — the
 specs don't accept arbitrary operator-defined opaque namespaces. Per
 Constitution Principle V's documented-exception path, user-defined
 identifiers ride a single document-level `mikebom:identifiers`
-annotation wrapped in milestone-071's `MikebomAnnotationCommentV1`
+annotation wrapped in milestone 071's `MikebomAnnotationCommentV1`
 envelope.
 
 ### 3.1 Justification clause (Principle V exception)
@@ -259,7 +259,7 @@ envelope is JSON-encoded into a string:
 ```
 
 Consumers parse the `value` string via `JSON.parse(...)` to recover
-the array. This shape mirrors the milestone-071 envelope precedent.
+the array. This shape mirrors the milestone 071 envelope precedent.
 
 ### 3.5 SPDX 2.3 envelope wrapping
 
@@ -629,11 +629,11 @@ External consumers that need to distinguish can filter on
 
 ### 6.3.1 SPDX 3.0.1 — CreationInfo wire-shape note (milestone 078)
 
-mikebom v0.1.0-alpha.16 through v0.1.0-alpha.18 (milestone-073 →
-milestone-077) emitted SPDX 3 `CreationInfo.createdBy[]` referencing
+mikebom v0.1.0-alpha.16 through v0.1.0-alpha.18 (milestone 073 →
+milestone 077) emitted SPDX 3 `CreationInfo.createdBy[]` referencing
 the `Tool` element directly, which trips the SPDX 3 SHACL constraint
 `Core/createdBy` (range = `Core/Agent`; `Tool` is a sibling class,
-not a subclass). Post-milestone-078 emission corrects this:
+not a subclass). Post-milestone 078 emission corrects this:
 
 - `CreationInfo.createdBy[0]` now references an `Organization`
   element with `name: "mikebom contributors"` (Agent subclass —
@@ -653,7 +653,7 @@ External consumers walking SPDX 3 can extract the publisher from
 `@graph[type=Tool].name`. Operators wishing to verify the SBOM
 passes external SPDX 3 validators can install
 `scripts/install-spdx3-validate.sh` (the JPEWdev `spdx3-validate`
-Python tool, version-pinned per milestone-078 research) and run:
+Python tool, version-pinned per milestone 078 research) and run:
 
 ```bash
 .venv/spdx3-validate/bin/spdx3-validate -j out.spdx3.json
@@ -855,7 +855,7 @@ milestone 073's resolution pipeline).
 | SPDX 2.3 | `Package.externalRefs[]` on main-module + `creationInfo.creators[]` redundant text | `{referenceCategory:"PERSISTENT-ID", referenceType:"subject", referenceLocator:"sha256:<hex>"}` |
 | SPDX 3 | `SpdxDocument.externalIdentifier[]` | `{type:"ExternalIdentifier", externalIdentifierType:"subject", identifier:"sha256:<hex>"}` |
 
-CDX reuses the `attestation` enum value — coexists with milestone-073
+CDX reuses the `attestation` enum value — coexists with milestone 073
 attestation IRIs in the same array, distinguishable by `url` shape
 (digest vs IRI). The SPDX 2.3 main-module gate is the same one
 milestone 073 introduced; subject identifiers without a main-module
@@ -942,7 +942,7 @@ jq '.packages[]
 
 ### 9.5 Backward compatibility
 
-All milestone-073/074/075 byte-identity goldens stay byte-identical:
+All milestone 073/074/075 byte-identity goldens stay byte-identical:
 no fixture passes `--subject-hash` or `--component-id` today. New
 fixtures that exercise the new paths gain additive entries — the
 expected golden regen for this milestone. See quickstart.md for
@@ -975,7 +975,7 @@ time per RFC 3986 §2.3, so npm-scoped names like `@acme/widget-svc`
 are accepted at parse and percent-encoded into the PURL `name`
 segment (`%40acme%2Fwidget-svc`).
 
-Operators can stack the override with milestone-072–076 identifier
+Operators can stack the override with milestone 072–076 identifier
 flags freely — they're orthogonal slots:
 
 ```bash
@@ -1085,7 +1085,7 @@ mikebom sbom scan --path . --root-name "my widget svc"
 
 ### 10.5 Backward compatibility
 
-All milestone-073/074/075/076 byte-identity goldens stay
+All milestone 073/074/075/076 byte-identity goldens stay
 byte-identical: no existing fixture passes `--root-name` or
 `--root-version`, and the no-flag emission path is unchanged.
 The new helper `percent_encode_purl_name` is invoked only on the
@@ -1114,33 +1114,18 @@ emissions, only `--root-name` is observable on the
 recorded as a stderr warning at scan time.
 
 See `specs/080-user-sbom-metadata/quickstart.md` for the full set of
-milestone-080 flag recipes.
+milestone 080 flag recipes.
 
 ---
 
 ## See also
 
-- [Cross-tier binding (milestone 072)](cross-tier-binding.md) — the
-  per-component cross-tier identity / verifier flow. Identifiers
-  and source-document bindings are sibling concerns.
-- [Conformance harness guide (milestone 071)](conformance-harness-guide.md)
-  — per-format envelope-decode rules and the 7 inherent format-spec
-  asymmetries. Background reading for new mikebom emission
-  consumers.
-- [Cross-format SBOM mapping](sbom-format-mapping.md) — the
-  authoritative catalog of every cross-format datum mikebom emits.
-  Search `C47` for the `mikebom:identifiers` row.
-
-### SBOM types and lifecycle phases
-
-mikebom signals the **SBOM type** (CISA Design / Source / Build /
-Analyzed / Deployed / Runtime) via three different format-native
-fields: CDX `metadata.lifecycles[].phase`, SPDX 2.3
-`creationInfo.comment` (parse-and-translate), and SPDX 3
-`software_Sbom.software_sbomType[]` (added in milestone 081). See
-[SBOM types — operator-facing reference](sbom-types.md) for the
-full per-format `jq` recipes, the four-column equivalence table
-(CISA ↔ mikebom tier ↔ CDX phase ↔ SPDX 3 SbomType), the
-mixed-type-SBOM presentation rule, and the `--sbom-type <type>`
-operator-assert flag for downstream pipelines that require a
-single-type document-level claim.
+- [Cross-tier binding](cross-tier-binding.md) — per-component cross-tier
+  identity / verifier flow (milestone 072). Sibling concern.
+- [SBOM types](sbom-types.md) — the `--sbom-type` flag and the
+  four-column CISA ↔ mikebom tier ↔ CDX phase ↔ SPDX 3 SbomType
+  equivalence table.
+- [Cross-format SBOM mapping](sbom-format-mapping.md) — authoritative
+  catalog of every cross-format datum (search `C47` for `mikebom:identifiers`).
+- [Conformance harness guide](conformance-harness-guide.md) — per-format
+  envelope-decode rules and the 7 inherent format-spec asymmetries.

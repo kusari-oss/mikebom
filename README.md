@@ -19,21 +19,22 @@ A toolkit for working with software bills of materials end-to-end:
   workflows (license backfill, supplier resolution, VEX merging) are
   on the roadmap.
 
-> **Status: 0.1.0-alpha.6, pre-1.0. Source-only; no crates.io release
-> yet.**
+> **Status: pre-1.0 alpha.** Pre-built binaries are published as GitHub
+> Release assets; no crates.io release yet.
 >
-> - **Stable** — `mikebom sbom scan` (filesystem, container image,
->   package cache) and the rest of the `sbom` surface (`generate`,
->   `enrich`, `verify`, `parity-check`) plus `policy init` and
->   `attestation validate`. Cross-platform, no special privileges.
+> - **Stable** — `mikebom sbom scan`, `mikebom sbom verify`,
+>   `mikebom sbom enrich`, `mikebom sbom parity-check`,
+>   `mikebom sbom verify-binding`, `mikebom sbom trace-binding`,
+>   `mikebom policy init`, and `mikebom attestation validate`.
+>   Cross-platform, no special privileges.
 > - **Experimental, Linux-only** — `mikebom trace capture` /
->   `trace run`. eBPF-based build-time capture that produces
+>   `mikebom trace run`. eBPF-based build-time capture that produces
 >   attestations bound to the actual build event. Requires CAP_BPF +
 >   CAP_PERFMON and adds ~2–3× wall-clock overhead on syscall-heavy
 >   builds.
 >
 > See [`docs/user-guide/cli-reference.md`](docs/user-guide/cli-reference.md)
-> for the per-command stability table and
+> for the per-flag operator reference and
 > [`CHANGELOG.md`](CHANGELOG.md) for what shipped when.
 
 ## Why
@@ -188,7 +189,7 @@ spec-compliant SBOM reader picks it up:
 |---|---|---|
 | **CycloneDX 1.6** | `metadata.lifecycles[]` (aggregated from per-component tiers, deduplicated, sorted) + `compositions[].aggregate` | `properties[].name = "mikebom:sbom-tier"` |
 | **SPDX 2.3** | `creationInfo.comment` (free-text scope summary) | `packages[].annotations[]` with `mikebom:sbom-tier` |
-| **SPDX 3.0.1** | `SpdxDocument.comment` (free-text scope summary) + `software_Sbom.software_sbomType[]` (native enum, milestone 081) | top-level `annotations[]` with `mikebom:sbom-tier` |
+| **SPDX 3.0.1** | `SpdxDocument.comment` (free-text scope summary) + `software_Sbom.software_sbomType[]` (native enum) | top-level `annotations[]` with `mikebom:sbom-tier` |
 
 For the operator-facing **SBOM type** classification (CISA Design /
 Source / Build / Analyzed / Deployed / Runtime), per-format `jq`
@@ -213,15 +214,25 @@ than a real coverage gap. As a rule of thumb:
   coverage.
 
 For the deeper rationale on why mikebom takes this stance — and
-why class-presence verification (milestone 009) deliberately
-prunes Maven shade-relocation ancestors that *aren't actually in
-the JAR* — see [`docs/design-notes.md`](docs/design-notes.md)'s
-"Scope: artifact vs manifest SBOM" section.
+why class-presence verification deliberately prunes Maven shade-
+relocation ancestors that *aren't actually in the JAR* — see
+[`docs/design-notes.md`](docs/design-notes.md)'s "Scope: artifact vs
+manifest SBOM" section.
 
 ## Install
 
-Source-only today. Pre-built binaries and crates.io publication are
-tracked but not yet shipped.
+Pre-built binaries are published with every release as GitHub Release
+assets. Discover the latest tag and download:
+
+```bash
+TAG=$(gh release list -R kusari-sandbox/mikebom --limit 1 --json tagName --jq '.[0].tagName')
+gh release download "$TAG" -R kusari-sandbox/mikebom -p "mikebom-${TAG}-*-$(uname -m)-*.tar.gz"
+tar -xzf mikebom-*.tar.gz
+sudo install -m 0755 mikebom /usr/local/bin/mikebom
+mikebom --version
+```
+
+Or build from source:
 
 ```bash
 git clone https://github.com/mlieberman85/mikebom.git
@@ -230,10 +241,10 @@ cargo build --release
 # binary: ./target/release/mikebom
 ```
 
-**Rust toolchain.** Scan, generate, enrich, verify, compare, policy,
-and attestation subcommands build under the **stable** toolchain (CI
-runs `cargo +stable`). Trace subcommands additionally need nightly for
-the eBPF target — see
+**Rust toolchain.** Scan, verify, enrich, parity-check, policy, and
+attestation subcommands build under the **stable** toolchain (CI runs
+`cargo +stable`). Trace subcommands additionally need nightly for the
+eBPF target — see
 [`docs/user-guide/installation.md`](docs/user-guide/installation.md).
 
 **Platform support.**
@@ -400,9 +411,11 @@ mikebom sbom enrich project.cdx.json \
 ```
 
 **Common flags** across every `sbom *` subcommand: `--offline`,
-`--include-dev`, `--include-declared-deps`,
+`--exclude-scope`, `--include-declared-deps`,
 `--include-legacy-rpmdb` (env: `MIKEBOM_INCLUDE_LEGACY_RPMDB=1`).
-See `mikebom sbom <verb> --help` for the full set.
+See [`docs/user-guide/cli-reference.md`](docs/user-guide/cli-reference.md)
+for the full per-flag reference and `mikebom sbom <verb> --help` for the
+canonical source.
 
 ## Cross-tier correlation
 
@@ -533,12 +546,17 @@ mikebom sbom scan --image my-app:v1 \
 
 # Verify a binding from anywhere — re-hashes the source SBOM and
 # checks against the embedded reference.
-mikebom sbom verify-binding image.cdx.json --source ./source.cdx.json
+mikebom sbom verify-binding \
+    --image-sbom image.cdx.json \
+    --source-sbom ./source.cdx.json
 # → PASS — source-document binding verified
 
 # Trace the chain across an arbitrary set of SBOMs without manual
 # lookups (matches by content hash + identifier overlap):
-mikebom sbom trace-binding image.cdx.json --source-dir ./sboms/
+mikebom sbom trace-binding \
+    --component-purl "pkg:cargo/serde@1.0.0" \
+    --image-sbom image.cdx.json \
+    --candidate-sources-dir ./sboms/
 ```
 
 The binding annotation lives in standards-native carriers
@@ -588,11 +606,17 @@ witness-v0.1 attestation format (compatible with `sbomit generate`).
 - **[Identifiers reference](docs/reference/identifiers.md)** — the
   four built-in schemes, auto-detection rules, per-format wire
   carriers, decode recipes for external consumers.
+- **[SBOM types reference](docs/reference/sbom-types.md)** — CISA
+  Design / Source / Build / Analyzed / Deployed / Runtime
+  classification, per-format `jq` recipes, and the
+  `--sbom-type <type>` operator-assert flag.
 - **[Cross-tier binding reference](docs/reference/cross-tier-binding.md)**
   — `--bind-to-source` schema, verifier protocol, multi-tier
   trace flows.
 - **[SBOM format mapping](docs/reference/sbom-format-mapping.md)** —
   per-feature carrier matrix across CDX 1.6, SPDX 2.3, and SPDX 3.
+- **[Conformance harness guide](docs/reference/conformance-harness-guide.md)**
+  — for external implementers writing cross-format conformance suites.
 - **[Design notes](docs/design-notes.md)** — living architectural
   decisions at the cross-cutting level.
 - **[Changelog](CHANGELOG.md)** — what shipped in which release.
@@ -601,7 +625,7 @@ witness-v0.1 attestation format (compatible with `sbomit generate`).
 
 ## Workspace layout
 
-```
+```text
 mikebom-cli/      User-space CLI: scan, resolve, enrich, generate, verify, trace
 mikebom-common/   Shared types: PURL, attestation schema, resolution types
 mikebom-ebpf/     Kernel-side eBPF probes (uprobe on libssl, kprobe on file ops)

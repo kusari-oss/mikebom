@@ -65,6 +65,7 @@ Auto-generated from all feature plans. Last updated: 2026-05-07
 - N/A — pure metadata transform on the SBOM emission code paths; no caches, no persistence. The `--metadata-file` JSON sidecar is a one-shot read; mikebom holds the parsed values in process for the duration of the scan. (080-user-sbom-metadata)
 - Rust stable (workspace toolchain inherited from milestones 001–080; no nightly). + Existing only — `serde`/`serde_json` (JSON-LD round-tripping), `tracing`, `anyhow`, `clap` (the new `--sbom-type` flag via derive). Reuses milestone-047's `lifecycle_phases.rs::aggregate_phases` helper as the source of truth for tier aggregation. Reuses milestone-078's `spdx3-validate==0.0.5` conformance gate. **No new Cargo dependencies.** (081-sbom-type-clarity)
 - N/A — pure metadata-emission transform. No caches, no persistence. (081-sbom-type-clarity)
+- N/A — pure documentation work. No code paths touched. The Rust workspace continues to compile + test identically pre/post merge. + None new. The pre-PR gate uses the existing `cargo +stable clippy` + `cargo +stable test --workspace` pipeline; both remain stable across docs-only changes. (082-docs-refresh)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -127,9 +128,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 082-docs-refresh: Added N/A — pure documentation work. No code paths touched. The Rust workspace continues to compile + test identically pre/post merge. + None new. The pre-PR gate uses the existing `cargo +stable clippy` + `cargo +stable test --workspace` pipeline; both remain stable across docs-only changes.
 - 081-sbom-type-clarity: Added Rust stable (workspace toolchain inherited from milestones 001–080; no nightly). + Existing only — `serde`/`serde_json` (JSON-LD round-tripping), `tracing`, `anyhow`, `clap` (the new `--sbom-type` flag via derive). Reuses milestone-047's `lifecycle_phases.rs::aggregate_phases` helper as the source of truth for tier aggregation. Reuses milestone-078's `spdx3-validate==0.0.5` conformance gate. **No new Cargo dependencies.**
 - 080-user-sbom-metadata: Added Rust stable (workspace toolchain inherited from milestones 001–079; no nightly). + Existing only — `serde`/`serde_json` (JSON-LD round-tripping; the existing CDX emission path uses `serde_json::Value` directly, not structured types from the `cyclonedx-bom` crate, so adding new fields is purely additive JSON construction), `tracing`, `anyhow`, `clap` (the five new flags via derive — `--creator` repeatable via `ArgAction::Append`; `--annotator`/`--annotation-comment` via two parallel `Vec<String>` fields with post-validation per research §3), `chrono` (annotation timestamp deterministic per scan-emission time, same source as `creationInfo.created`), `thiserror` (parser error enum). Reuses milestone 078's `spdx3-validate==0.0.5` as the SPDX 3 conformance gate. **No new Cargo dependencies.**
-- 079-spdx3-id-vocab: Added Rust stable (workspace toolchain inherited from milestones 001–078; no nightly). + Existing only — `serde`/`serde_json` (JSON-LD round-tripping), `regex` (already in the dependency closure for the `gitoid` detection per Q2's regex `^[0-9a-f]{40}$`), `tracing`, `anyhow`. No new Cargo deps. Python 3.10+ in CI/test layer (already added in milestone 078 for `spdx3-validate==0.0.5`); reused as-is.
 
 
 <!-- MANUAL ADDITIONS START -->

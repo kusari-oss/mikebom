@@ -1,8 +1,8 @@
 # Quickstart
 
-Stable recipes come first — they produce a CycloneDX 1.6 JSON SBOM, work on
-any OS, and need no special privileges. Trace-mode (experimental, Linux only)
-follows at the bottom.
+Stable recipes come first — they produce CycloneDX 1.6 / SPDX 2.3 / SPDX 3.0.1
+JSON SBOMs, work on any OS, and need no special privileges. Trace-mode
+(experimental, Linux only) follows at the bottom.
 
 Prereqs: [`mikebom` installed](installation.md) and on `$PATH`.
 
@@ -16,21 +16,23 @@ Point at any directory that contains lockfiles or manifests. Works on any OS.
 mikebom sbom scan --path ./my-project --output project.cdx.json --json
 ```
 
-This is the primary recipe. mikebom reads every supported lockfile
-(`Cargo.lock`, `package-lock.json`, `pnpm-lock.yaml`, `go.mod` + `go.sum`,
-`Gemfile.lock`, `pom.xml`, `poetry.lock`, `Pipfile.lock`, `requirements.txt`)
-plus Maven JAR `META-INF/maven/...pom.xml`, per-module Go `.mod` files from
-the module cache if present, and produces a CycloneDX with:
+mikebom reads every supported lockfile (`Cargo.lock`, `package-lock.json`,
+`pnpm-lock.yaml`, `go.mod` + `go.sum`, `Gemfile.lock`, `pom.xml`,
+`poetry.lock`, `Pipfile.lock`, `requirements.txt`) plus Maven JAR
+`META-INF/maven/.../pom.xml`, per-module Go `.mod` files from the module
+cache if present, and produces a CycloneDX with:
 
 - SHA-256 content hashes on every component
-- Real `dependsOn` edges (not a flat fan-out; e.g. a kyverno source-tree scan
-  produces ~6,400 real Go dep edges)
+- Real `dependsOn` edges (not a flat fan-out)
 - Evidence blocks pointing back to the file that identified each component
 - Strict PURL encoding round-trippable through `packageurl-python`
 
 For richer Go dep graphs, run `go mod download` (or let `go build` populate
-`$GOMODCACHE`) before the scan — per-module `.mod` files let mikebom walk
-the transitive require graph.
+`$GOMODCACHE`) before the scan — per-module `.mod` files let mikebom walk the
+transitive require graph.
+
+See [CLI reference: `mikebom sbom scan`](cli-reference.md) for the full flag
+list.
 
 ---
 
@@ -39,18 +41,25 @@ the transitive require graph.
 Works on any OS. No privilege, no eBPF.
 
 ```bash
+mikebom sbom scan --image alpine:3.19 --output alpine.cdx.json --json
+```
+
+For OCI references mikebom checks the local docker daemon's cache first then
+falls back to a registry pull on miss. Pass a `docker save` tarball if you'd
+rather feed bytes directly:
+
+```bash
 docker save alpine:3.19 -o alpine.tar
 mikebom sbom scan --image alpine.tar --output alpine.cdx.json --json
 ```
 
-`--image` takes a `docker save` tarball. mikebom extracts the layers (honouring
-OCI whiteouts), auto-reads `<rootfs>/etc/os-release` for `ID` + `VERSION_ID`
-(feeding the `distro=<namespace>-<version>` PURL qualifier — e.g.,
-`distro=debian-12`, `distro=alpine-3.19`), reads the installed-package
-databases (`/var/lib/dpkg/status` for Debian and derivatives,
-`/lib/apk/db/installed` for Alpine, `rpmdb.sqlite` for RPM-based images),
-and emits a CycloneDX SBOM with a real dependency graph from the db's
-`Depends:` fields.
+`--image` extracts the layers (honouring OCI whiteouts), auto-reads
+`<rootfs>/etc/os-release` for `ID` + `VERSION_ID` (feeding the
+`distro=<namespace>-<version>` PURL qualifier — `distro=debian-12`,
+`distro=alpine-3.19`), reads installed-package databases
+(`/var/lib/dpkg/status` for Debian and derivatives, `/lib/apk/db/installed`
+for Alpine, `rpmdb.sqlite` for RPM-based images), and emits a CycloneDX SBOM
+with a real dependency graph from the db's `Depends:` fields.
 
 `--json` prints a summary to stdout:
 
@@ -63,88 +72,27 @@ and emits a CycloneDX SBOM with a real dependency graph from the db's
 }
 ```
 
-For Debian and Ubuntu images the scanner also produces per-file SHA-256
-evidence (the `evidence.occurrences[]` block) so every component carries
-byte-level tamper detection. Pass `--no-deep-hash` to skip this on very large
-images; `--no-package-db` to fall back to artifact-file-only scanning.
+For Debian / Ubuntu / Alpine / RPM-based images the scanner also produces
+per-file SHA-256 evidence (the `evidence.occurrences[]` block) so every
+component carries byte-level tamper detection. Pass `--no-deep-hash` to skip
+this on very large images; `--no-package-db` to fall back to artifact-file-
+only scanning.
+
+See [Architecture: scanning](../architecture/scanning.md) for the ecosystem
+walker design.
 
 ---
 
-## Recipe 3 — Scan a package cache
+## Recipe 3 — Trace a build (Linux only, experimental)
 
-Useful for CI where `~/.cargo/registry/cache`, `$GOMODCACHE`, `~/.m2`, or a
-pnpm/npm store is the authoritative copy of what the build pulled.
+> **Status: experimental.** Linux-only. Adds ~2-3× wall-clock overhead on
+> syscall-heavy builds; requires CAP_BPF + CAP_PERFMON; coverage gaps on
+> `openat2` / `io_uring`. Most users should stick with the scan recipes
+> above. The trace-mode pipeline exists for workflows that need the SBOM to
+> be provably bound to a specific build event.
 
-```bash
-mikebom sbom scan --path ~/.cargo/registry/cache --output cargo.cdx.json --json
-```
-
-```json
-{
-  "components": 1152,
-  "generation_context": "filesystem-scan",
-  "output_file": "cargo.cdx.json",
-  "scanned_root": "/Users/m/.cargo/registry/cache"
-}
-```
-
-Every resolved crate carries a SHA-256 that byte-matches the `.crate` file on
-disk plus a CycloneDX `evidence.identity` block at confidence 0.70 with
-`technique: "filename"`. If the directory happens to be a rootfs-shaped tree
-(has `etc/os-release` at the top), mikebom reads `ID` + `VERSION_ID` from
-there and stamps the `distro=<namespace>-<VERSION_ID>` qualifier on deb
-PURLs automatically. Override with `--deb-codename <value>` (e.g.,
-`--deb-codename debian-12`) when you're scanning a bare directory of
-`.deb` files.
-
----
-
-## Recipe 4 — Verify a signed DSSE attestation
-
-Works on any OS. Accepts DSSE envelopes produced by mikebom, witness, or any
-other SBOMit-compliant tool.
-
-```bash
-mikebom sbom verify attest.dsse.json \
-  --public-key signer.pub \
-  --expected-subject ./my-binary
-# → PASS — verified with public_key sha256:…  subject digest matches on-disk binary.
-```
-
-For keyless verification, pass `--identity 'user@example.com'` or a glob
-instead of `--public-key`. See
-[`specs/006-sbomit-suite/quickstart.md`](../../specs/006-sbomit-suite/quickstart.md)
-for `--layout` (in-toto policy enforcement), `--fulcio-url`, `--rekor-url`,
-and the full FailureMode contract.
-
----
-
-## Recipe 5 — Generate an in-toto layout
-
-```bash
-mikebom policy init --functionary-key ci.pub --step-name build --output layout.json
-mikebom sbom verify attest.dsse.json --layout layout.json
-# → exit 3 + mode: LayoutViolation when the signer doesn't match
-```
-
----
-
-## Experimental: trace a build (Linux only)
-
-> **Status:** experimental. Requires Linux ≥ 5.8, `CAP_BPF + CAP_PERFMON`
-> (or `--privileged` in a container). Adds ~2-3× wall-clock overhead on
-> syscall-heavy builds. Coverage gaps on `openat2` and `io_uring` syscalls.
-> Most users should stick with the scan recipes above.
->
-> The trace-mode pipeline exists for workflows that need the SBOM to be
-> *provably bound to a specific build event* — not just a post-hoc scan of
-> whatever files happen to be on disk. The attestation ties the built
-> artifact's SHA-256 to the observed build, and can be signed with
-> sigstore (local-key or keyless OIDC → Fulcio → Rekor).
-
-Trace `cargo install ripgrep` end-to-end, produce a signed attestation of
-every TLS download + file write, then derive a CycloneDX SBOM from that
-attestation:
+Trace `cargo install ripgrep` end-to-end, produce a signed attestation, then
+derive a CycloneDX SBOM from that attestation:
 
 ```bash
 mikebom trace run \
@@ -155,25 +103,217 @@ mikebom trace run \
   -- cargo install ripgrep
 ```
 
-To re-derive the SBOM later (or after enriching with different flags):
+To re-derive the SBOM later (or after enriching with different flags), use
+`mikebom sbom verify` with the attestation as input. On macOS, run
+trace-mode inside the `mikebom-dev` container or a Lima VM — see
+[installation](installation.md).
+
+---
+
+## Recipe 4 — Assert SBOM type with `--sbom-type`
+
+When your pipeline knows the SBOM should be classified as a single CISA SBOM
+Type regardless of mikebom's per-component auto-detection, override at the
+document level:
 
 ```bash
-mikebom sbom generate ripgrep.attestation.json \
-  --output ripgrep.cdx.json \
-  --enrich --lockfile Cargo.lock
+mikebom sbom scan --path . \
+    --sbom-type build \
+    --format cyclonedx-json,spdx-2.3-json,spdx-3-json \
+    --output cyclonedx-json=out.cdx.json \
+    --output spdx-2.3-json=out.spdx.json \
+    --output spdx-3-json=out.spdx3.json
 ```
 
-On macOS, run trace-mode inside the `mikebom-dev` container (see
-[`Dockerfile.dev`](../../Dockerfile.dev)) or a Lima VM.
+After the override, all three formats collapse the document-level signal to
+`["build"]`:
+
+```bash
+jq '.metadata.lifecycles' out.cdx.json
+# [{"phase": "build"}]
+
+jq -r '.creationInfo.comment' out.spdx.json
+# "Scope: ... Observed lifecycle phases: build. ..."
+
+jq '.["@graph"][] | select(.type == "software_Sbom") | .software_sbomType' out.spdx3.json
+# ["build"]
+```
+
+Per-component `mikebom:sbom-tier` annotations preserve their auto-detected
+values — the override is a CLAIM about document-level type, not a rewrite of
+per-component lineage.
+
+See [SBOM types](../reference/sbom-types.md) for the full per-format field
+positions and four-column CISA equivalence reference.
+
+---
+
+## Recipe 5 — Override the SBOM root component name
+
+When scanning an arbitrary directory whose basename doesn't reflect the
+operator-meaningful project identity, override `metadata.component.name`
+(and optionally `version`):
+
+```bash
+mikebom sbom scan --path /tmp/extracted \
+    --root-name acme-platform \
+    --root-version 2.4.1 \
+    --output platform.cdx.json
+```
+
+Output:
+
+```bash
+jq '.metadata.component | {name, version}' platform.cdx.json
+# {
+#   "name": "acme-platform",
+#   "version": "2.4.1"
+# }
+```
+
+When this flag is set on a manifest-driven scan (Cargo, npm, pip, gem,
+Maven, Go), the manifest-derived main-module component is dropped entirely
+from the emitted SBOM (clean replacement).
+
+See [CLI reference: `--root-name`](cli-reference.md) for the validation
+rules.
+
+---
+
+## Recipe 6 — Attach a user-defined component identifier
+
+Attach a stable identity (e.g., your internal asset-management ID) to a
+specific component in the emitted SBOM:
+
+```bash
+mikebom sbom scan --path . \
+    --component-id "pkg:cargo/serde@1.0.0=kusari-id:asset-shared-lib-v2" \
+    --output project.cdx.json
+```
+
+If a selector PURL matches multiple components (same PURL across different
+bom-ref values), the identifier is attached to ALL matching components. If
+a selector matches zero components, the scan logs a warning and continues.
+
+CDX 1.6 lands the identifier in `components[].properties[]` as
+`mikebom:component-identifier`; SPDX 2.3 lands it as a per-package
+`Annotation`; SPDX 3 carries it natively in
+`software_Package.externalIdentifier[]`.
+
+See [Identifiers](../reference/identifiers.md) for the full per-format
+carrier table and decode recipes.
+
+---
+
+## Recipe 7 — Use a metadata sidecar file
+
+Centralize creator/annotator/comment metadata in a JSON sidecar instead of
+passing dozens of CLI flags:
+
+```bash
+cat >metadata.json <<'JSON'
+{
+  "creators": [
+    "Tool: ci-scanner@1.4.0",
+    "Organization: Acme Corp"
+  ],
+  "annotators": [
+    {"type_name": "Person: alice@acme.example", "comment": "Reviewed for SOC2"}
+  ],
+  "metadata_comment": "Generated for SOC2 audit 2026-Q2",
+  "scan_target_name": "acme-platform"
+}
+JSON
+
+mikebom sbom scan --path . --metadata-file metadata.json --output project.cdx.json
+```
+
+`deny_unknown_fields` applies. Array fields merge additively with their flag
+counterparts (file values come first); single-valued fields fail with a
+conflict error if specified in both.
+
+See [CLI reference: `--metadata-file`](cli-reference.md) for the schema.
+
+---
+
+## Recipe 8 — Verify a signed DSSE attestation
+
+Works on any OS. Accepts DSSE envelopes produced by mikebom, witness, or any
+other SBOMit-compliant tool.
+
+```bash
+mikebom sbom verify attest.dsse.json \
+  --public-key signer.pub \
+  --expected-subject ./my-binary
+```
+
+Output (success):
+
+```text
+PASS — verified with public_key sha256:...  subject digest matches on-disk binary.
+```
+
+For keyless verification, pass `--identity 'user@example.com'` or a glob
+instead of `--public-key`.
+
+See [CLI reference: `mikebom sbom verify`](cli-reference.md) for the full
+flag set including `--layout` (in-toto policy enforcement) and the
+`FailureMode` exit-code contract.
+
+---
+
+## Recipe 9 — Verify a cross-tier binding
+
+When you have both a source-tier SBOM and an image-tier SBOM that was
+emitted with `--bind-to-source`, verify that the image-tier per-component
+binding annotations match the recompute against the source SBOM:
+
+```bash
+mikebom sbom verify-binding \
+    --image-sbom image.cdx.json \
+    --source-sbom source.cdx.json \
+    --format json
+```
+
+Exits non-zero on any verification failure. Use `--format json` to feed CI
+pipelines.
+
+For triage of an unknown image-tier component, use the informational
+counterpart:
+
+```bash
+mikebom sbom trace-binding \
+    --component-purl "pkg:cargo/serde@1.0.0" \
+    --image-sbom image.cdx.json \
+    --candidate-sources-dir ./source-sboms
+```
+
+`trace-binding` always exits 0 — it's informational, not validating.
+
+See [Cross-tier binding](../reference/cross-tier-binding.md) for the
+binding-hash algorithm and per-format carrier shapes.
+
+---
+
+## Recipe 10 — Generate an in-toto layout
+
+```bash
+mikebom policy init --functionary-key ci.pub --step-name build --output layout.json
+mikebom sbom verify attest.dsse.json --layout layout.json
+```
+
+Layouts are standard in-toto — any in-toto-aware verifier accepts them. Use
+`--expires <DURATION>` to control the validity window (default `1y`).
 
 ---
 
 ## What's next
 
-- **Find a flag you need?** See the [CLI reference](cli-reference.md).
-- **Curious why the SBOM looks the way it does?** See the
-  [architecture overview](../architecture/overview.md).
-- **Running into an unfamiliar ecosystem?** See the
-  [per-ecosystem reference](../ecosystems.md).
-- **Want the trace + sigstore pipeline?** See
-  [`specs/006-sbomit-suite/quickstart.md`](../../specs/006-sbomit-suite/quickstart.md).
+- **Find a flag you need?** See [CLI reference](cli-reference.md).
+- **Curious why the SBOM looks the way it does?** See
+  [Architecture overview](../architecture/overview.md).
+- **Running into an unfamiliar ecosystem?** See [Ecosystems](../ecosystems.md).
+- **Need cross-tier binding details?** See
+  [Cross-tier binding](../reference/cross-tier-binding.md).
+- **Identifier model questions?** See [Identifiers](../reference/identifiers.md).
+- **SBOM-type signaling?** See [SBOM types](../reference/sbom-types.md).

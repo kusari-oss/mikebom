@@ -11,7 +11,7 @@ sections that matter for the task at hand.
 
 The authoritative per-ecosystem coverage matrix — OS-db vs. lockfile vs.
 manifest, dep-graph completeness, and known limitations — lives in
-[`docs/ecosystems.md`](./ecosystems.md). This document captures the
+[`docs/ecosystems.md`](ecosystems.md). This document captures the
 cross-cutting architectural decisions that span ecosystems; go there
 first if you're asking "can mikebom read X" or "what does it do with Y".
 
@@ -143,7 +143,7 @@ See `specs/055-go-transitive-edges/` for the full design + capability matrix.
 
 ### PURL canonicalization
 - **Qualifiers sorted alphabetically** (added 2026-04-20): `Purl::new` re-canonicalizes the qualifier section so `?epoch=1&arch=x86_64&distro=fedora-40` becomes `?arch=x86_64&distro=fedora-40&epoch=1`. Required by purl-spec `docs/how-to-build.md` ("Sort this list of qualifier strings lexicographically"). Affects every ecosystem uniformly. Already-sorted inputs pass through unchanged (preserves caller-side `encode_purl_segment` work).
-- **RPM `epoch=0` omitted** (added 2026-04-20): treats `Some(0)` as semantically "no epoch" and drops the qualifier. RPM treats absent and 0 as equivalent for version comparison; `rpm -qa` default display omits; purl-spec rpm example never shows `epoch=0`. Reverses the milestone-005 round-trip-`rpm -qa` decision (see `specs/005-purl-and-scope-alignment/research.md` for the trade-off).
+- **RPM `epoch=0` omitted** (added 2026-04-20): treats `Some(0)` as semantically "no epoch" and drops the qualifier. RPM treats absent and 0 as equivalent for version comparison; `rpm -qa` default display omits; purl-spec rpm example never shows `epoch=0`. Reverses the milestone 005 round-trip-`rpm -qa` decision (see `specs/005-purl-and-scope-alignment/research.md` for the trade-off).
 
 ### CycloneDX 1.6 serialization
 - **`evidence.identity` is an array** (added 2026-04-20 for sbomqs parse failure): the single-object form was deprecated in CDX 1.5→1.6. Every component emits `identity: [{...}]` with exactly one identity object.
@@ -256,7 +256,7 @@ Three libraries deferred from milestone 026 (which shipped the easy-4 cohort: Gn
 
 - **V8** — version strings live in stack-trace formatting code (e.g. `v8::internal::Version::GetString()` callers) and tend to be non-deterministic across builds + dependent on V8 build flags. Research milestone needed to find a reliable string-region signature; may end up needing an inline-data scan of V8's snapshot blob rather than a string scan. Control-set: try a Node.js binary, a Chromium content-shell, a `deno` binary — all embed V8 in different ways.
 
-Discoverable via `grep TODO\(milestone-026.x\) mikebom-cli/src/scan_fs/binary/version_strings.rs`.
+Discoverable via `grep TODO\(milestone 026.x\) mikebom-cli/src/scan_fs/binary/version_strings.rs`.
 
 ### Deferred: sbomqs score lift
 
@@ -400,7 +400,7 @@ binary-format modules. The 30+ `PackageDbEntry`-init sites are
 untouched by per-binary-metadata work.
 
 Future milestones inheriting the bag without schema churn: 027
-container layer attribution (`mikebom:layer-id`), the milestone-026.x
+container layer attribution (`mikebom:layer-id`), the milestone 026.x
 hard-cohort version-string detectors (glibc / musl / V8 — when
 research clears the technical blockers documented in the deferred
 backlog), Mach-O entitlements XML extraction (CSMAGIC_EMBEDDED_ENTITLEMENTS,
@@ -551,7 +551,7 @@ walker's structure:
    `scan_fs/walker.rs::walk`, `package_db/maven.rs::walk_m2_jars`,
    `package_db/maven_sidecar.rs::walk`,
    `package_db/npm/walk.rs::walk_node_modules`. These walkers MUST
-   carry an inline `// SAFETY (milestone-054 walker audit):` comment
+   carry an inline `// SAFETY (milestone 054 walker audit):` comment
    naming the lstat-skip mechanism so a future audit grep confirms
    they're protected. Pattern:
 
@@ -567,7 +567,7 @@ walker's structure:
 `grep -rn "fn walk" mikebom-cli/src/scan_fs/` MUST find every match
 either using mechanism 1 (visible `HashSet<PathBuf>` parameter) OR
 mechanism 2 (inline `// SAFETY:` comment). Any walker matching
-neither is a blocking review finding. The milestone-054 audit
+neither is a blocking review finding. The milestone 054 audit
 seeded this rubric; future contributors keep it satisfied.
 
 **Per-walker depth limits**. Default ceiling is 16 (deeper than any
@@ -575,7 +575,7 @@ realistic monorepo's natural nesting). Walkers MAY use tighter
 bounds (cargo: 6, gem: 6, go_binary: 10, maven: 6) when the
 ecosystem's structural conventions justify it — but MUST carry an
 inline justification comment naming the specific reason (e.g.,
-"Cargo workspaces are shallow by convention"). Per milestone-054
+"Cargo workspaces are shallow by convention"). Per milestone 054
 FR-003.
 
 **Future migration**. Issue #108 tracks the migration from per-
@@ -596,7 +596,7 @@ a canonical JSON envelope — is **stable, deterministic, and
 externally implementable**.
 
 **Authoritative external-verifier guide**: read
-[`docs/reference/cross-tier-binding.md`](./reference/cross-tier-binding.md).
+[`docs/reference/cross-tier-binding.md`](reference/cross-tier-binding.md).
 The guide covers the binding-hash-v1 algorithm with worked
 examples for all three strength outcomes (`verified` / `weak` /
 `unknown`), per-ecosystem input extraction rules, per-format

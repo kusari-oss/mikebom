@@ -38,7 +38,22 @@ the way it did, or contribute to the pipeline.
 
 ## Reference material
 
-- [Ecosystems](ecosystems.md) — per-ecosystem coverage matrix for all nine supported ecosystems (authoritative source of truth)
-- [Design notes](design-notes.md) — architectural decisions at the cross-cutting level. Maven layered resolution, source-type markers, CycloneDX shape decisions, known limitations.
-- [Changelog](../CHANGELOG.md) — what shipped in which release; dated release notes; deprecations and stability-surface changes.
-- [Research](research/) — one-off investigations (e.g. Go binary scope analysis)
+- [Identifiers](reference/identifiers.md) — the four-layer identity model
+  (`repo:` / `git:` / `image:` / `attestation:` / user-defined) and per-flag
+  identity behavior.
+- [SBOM types](reference/sbom-types.md) — CISA SBOM Type signaling
+  (Design / Source / Build / Analyzed / Deployed / Runtime), the
+  four-column equivalence table, and the `--sbom-type` flag.
+- [Cross-tier binding](reference/cross-tier-binding.md) — `--bind-to-source`,
+  `verify-binding`, `trace-binding`, and the binding-hash-v1 algorithm.
+- [Cross-format SBOM mapping](reference/sbom-format-mapping.md) — per-feature
+  carrier matrix across CDX 1.6, SPDX 2.3, and SPDX 3.
+- [Conformance harness guide](reference/conformance-harness-guide.md) —
+  per-format envelope-decode rules and the 7 inherent format-spec asymmetries.
+- [Ecosystems](ecosystems.md) — per-ecosystem coverage matrix for all nine
+  supported ecosystems.
+- [Design notes](design-notes.md) — architectural decisions at the
+  cross-cutting level. Maven layered resolution, source-type markers,
+  CycloneDX shape decisions, known limitations.
+- [Changelog](../CHANGELOG.md) — what shipped in which release.
+- [Research](research/) — one-off investigations (e.g. Go binary scope analysis).

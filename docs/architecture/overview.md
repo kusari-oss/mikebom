@@ -4,7 +4,7 @@ mikebom is organized as a four-stage pipeline. Evidence flows in at the left
 — eBPF-captured events from a live build, or filesystem contents from a scan
 — and a CycloneDX 1.6 SBOM flows out at the right.
 
-```
+```text
 ┌──────────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────────┐
 │  evidence    │   │          │   │          │   │          │   │              │
 │              ├──▶│   SCAN   ├──▶│ RESOLVE  ├──▶│  ENRICH  ├──▶│   GENERATE   │

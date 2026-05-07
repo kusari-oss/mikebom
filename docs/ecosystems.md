@@ -228,7 +228,7 @@ annotations attach to the main-module entry: `mikebom:go-vcs-revision`
 build timestamp from `vcs.time`), and `mikebom:go-vcs-modified`
 (dirty-tree boolean from `vcs.modified`, preserved as the literal
 `"true"` / `"false"` string per Go's wire format). Surfaced via the
-milestone-023 `extra_annotations` bag — same data `go version -m
+milestone 023 `extra_annotations` bag — same data `go version -m
 <binary>` shows. Dep entries don't carry VCS metadata; that's a
 main-module concern. Binaries built with `-buildvcs=false` or outside
 a VCS worktree emit no `mikebom:go-vcs-*` annotations.

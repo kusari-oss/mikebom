@@ -4,7 +4,7 @@
 
 **Why this guide exists**: mikebom is the only multi-format SBOM emitter in the conformance ecosystem. A naive harness that compares the three formats by grep-style identical-key matching will produce a flood of false-positive cross-format-inequivalence findings. The reality is that each format has different mechanisms for carrying the same data; mikebom uses each format's idiomatic mechanism, with a small number of intentional, format-spec-driven asymmetries. This document tells you exactly how to read each format and what asymmetries to expect.
 
-**Status**: written 2026-05-04 against mikebom v0.1.0-alpha.13. Reflects the post-milestone-071 catalog state.
+**Status**: written 2026-05-04 against mikebom v0.1.0-alpha.13. Reflects the post-milestone 071 catalog state.
 
 ---
 
@@ -140,7 +140,7 @@ Source of truth: `mikebom-cli/src/parity/extractors/common.rs:41`.
 | **B4** | image / filesystem root | `PresenceOnly` | Each format encodes the scan subject in its own native primary-component construct (CDX `metadata.component`, SPDX `documentDescribes` / SPDX 3 `rootElement`). The shapes differ; the underlying datum is the same scan target. | Native BOM-subject slot per format. |
 | **C19** | `mikebom:cpe-candidates` | `PresenceOnly` | CDX delivers candidates as a ` \| `-pipe-joined string (CDX 1.6 schema mandates `properties[].value` is a string); SPDX 2.3 + 3 deliver them as a JSON array inside the envelope. mikebom's own extractor splits the CDX side on `" \| "` for set-equality comparison, but the WIRE bytes legitimately differ in escape conventions: PURL slashes inside CPEs are single-backslash-escaped in CDX (`github.com\/foo`) and double-backslash-escaped in SPDX-envelope wire form (`github.com\\\\/foo`). The atomic CPE values are semantically equal; the cosmetic escape conventions differ. | A12's `cpe` field carries the highest-signal candidate per Constitution Principle V. C19 is the supplementary candidate set. |
 | **C22** | `mikebom:os-release-missing-fields` | `PresenceOnly` | CDX uses comma-joined-string-with-trailing-empty shape when the input list is empty; SPDX uses a real JSON-array-valued envelope. The atomic atoms differ — CDX cannot losslessly emit a JSON array via a property's `value` (CDX 1.6 `properties[].value` is stringly-typed). Both formats carry the same set of missing-field names; the shape divergence is format-mandated. | None — this is a mikebom-specific advisory annotation; CDX can't natively express the array shape. |
-| **C42** | `mikebom:lifecycle-scope` | `CdxOnly` | CDX `scope: "excluded"` cannot express the dev/build/test sub-distinction the milestone-052 work needed; mikebom emits `mikebom:lifecycle-scope` on CDX components for the finer split. SPDX 2.3 + 3 carry this signal natively via dedicated dep-relationship types (`DEV_DEPENDENCY_OF` / `BUILD_DEPENDENCY_OF` / `TEST_DEPENDENCY_OF` in SPDX 2.3; `LifecycleScopeType` parameter in SPDX 3) — asserted independently by row B2's typed-edge extractor. | SPDX 2.3 native dep-relationship types; SPDX 3 `lifecycleScope` parameter. Constitution Principle V's named motivating case. |
+| **C42** | `mikebom:lifecycle-scope` | `CdxOnly` | CDX `scope: "excluded"` cannot express the dev/build/test sub-distinction the milestone 052 work needed; mikebom emits `mikebom:lifecycle-scope` on CDX components for the finer split. SPDX 2.3 + 3 carry this signal natively via dedicated dep-relationship types (`DEV_DEPENDENCY_OF` / `BUILD_DEPENDENCY_OF` / `TEST_DEPENDENCY_OF` in SPDX 2.3; `LifecycleScopeType` parameter in SPDX 3) — asserted independently by row B2's typed-edge extractor. | SPDX 2.3 native dep-relationship types; SPDX 3 `lifecycleScope` parameter. Constitution Principle V's named motivating case. |
 | **D1** | evidence — identity | `PresenceOnly` | CDX nests under `evidence.identity[]` as an array of `{technique, confidence}` objects per component; SPDX 2.3 + 3 emit a flat `mikebom:evidence-kind` + `mikebom:confidence` annotation pair. The shapes are structurally distinct; the underlying datum (technique + confidence float) is the same. | None — both shapes are non-spec-native; the divergence is mikebom's choice driven by what each spec's evidence model supports. |
 | **E1** | ecosystem completeness | `PresenceOnly` | CDX uses a `compositions[]` array where each entry can be flagged `complete`/`incomplete`; SPDX 2.3 + 3 emit a single `mikebom:complete-ecosystems: [<name>, ...]` annotation listing the ecosystems mikebom claims complete coverage of. CDX-array shape vs. SPDX-list shape; same underlying claim. | CDX `compositions[]` is the format-native construct. |
 
@@ -316,3 +316,15 @@ The 7 document-level keys named in §1 should be checked at the document level o
 - **CLI subcommand** (post-071, value-equality): `mikebom sbom parity-check --scan-dir <dir>`.
 
 If anything in this guide is unclear or appears inconsistent with the source, the source wins — please file an issue against the mikebom repo with the specific ambiguity.
+
+---
+
+## See also
+
+- [Cross-format SBOM mapping](sbom-format-mapping.md) — the authoritative
+  catalog the harness should read for per-row directionality and per-format
+  field positions.
+- [Identifiers](identifiers.md) — the four-layer identity model. Identifier
+  fields are the first ones a harness encounters in any modern mikebom SBOM.
+- [SBOM types](sbom-types.md) — CISA SBOM Type signaling, including SPDX 3
+  SHACL conformance (milestone 078) and the `--sbom-type` flag.

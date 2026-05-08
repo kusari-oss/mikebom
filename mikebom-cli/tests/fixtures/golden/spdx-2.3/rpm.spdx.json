@@ -4,37 +4,37 @@
     {
       "annotationDate": "1970-01-01T00:00:00Z",
       "annotationType": "OTHER",
-      "annotator": "Tool: mikebom-0.1.0-alpha.23",
+      "annotator": "Tool: mikebom-0.1.0-alpha.24",
       "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:generation-context\",\"value\":\"filesystem-scan\"}"
     },
     {
       "annotationDate": "1970-01-01T00:00:00Z",
       "annotationType": "OTHER",
-      "annotator": "Tool: mikebom-0.1.0-alpha.23",
+      "annotator": "Tool: mikebom-0.1.0-alpha.24",
       "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:os-release-missing-fields\",\"value\":[\"ID\",\"VERSION_ID\"]}"
     },
     {
       "annotationDate": "1970-01-01T00:00:00Z",
       "annotationType": "OTHER",
-      "annotator": "Tool: mikebom-0.1.0-alpha.23",
+      "annotator": "Tool: mikebom-0.1.0-alpha.24",
       "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-ring-buffer-overflows\",\"value\":0}"
     },
     {
       "annotationDate": "1970-01-01T00:00:00Z",
       "annotationType": "OTHER",
-      "annotator": "Tool: mikebom-0.1.0-alpha.23",
+      "annotator": "Tool: mikebom-0.1.0-alpha.24",
       "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-events-dropped\",\"value\":0}"
     },
     {
       "annotationDate": "1970-01-01T00:00:00Z",
       "annotationType": "OTHER",
-      "annotator": "Tool: mikebom-0.1.0-alpha.23",
+      "annotator": "Tool: mikebom-0.1.0-alpha.24",
       "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-uprobe-attach-failures\",\"value\":[]}"
     },
     {
       "annotationDate": "1970-01-01T00:00:00Z",
       "annotationType": "OTHER",
-      "annotator": "Tool: mikebom-0.1.0-alpha.23",
+      "annotator": "Tool: mikebom-0.1.0-alpha.24",
       "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-kprobe-attach-failures\",\"value\":[]}"
     }
   ],
@@ -42,19 +42,19 @@
     "comment": "Scope: manifest (declared transitives included). Observed lifecycle phases: no lifecycle phases observed. Per-component scope detail in mikebom:sbom-tier annotations.",
     "created": "1970-01-01T00:00:00Z",
     "creators": [
-      "Tool: mikebom-0.1.0-alpha.23",
+      "Tool: mikebom-0.1.0-alpha.24",
       "Organization: mikebom contributors"
     ]
   },
   "dataLicense": "CC0-1.0",
   "documentDescribes": [
-    "SPDXRef-DocumentRoot-YIOPFKPTHKVNZL4O"
+    "SPDXRef-DocumentRoot-WHR3HZRFQPR4M4PW"
   ],
-  "documentNamespace": "https://mikebom.kusari.dev/spdx/2T3ZOW2OHTFGNAENYPPEVGRL6BOFWJIZ",
+  "documentNamespace": "https://mikebom.kusari.dev/spdx/GNAIPWZNXVLFEWT22U7ELMKFJIM27JPJ",
   "name": "bdb-only",
   "packages": [
     {
-      "SPDXID": "SPDXRef-DocumentRoot-YIOPFKPTHKVNZL4O",
+      "SPDXID": "SPDXRef-DocumentRoot-WHR3HZRFQPR4M4PW",
       "downloadLocation": "NOASSERTION",
       "externalRefs": [
         {
@@ -78,7 +78,7 @@
   ],
   "relationships": [
     {
-      "relatedSpdxElement": "SPDXRef-DocumentRoot-YIOPFKPTHKVNZL4O",
+      "relatedSpdxElement": "SPDXRef-DocumentRoot-WHR3HZRFQPR4M4PW",
       "relationshipType": "DESCRIBES",
       "spdxElementId": "SPDXRef-DOCUMENT"
     }

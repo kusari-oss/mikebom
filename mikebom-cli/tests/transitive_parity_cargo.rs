@@ -1,0 +1,138 @@
+//! Cargo transitive-parity regression test — milestone 083 (issue #111).
+//!
+//! Fixture: clap-rs/clap @ v4.5.21 (commit
+//! `2920fb082c987acb72ed1d1f47991c4d157e380d`). Manifest + lockfile
+//! only per spec FR-002 + Q1 clarification.
+//!
+//! Per FR-007 + research §1: pinned tool versions are trivy 0.69.3 +
+//! syft 1.27.0. Per research §5: graceful-skip when external tools
+//! are missing unless `MIKEBOM_REQUIRE_TRANSITIVE_PARITY=1` is set.
+
+mod transitive_parity_common;
+
+use std::path::PathBuf;
+use transitive_parity_common::*;
+
+const FIXTURE_SUBPATH: &str = "cargo";
+
+/// Pinned at the alpha.24 baseline (workspace post-milestone-085 release).
+/// Bump per quickstart.md Recipe 3 only when a deliberate per-ecosystem-
+/// reader change shifts the count.
+const EXPECTED_MIKEBOM_EDGE_COUNT: usize = 319;
+
+/// Representative edges that mikebom **actually emits** today — pinning
+/// current behavior so future milestones can't silently regress.
+/// Per FR-010 the audit is observation-only: spot-check edges reflect
+/// what mikebom does, not what it should ideally do. The audit's
+/// `cross_tool_parity_check` test surfaces divergences from trivy /
+/// syft for follow-up triage; this baseline test catches mikebom
+/// regressing AGAINST ITSELF.
+///
+/// Known divergences (logged for follow-up per FR-005):
+/// - mikebom emits `clap@4.5.21 → clap_builder@4.5.9` (version
+///   mismatch — should be 4.5.21 per the workspace lockfile). Trivy +
+///   syft both emit the correct `→ 4.5.21` edge. mikebom-cargo-reader
+///   bug surfaced by this audit.
+/// - mikebom emits zero outgoing edges from `clap_derive` despite
+///   it having proc-macro deps in the lockfile. Another mikebom-cargo-
+///   reader gap surfaced by this audit.
+const EXPECTED_REPRESENTATIVE_EDGES: &[(&str, &str)] = &[
+    // Confirmed in mikebom output — clap workspace root depends on automod.
+    ("pkg:cargo/clap", "pkg:cargo/automod"),
+    // Confirmed — anstream emits style-stripper deps.
+    ("pkg:cargo/anstream", "pkg:cargo/anstyle"),
+    // Confirmed — terminal_size emits libc on unix.
+    ("pkg:cargo/terminal_size", "pkg:cargo/rustix"),
+];
+
+fn fixture() -> PathBuf {
+    fixture_path(FIXTURE_SUBPATH)
+}
+
+#[test]
+fn fixture_present() {
+    let f = fixture();
+    assert!(f.join("Cargo.toml").exists(), "missing Cargo.toml at {}", f.display());
+    assert!(f.join("Cargo.lock").exists(), "missing Cargo.lock at {}", f.display());
+}
+
+#[test]
+fn transitive_edges_match_baseline() {
+    // mikebom is always available (it's the test binary itself).
+    let mikebom_edges = run_mikebom(&fixture());
+    assert_eq!(
+        mikebom_edges.len(),
+        EXPECTED_MIKEBOM_EDGE_COUNT,
+        "mikebom edge count drifted from the alpha.24 baseline. \
+         Investigate per quickstart.md Recipe 3 + bump EXPECTED_MIKEBOM_EDGE_COUNT \
+         only after confirming the change is intended."
+    );
+
+    // Spot-check at least one representative edge per the FR-007
+    // baseline pin. PURL-prefix match (without versions) since
+    // alpha.24 versions inside the fixture are stable but bumping
+    // them in a future fixture refresh shouldn't break this test.
+    let edge_set: std::collections::HashSet<(String, String)> = mikebom_edges
+        .iter()
+        .map(|e| {
+            (
+                strip_version(&e.from).to_string(),
+                strip_version(&e.to).to_string(),
+            )
+        })
+        .collect();
+    for (from_prefix, to_prefix) in EXPECTED_REPRESENTATIVE_EDGES {
+        assert!(
+            edge_set.contains(&(from_prefix.to_string(), to_prefix.to_string())),
+            "expected representative edge missing: {from_prefix} → {to_prefix}"
+        );
+    }
+}
+
+#[test]
+fn cross_tool_parity_check() {
+    if let Some(reason) = maybe_skip(&["trivy", "syft"]) {
+        eprintln!("transitive_parity_cargo::cross_tool_parity_check skipped: {reason}");
+        return;
+    }
+    let mikebom = run_mikebom(&fixture());
+    let trivy = run_trivy(&fixture());
+    let syft = run_syft(&fixture());
+    let diff = compute_edge_diff(&mikebom, &trivy, &syft);
+
+    eprintln!("\n=== cargo audit (clap-rs/clap @ v4.5.21) ===");
+    eprintln!(
+        "edge counts: mikebom={} trivy={} syft={}",
+        mikebom.len(),
+        trivy.len(),
+        syft.len()
+    );
+    eprintln!("diff:\n{}", format_edge_diff(&diff));
+
+    // The audit is observation-only per FR-010; we don't fail when
+    // tools disagree, we just log the divergence so research.md and
+    // any follow-up issue have evidence. The MUST-pass invariant is
+    // the per-tool count + representative-edge sample (covered by
+    // `transitive_edges_match_baseline`). Future milestones may
+    // promote this to a hard parity assertion once each ecosystem's
+    // findings are triaged.
+}
+
+#[test]
+fn graceful_skip_when_tools_absent() {
+    // Sanity: running maybe_skip with a tool that doesn't exist
+    // returns Some(reason) when strict mode is off. Already covered
+    // by transitive_parity_common_sanity but repeated here for
+    // per-ecosystem documentation.
+    std::env::remove_var("MIKEBOM_REQUIRE_TRANSITIVE_PARITY");
+    assert!(maybe_skip(&["this-tool-definitely-does-not-exist"]).is_some());
+}
+
+/// Strip the `@<version>` suffix from a PURL for representative-edge
+/// matching that survives version bumps in the fixture.
+fn strip_version(purl: &str) -> &str {
+    match purl.rfind('@') {
+        Some(i) => &purl[..i],
+        None => purl,
+    }
+}

@@ -21,20 +21,20 @@ Repository-relative paths from `/Users/mlieberman/Projects/mikebom/`:
 
 ## Phase 1: Setup
 
-- [ ] T001 Verify trivy 0.69.3 + syft 1.27.0 installed (per research §1 pinned versions). Smoke-run each against any existing fixture to confirm working invocations.
-- [ ] T002 Create `mikebom-cli/tests/fixtures/transitive_parity/` directory with `.gitkeep` so the per-ecosystem subdirs can land separately.
+- [X] T001 Verify trivy 0.69.3 + syft 1.27.0 installed (per research §1 pinned versions). Smoke-run each against any existing fixture to confirm working invocations.
+- [X] T002 Create `mikebom-cli/tests/fixtures/transitive_parity/` directory with `.gitkeep` so the per-ecosystem subdirs can land separately.
 - [ ] T003 [P] Add `MIKEBOM_REQUIRE_TRANSITIVE_PARITY` env-var documentation to `docs/reference/contributing.md` (or wherever the existing `MIKEBOM_REQUIRE_SPDX3_VALIDATOR` is documented). Mirrors milestone-078's strict-mode pattern.
 
 ## Phase 2: Foundational — audit harness
 
-- [ ] T004 Create `mikebom-cli/tests/transitive_parity_common.rs` with the data-model.md types: `Edge`, `EdgeDiff`, `AuditRow`, `AuditClassification`, `TransitiveParityFixture`. Include `Edge::is_unanimous()` + `Edge::requires_tiebreaker()` per VR-083-002.
-- [ ] T005 Implement `run_mikebom(fixture_path) -> Vec<Edge>` in `transitive_parity_common.rs` per contracts/audit-harness.md §"run_mikebom". Use `--offline --format spdx-3-json --output -` then extract `software_dependsOn[]` per `software_Package` element.
-- [ ] T006 Implement `run_trivy(fixture_path) -> Vec<Edge>` per contracts §"run_trivy". Shell out to `trivy fs --format spdx-json --output - <fixture>`, parse SPDX 2.3, filter `relationships[]` to `relationshipType: "DEPENDS_ON"`, resolve SPDX-IDs to PURLs.
-- [ ] T007 Implement `run_syft(fixture_path) -> Vec<Edge>` per contracts §"run_syft". Same shape as run_trivy but with `syft <fixture> -o spdx-json`.
+- [X] T004 Create `mikebom-cli/tests/transitive_parity_common.rs` with the data-model.md types: `Edge`, `EdgeDiff`, `AuditRow`, `AuditClassification`, `TransitiveParityFixture`. Include `Edge::is_unanimous()` + `Edge::requires_tiebreaker()` per VR-083-002.
+- [X] T005 Implement `run_mikebom(fixture_path) -> Vec<Edge>` in `transitive_parity_common.rs` per contracts/audit-harness.md §"run_mikebom". Use `--offline --format spdx-3-json --output -` then extract `software_dependsOn[]` per `software_Package` element.
+- [X] T006 Implement `run_trivy(fixture_path) -> Vec<Edge>` per contracts §"run_trivy". Shell out to `trivy fs --format spdx-json --output - <fixture>`, parse SPDX 2.3, filter `relationships[]` to `relationshipType: "DEPENDS_ON"`, resolve SPDX-IDs to PURLs.
+- [X] T007 Implement `run_syft(fixture_path) -> Vec<Edge>` per contracts §"run_syft". Same shape as run_trivy but with `syft <fixture> -o spdx-json`.
 - [ ] T008 Implement `run_source_format_direct(fixture_path, ecosystem) -> Vec<Edge>` tiebreaker per contracts §"run_source_format_direct". Per-ecosystem dispatch table.
-- [ ] T009 Implement `compute_edge_diff(mikebom, trivy, syft) -> EdgeDiff` set-theoretic comparison per data-model.md.
-- [ ] T010 Implement graceful-skip helper `assert_graceful_skip()` per research §5: skip when external tools missing AND `MIKEBOM_REQUIRE_TRANSITIVE_PARITY` env var unset; fail loudly when set.
-- [ ] T011 Implement PURL normalization helpers per VR-083-004: lowercase package types, alphabetical-sort `Vec<Edge>`, strip qualifiers when comparing.
+- [X] T009 Implement `compute_edge_diff(mikebom, trivy, syft) -> EdgeDiff` set-theoretic comparison per data-model.md.
+- [X] T010 Implement graceful-skip helper `assert_graceful_skip()` per research §5: skip when external tools missing AND `MIKEBOM_REQUIRE_TRANSITIVE_PARITY` env var unset; fail loudly when set.
+- [X] T011 Implement PURL normalization helpers per VR-083-004: lowercase package types, alphabetical-sort `Vec<Edge>`, strip qualifiers when comparing.
 
 ## Phase 3: US1 — per-ecosystem audit (P1)
 
@@ -42,9 +42,9 @@ Each ecosystem is an independent unit of work. Per FR-002, each fixture must hav
 
 ### Phase 3a: Cargo
 
-- [ ] T012 [US1] Pick + extract Cargo fixture per quickstart.md Recipe 2. Candidate from research §2: `clap-rs/clap` workspace. Vendor `Cargo.toml` + `Cargo.lock` to `mikebom-cli/tests/fixtures/transitive_parity/cargo/`.
-- [ ] T013 [US1] Create `mikebom-cli/tests/transitive_parity_cargo.rs` with `transitive_edges_match_baseline` + `cross_tool_parity_check` + `graceful_skip_when_tools_absent` tests per contracts §"Test contract".
-- [ ] T014 [US1] Run the audit, populate `EXPECTED_EDGE_COUNT` + `EXPECTED_REPRESENTATIVE_EDGES` from real output, write the per-ecosystem audit row to `research.md` §"Ecosystem: cargo".
+- [X] T012 [US1] Pick + extract Cargo fixture per quickstart.md Recipe 2. Candidate from research §2: `clap-rs/clap` workspace. Vendor `Cargo.toml` + `Cargo.lock` to `mikebom-cli/tests/fixtures/transitive_parity/cargo/`.
+- [X] T013 [US1] Create `mikebom-cli/tests/transitive_parity_cargo.rs` with `transitive_edges_match_baseline` + `cross_tool_parity_check` + `graceful_skip_when_tools_absent` tests per contracts §"Test contract".
+- [X] T014 [US1] Run the audit, populate `EXPECTED_EDGE_COUNT` + `EXPECTED_REPRESENTATIVE_EDGES` from real output, write the per-ecosystem audit row to `research.md` §"Ecosystem: cargo".
 
 ### Phase 3b: npm
 

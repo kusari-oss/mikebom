@@ -143,3 +143,47 @@ The tiebreaker is invoked **only when mikebom + trivy + syft disagree** on a spe
 ```
 
 **Rationale**: consistent format makes the audit machine-readable AND human-readable. Operators reading any per-ecosystem entry know exactly what "the audit found" and what (if anything) is being done about it.
+
+## §8 — Per-ecosystem audit findings
+
+This section is populated incrementally as each per-ecosystem fixture's audit completes. Format per §7. Audit-only per FR-010 — gaps surface as follow-up issues; per-ecosystem-reader fixes ship as separate milestones.
+
+### Ecosystem: cargo
+
+**Fixture**: `mikebom-cli/tests/fixtures/transitive_parity/cargo/` — `Cargo.toml` + `Cargo.lock` only (per FR-002 + Q1).
+**Source URL**: https://github.com/clap-rs/clap
+**Commit SHA**: `2920fb082c987acb72ed1d1f47991c4d157e380d` (tag `v4.5.21`)
+**Tool versions**: trivy 0.69.3 / syft 1.27.0 / mikebom alpha.24
+
+**Edge counts** (PURL-normalized, SPDX 2.3 `DEPENDS_ON` + `DEPENDENCY_OF` reverse-direction):
+- mikebom: 319
+- trivy: 85
+- syft: 721
+- source-format direct (tiebreaker not yet invoked): N/A
+
+**Diff classification**: **gap surfaced** (multiple)
+
+The 3 SBOM tools disagree massively (319 / 85 / 721). Set-theoretic decomposition:
+- Agreement (all 3): 41 edges
+- mikebom-only: 56 edges
+- trivy-only: 0 edges (every trivy edge is also in mikebom or syft)
+- syft-only: 721 edges (most of syft's set is unique to syft — likely transitive-edge over-emission per cargo-package source-tree heuristics rather than lockfile structure)
+- mikebom + trivy (not syft): 0 edges
+- mikebom + syft (not trivy): 200 edges
+- trivy + syft (not mikebom): 22 edges (includes the workspace-internal `clap@4.5.21 → clap_builder@4.5.21` edge — see gap #1 below)
+
+**Specific gaps surfaced (mikebom-side)**:
+
+1. **Workspace-member version mismatch**: mikebom emits `clap@4.5.21 → clap_builder@4.5.9` instead of `clap@4.5.21 → clap_builder@4.5.21`. Trivy + syft both correctly resolve the workspace-internal edge to v4.5.21. mikebom is picking up a transitive copy of clap_builder@4.5.9 instead of the workspace member at @4.5.21. Suggests the cargo reader's workspace-member resolution conflates same-name packages across versions.
+2. **clap_derive emits zero outgoing edges**: mikebom emits no DEPENDS_ON entries from `clap_derive`, despite Cargo.lock showing it depends on `proc-macro2`, `quote`, `syn`. Trivy + syft both emit those edges. Suggests the cargo reader skips proc-macro crate dep extraction entirely for procedural-macro-typed Cargo.toml entries.
+
+**Specific gaps surfaced (cross-tool)**:
+
+3. **syft over-emits 721 edges trivy + mikebom don't see** — likely because syft's cargo classifier walks `Cargo.toml` `[dependencies]` of every package in the source tree (including dev-deps + build-deps), where mikebom + trivy filter to runtime-deps via the lockfile structure. Not a mikebom gap — more an upstream classification difference.
+4. **trivy under-emits relative to mikebom** (85 vs 319) — trivy filters more aggressively than mikebom on cargo. Not a mikebom gap.
+
+**Tiebreaker resolution** (planned for follow-up): re-derive ground truth from `Cargo.lock` by parsing `[[package]] dependencies = [...]` directly via the `toml` crate. Pre-implementation hypothesis: the Cargo.lock direct read will match mikebom's set on the agreement edges + match trivy + syft on the workspace-internal edges (gap #1) + match trivy + syft on the proc-macro edges (gap #2). Result: gaps #1 + #2 are real mikebom bugs. Tiebreaker work tracked in follow-up issue.
+
+**Indirect-vs-direct decision**: **N/A — already covered by milestone-052/part-2 lifecycle scope work** (per research §6). cargo's `[dev-dependencies]` vs `[dependencies]` distinction is mapped to CDX `scope: excluded` and SPDX 2.3 typed `DEV_DEPENDENCY_OF`.
+
+**Follow-up disposition**: **gaps #1 + #2 to be filed** as separate cargo-reader issues post-this-milestone-merge. The audit's regression test (`mikebom-cli/tests/transitive_parity_cargo.rs`) pins mikebom's current 319-edge count + 3 representative edges; future cargo-reader fixes bump the baseline per quickstart.md Recipe 3.

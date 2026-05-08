@@ -112,15 +112,28 @@ jobs:
       # (matches the SPDX 3 conformance pattern + the dpkg/rpm/apk
       # OS-package fixtures are Linux-only per FR-009).
       - name: Install trivy
+        # Pinned at 0.69.3 per spec/083 research §1 — the audit
+        # comparison-baseline version. The apt repo at
+        # `aquasecurity.github.io/trivy-repo` carries only `latest`
+        # (no version-pinned packages), so `apt-get install
+        # trivy=0.69.3` fails with "Version '0.69.3' for 'trivy'
+        # was not found". Install the version-pinned .deb directly
+        # from GitHub Releases instead — also more reproducible
+        # (the release artifact bytes are immutable; the apt repo
+        # would silently roll forward across releases).
         run: |
           set -euo pipefail
-          sudo apt-get install -y wget gnupg
-          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key \
-            | sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
-          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" \
-            | sudo tee /etc/apt/sources.list.d/trivy.list
-          sudo apt-get update -qq
-          sudo apt-get install -y trivy=0.69.3
+          TRIVY_VERSION=0.69.3
+          ARCH=$(dpkg --print-architecture)
+          case "$ARCH" in
+            amd64) DEB_ARCH="64bit" ;;
+            arm64) DEB_ARCH="ARM64" ;;
+            *) echo "unsupported arch: $ARCH" >&2; exit 1 ;;
+          esac
+          curl -fsSL \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-${DEB_ARCH}.deb" \
+            -o /tmp/trivy.deb
+          sudo dpkg -i /tmp/trivy.deb
           trivy --version
       - name: Install syft
         run: |

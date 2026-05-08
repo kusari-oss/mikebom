@@ -276,16 +276,26 @@ fn cdx_dependency_edges(doc: &Value, dev_only: bool) -> BTreeSet<String> {
             Some(p) => p.to_string(),
             None => continue,
         };
-        // Milestone 052/part-2: source-side dev classification via
-        // native CDX `scope: "excluded"` (any non-runtime). The
-        // legacy `mikebom:dev-dependency` property was removed.
+        // Milestone 052/part-2: dev classification via native CDX
+        // `scope: "excluded"` (any non-runtime).
+        //
+        // Milestone 085: classify per-edge using EITHER endpoint's
+        // scope, not just the source-side. Maven (and any future
+        // ecosystem that puts scope on the target rather than the
+        // source — e.g., pom.xml `<scope>test</scope>` lives on the
+        // dep declaration, attached to the target component) needs
+        // the target-side check or runtime-vs-dev parity against
+        // SPDX 2.3's typed `DEPENDS_ON`/`TEST_DEPENDENCY_OF` shape
+        // produces false positives in CDX's runtime bucket. Pre-085
+        // the source-side-only filter masked this for ecosystems
+        // (cargo etc.) where dev/test deps happened to be excluded
+        // from `dependencies[]` entirely; post-085 the per-edge
+        // check correctly classifies edges where any endpoint
+        // carries scope=excluded as non-runtime.
         let from_is_dev = from_comp
             .get("scope")
             .and_then(|v| v.as_str())
             == Some("excluded");
-        if dev_only != from_is_dev {
-            continue;
-        }
         let Some(targets) = d.get("dependsOn").and_then(|v| v.as_array()) else {
             continue;
         };
@@ -297,6 +307,11 @@ fn cdx_dependency_edges(doc: &Value, dev_only: bool) -> BTreeSet<String> {
             let Some(to_purl) = to_comp.get("purl").and_then(|v| v.as_str()) else {
                 continue;
             };
+            let to_is_dev = to_comp.get("scope").and_then(|v| v.as_str()) == Some("excluded");
+            let edge_is_dev = from_is_dev || to_is_dev;
+            if dev_only != edge_is_dev {
+                continue;
+            }
             out.insert(format!("{from_purl}->{to_purl}"));
         }
     }

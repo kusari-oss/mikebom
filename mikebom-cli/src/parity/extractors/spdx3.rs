@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 use super::common::{
-    decode_envelope, extract_mikebom_annotation_values, normalize_alg, spdx_relationship_edges,
+    extract_mikebom_annotation_values, normalize_alg, spdx_relationship_edges,
     walk_spdx3_packages,
 };
 
@@ -217,13 +217,77 @@ pub(super) fn spdx3_supplier(doc: &Value) -> BTreeSet<String> {
 // ============================================================
 
 pub(super) fn spdx3_runtime_deps(doc: &Value) -> BTreeSet<String> {
-    spdx_relationship_edges(doc, "", "dependsOn")
+    // Milestone 085: SPDX 3 puts lifecycle classification on the
+    // Relationship itself via the `scope` parameter (per milestone
+    // 052/part-2 — `dev` / `build` / `test` / `runtime`). The
+    // generic `spdx_relationship_edges` walker can't see that
+    // because B2 (dev) is signaled by a separate annotation
+    // mechanism in this extractor file. For the runtime bucket,
+    // include only relationships whose scope is absent or runtime;
+    // exclude any with scope=dev/build/test so SPDX 3 matches CDX's
+    // post-085 per-edge classifier (which excludes edges where the
+    // target carries `scope: "excluded"`) and SPDX 2.3's typed
+    // relationshipType filter (which excludes DEV/BUILD/TEST_*_OF
+    // by counting only DEPENDS_ON).
+    let Some(graph) = doc.get("@graph").and_then(|v| v.as_array()) else {
+        return BTreeSet::new();
+    };
+    let mut purl_by_iri: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
+    for el in graph {
+        if el.get("type").and_then(|v| v.as_str()) == Some("software_Package") {
+            if let (Some(iri), Some(purl)) = (
+                el.get("spdxId").and_then(|v| v.as_str()),
+                el.get("software_packageUrl").and_then(|v| v.as_str()),
+            ) {
+                purl_by_iri.insert(iri.to_string(), purl.to_string());
+            }
+        }
+    }
+    let mut out = BTreeSet::new();
+    for el in graph {
+        let el_type = el.get("type").and_then(|v| v.as_str());
+        if !matches!(el_type, Some("Relationship") | Some("LifecycleScopedRelationship")) {
+            continue;
+        }
+        if el.get("relationshipType").and_then(|v| v.as_str()) != Some("dependsOn") {
+            continue;
+        }
+        let scope = el.get("scope").and_then(|v| v.as_str());
+        if matches!(scope, Some("development") | Some("build") | Some("test")) {
+            continue;
+        }
+        let Some(from_iri) = el.get("from").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(to_arr) = el.get("to").and_then(|v| v.as_array()) else {
+            continue;
+        };
+        let Some(from_purl) = purl_by_iri.get(from_iri) else {
+            continue;
+        };
+        for t in to_arr {
+            if let Some(t_iri) = t.as_str() {
+                if let Some(to_purl) = purl_by_iri.get(t_iri) {
+                    out.insert(format!("{from_purl}->{to_purl}"));
+                }
+            }
+        }
+    }
+    out
 }
 
-// SPDX 3 lacks `devDependencyOf`; the C6 annotation carries the
-// dev-vs-runtime distinction (mapping doc B2). The extractor walks
-// `dependsOn` edges and filters by C6 annotation on the source
-// Package.
+// SPDX 3 lacks `devDependencyOf`; per milestone-052/part-2 the
+// dev-vs-runtime distinction lives on the `Relationship` itself
+// via the `scope` parameter (`dev` / `build` / `test`).
+//
+// Milestone 085: walk `dependsOn` Relationships and include only
+// those whose `scope` is dev/build/test. Mirrors B1 (which
+// excludes the same scopes) and matches SPDX 2.3's typed
+// DEV/BUILD/TEST_DEPENDENCY_OF representation. The previous
+// implementation read a deprecated `mikebom:dev-dependency`
+// annotation on the source Package; that annotation was removed
+// when 052/part-2 promoted the native scope encoding.
 pub(super) fn spdx3_dev_deps(doc: &Value) -> BTreeSet<String> {
     let Some(graph) = doc.get("@graph").and_then(|v| v.as_array()) else {
         return BTreeSet::new();
@@ -240,42 +304,26 @@ pub(super) fn spdx3_dev_deps(doc: &Value) -> BTreeSet<String> {
             }
         }
     }
-    // Set of IRIs whose C6 annotation marks them dev.
-    let mut dev_iris: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    for el in graph {
-        if el.get("type").and_then(|v| v.as_str()) != Some("Annotation") {
-            continue;
-        }
-        let Some(subject) = el.get("subject").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        let Some(stmt) = el.get("statement").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        if let Some(values) = decode_envelope(stmt, "mikebom:dev-dependency") {
-            if values.iter().any(|v| v == "true" || v == "\"true\"") {
-                dev_iris.insert(subject.to_string());
-            }
-        }
-    }
     let mut out = BTreeSet::new();
     for el in graph {
-        if el.get("type").and_then(|v| v.as_str()) != Some("Relationship") {
+        let el_type = el.get("type").and_then(|v| v.as_str());
+        if !matches!(el_type, Some("Relationship") | Some("LifecycleScopedRelationship")) {
             continue;
         }
         if el.get("relationshipType").and_then(|v| v.as_str()) != Some("dependsOn") {
             continue;
         }
-        let Some(from) = el.get("from").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        if !dev_iris.contains(from) {
+        let scope = el.get("scope").and_then(|v| v.as_str());
+        if !matches!(scope, Some("development") | Some("build") | Some("test")) {
             continue;
         }
+        let Some(from_iri) = el.get("from").and_then(|v| v.as_str()) else {
+            continue;
+        };
         let Some(to_arr) = el.get("to").and_then(|v| v.as_array()) else {
             continue;
         };
-        let Some(from_purl) = purl_by_iri.get(from) else {
+        let Some(from_purl) = purl_by_iri.get(from_iri) else {
             continue;
         };
         for t in to_arr {

@@ -221,17 +221,24 @@ pub(super) fn spdx23_dev_deps(doc: &Value) -> BTreeSet<String> {
     // Per milestone-011 B2 + milestone-012 mapping, SPDX 2.3 emits
     // DEV_DEPENDENCY_OF (target-source swap). Reverse the pair to
     // align with CDX direction.
-    let raw = spdx_relationship_edges(doc, "DEV_DEPENDENCY_OF", "");
-    raw.into_iter()
-        .filter_map(|s| {
+    //
+    // Milestone 085: also include TEST_DEPENDENCY_OF and
+    // BUILD_DEPENDENCY_OF — milestone-052/part-2 added them as
+    // typed variants alongside DEV. For B2 (any non-runtime
+    // dep edge), all three count. Pre-085 this extractor under-
+    // counted maven test deps because junit→demo-app emits as
+    // TEST_DEPENDENCY_OF, not DEV_DEPENDENCY_OF.
+    let mut out = BTreeSet::new();
+    for rel_type in &["DEV_DEPENDENCY_OF", "BUILD_DEPENDENCY_OF", "TEST_DEPENDENCY_OF"] {
+        let raw = spdx_relationship_edges(doc, rel_type, "");
+        for s in raw {
             let parts: Vec<&str> = s.splitn(2, "->").collect();
             if parts.len() == 2 {
-                Some(format!("{}->{}", parts[1], parts[0]))
-            } else {
-                None
+                out.insert(format!("{}->{}", parts[1], parts[0]));
             }
-        })
-        .collect()
+        }
+    }
+    out
 }
 
 pub(super) fn spdx23_containment(doc: &Value) -> BTreeSet<String> {

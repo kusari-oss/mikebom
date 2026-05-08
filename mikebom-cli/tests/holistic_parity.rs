@@ -104,27 +104,12 @@ fn triple_scan_at_path(
 /// milestones rather than the one currently in flight. Each entry:
 /// `(ecosystem_label, row_id, justification)`.
 ///
-/// **`("maven", "B1", _)`**: milestone-070 (Maven main-module) added
-/// the project's main-module to `metadata.component` and to
-/// `components[]`, but did NOT add `Relationship` entries from the
-/// main-module PURL to its direct deps in `ScanArtifacts.relationships`.
-/// The CDX side fakes them via the `dependencies.rs:78-91` primary-dep
-/// fallback (synthesizing target_ref → roots-of-component-graph),
-/// which produces correct dep-graph edges in CDX `dependencies[]`.
-/// The SPDX 2.3 + SPDX 3 sides have no equivalent fallback and emit
-/// zero `DEPENDS_ON` relationships for maven. Pre-milestone-084 this
-/// was masked because the CDX-side parity extractor at
-/// `mikebom-cli/src/parity/extractors/cdx.rs:253` couldn't resolve
-/// the orphan `<short-name>@0.0.0` ref and skipped the entire dep set
-/// — both sides reported empty edge sets, so SymmetricEqual passed.
-/// Milestone-084's CDX fix exposes the gap. See follow-up issue: TBD.
-const KNOWN_PARITY_GAPS: &[(&str, &str, &str)] = &[(
-    "maven",
-    "B1",
-    "milestone-070 maven reader does not emit main-module → direct-dep \
-     Relationship entries; CDX uses primary-dep fallback, SPDX has none. \
-     Surfaced by milestone-084 CDX orphan-ref fix.",
-)];
+/// Empty after milestone 085 closed the maven `("maven", "B1", _)`
+/// gap by adding a `groupId:artifactId` lookup key for maven entries
+/// in `scan_fs/mod.rs`'s `name_to_purl` map. New gaps may be added
+/// here in the future when a CDX-side fix exposes a pre-existing
+/// SPDX-side parity divergence that needs its own follow-up.
+const KNOWN_PARITY_GAPS: &[(&str, &str, &str)] = &[];
 
 fn assert_holistic_parity(label: &str, scan: &TripleScan) {
     let rows = catalog::parse_mapping_doc(&mapping_doc_path());

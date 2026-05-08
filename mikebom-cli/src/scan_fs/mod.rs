@@ -373,9 +373,27 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
         for e in &db_entries {
             let ecosystem = e.purl.ecosystem().to_string();
             name_to_purl.insert(
-                (ecosystem, normalize_dep_name(e.purl.ecosystem(), &e.name)),
+                (ecosystem.clone(), normalize_dep_name(e.purl.ecosystem(), &e.name)),
                 e.purl.as_str().to_string(),
             );
+            // Milestone 085 — maven main-modules emit `entry.depends`
+            // entries in canonical `groupId:artifactId` form (per
+            // `package_db/maven.rs:3451-3455`), but `e.name` is just
+            // the artifact-id. Insert the disambiguated key so the
+            // edge-emission loop below can resolve maven main-module
+            // deps. Without this, every maven main-module → direct-dep
+            // lookup misses, and SPDX 2.3 + SPDX 3 emit zero
+            // DEPENDS_ON edges for maven (the gap milestone-084's
+            // closure-invariant test surfaced via parity_maven row B1).
+            if ecosystem == "maven" {
+                if let Some(group_id) = e.purl.namespace() {
+                    let gav_key = format!("{}:{}", group_id, e.name);
+                    name_to_purl.insert(
+                        (ecosystem, normalize_dep_name("maven", &gav_key)),
+                        e.purl.as_str().to_string(),
+                    );
+                }
+            }
         }
 
         // Milestone 039: build the apk per-package file-list map

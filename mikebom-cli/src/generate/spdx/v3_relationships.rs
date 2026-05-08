@@ -82,12 +82,28 @@ pub fn build_dependency_relationships(
             creation_info_id,
         );
         // Milestone 052/part-2: native LifecycleScopeType field.
+        // Milestone 085: corrected to use the SPDX 3.0.1
+        // `LifecycleScopedRelationship` element type (a subtype of
+        // `Relationship` per the SPDX 3 schema). The `scope` field
+        // is only valid on `LifecycleScopedRelationship`; pre-085
+        // the code emitted `scope` on a plain `Relationship` which
+        // failed JSON-Schema validation (the
+        // `LifecycleScopedRelationship_props` allOf branch wasn't
+        // selected, so `scope` was an unknown property). Pre-085
+        // this code path was untested by the SPDX 3 conformance
+        // gate (milestone 078) because cargo/gem/etc. fixtures only
+        // emit plain `DependsOn` — never the typed
+        // `Dev/Build/TestDependsOn` variants that would hit this
+        // branch. Maven (milestone 070 + 085) is the first
+        // ecosystem whose fixture has a TestDependsOn edge AND a
+        // SPDX 3 conformance check; surfaced the type-mismatch.
         if let Some(scope) = match rel.relationship_type {
             RelationshipType::DevDependsOn => Some("development"),
             RelationshipType::BuildDependsOn => Some("build"),
             RelationshipType::TestDependsOn => Some("test"),
             RelationshipType::DependsOn => None,
         } {
+            element["type"] = json!("LifecycleScopedRelationship");
             element["scope"] = json!(scope);
         }
         out.push(element);

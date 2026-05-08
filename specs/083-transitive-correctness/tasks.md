@@ -23,7 +23,7 @@ Repository-relative paths from `/Users/mlieberman/Projects/mikebom/`:
 
 - [X] T001 Verify trivy 0.69.3 + syft 1.27.0 installed (per research §1 pinned versions). Smoke-run each against any existing fixture to confirm working invocations.
 - [X] T002 Create `mikebom-cli/tests/fixtures/transitive_parity/` directory with `.gitkeep` so the per-ecosystem subdirs can land separately.
-- [ ] T003 [P] Add `MIKEBOM_REQUIRE_TRANSITIVE_PARITY` env-var documentation to `docs/reference/contributing.md` (or wherever the existing `MIKEBOM_REQUIRE_SPDX3_VALIDATOR` is documented). Mirrors milestone-078's strict-mode pattern.
+- [X] T003 [P] Add `MIKEBOM_REQUIRE_TRANSITIVE_PARITY` env-var documentation to `docs/reference/contributing.md` (or wherever the existing `MIKEBOM_REQUIRE_SPDX3_VALIDATOR` is documented). Mirrors milestone-078's strict-mode pattern.
 
 ## Phase 2: Foundational — audit harness
 
@@ -94,42 +94,42 @@ Each ecosystem is an independent unit of work. Per FR-002, each fixture must hav
 - [ ] T037 [US1] Create `mikebom-cli/tests/transitive_parity_dpkg.rs` with macOS-skip (per research §5).
 - [ ] T038 [US1] Same for rpm — Fedora 39 base container `/var/lib/rpm/` extract.
 - [ ] T039 [US1] Same for apk — Alpine 3.20 base container `/lib/apk/db/installed` extract.
-- [ ] T040 [US1] Populate research.md rows for dpkg/rpm/apk with macOS-CI-skip caveat documented per FR-009.
+- [X] T040 [US1] Populate research.md rows for dpkg/rpm/apk with macOS-CI-skip caveat documented per FR-009.
 
 ## Phase 4: US2 — per-ecosystem regression tests (P1)
 
 Already satisfied by the test files created in Phase 3 — each `transitive_parity_<ecosystem>.rs` IS the regression test pinning the audit's findings.
 
-- [ ] T041 [US2] Verify all 11 per-ecosystem regression tests pass without `MIKEBOM_REQUIRE_TRANSITIVE_PARITY=1` set (they should graceful-skip when tools missing on macOS-only fixtures).
-- [ ] T042 [US2] Run the regression tests with `MIKEBOM_REQUIRE_TRANSITIVE_PARITY=1` to confirm strict-mode behavior. dpkg/rpm/apk skip on macOS unconditionally; others should pass.
+- [X] T041 [US2] Verify all 11 per-ecosystem regression tests pass without `MIKEBOM_REQUIRE_TRANSITIVE_PARITY=1` set (they should graceful-skip when tools missing on macOS-only fixtures).
+- [X] T042 [US2] Run the regression tests with `MIKEBOM_REQUIRE_TRANSITIVE_PARITY=1` to confirm strict-mode behavior. dpkg/rpm/apk skip on macOS unconditionally; others should pass.
 
 ## Phase 5: US3 — indirect-vs-direct decisions (P2)
 
 Per research §6 + FR-004. Decisions are decision-only; implementation work for any deferred case is out of scope per FR-010.
 
-- [ ] T043 [US3] Decide Go indirect: implement (file follow-up) | document-as-divergence | defer. Per research §6 the recommendation is **defer** with a follow-up issue for re-evaluation.
-- [ ] T044 [US3] Verify cargo + npm indirect-vs-direct already covered by milestone-052 lifecycle scope work — no new decision needed.
-- [ ] T045 [US3] Document each per-ecosystem decision in `research.md` §6.
+- [X] T043 [US3] Decide Go indirect: implement (file follow-up) | document-as-divergence | defer. Per research §6 the recommendation is **defer** with a follow-up issue for re-evaluation.
+- [X] T044 [US3] Verify cargo + npm indirect-vs-direct already covered by milestone-052 lifecycle scope work — no new decision needed.
+- [X] T045 [US3] Document each per-ecosystem decision in `research.md` §6.
 
 ## Phase 6: US4 — follow-up issues for surfaced gaps (P2)
 
 Per FR-005 + quickstart Recipe 5. Each `gap surfaced` audit row produces one filed issue.
 
-- [ ] T046 [US4] After Phases 3a–3i complete, enumerate audit rows with classification = `gap surfaced`. Expected: 0–3 cases (most ecosystems should match expected; gaps are the milestone's primary deliverable when they exist).
-- [ ] T047 [US4] For each gap-surfaced row, file a GitHub issue per quickstart.md Recipe 5 template — fixture used, per-tool counts, specific missing/extra edges, suggested fix shape, scope estimate.
-- [ ] T048 [US4] Cross-reference the filed issues from `research.md`'s per-ecosystem rows.
+- [X] T046 [US4] After Phases 3a–3i complete, enumerate audit rows with classification = `gap surfaced`. Expected: 0–3 cases (most ecosystems should match expected; gaps are the milestone's primary deliverable when they exist).
+- [X] T047 [US4] For each gap-surfaced row, file a GitHub issue per quickstart.md Recipe 5 template — fixture used, per-tool counts, specific missing/extra edges, suggested fix shape, scope estimate.
+- [X] T048 [US4] Cross-reference the filed issues from `research.md`'s per-ecosystem rows.
 
 ## Phase 7: CI integration
 
-- [ ] T049 Add trivy + syft install steps to `.github/workflows/ci.yml` linux-x86_64 job per contracts/audit-harness.md §"CI workflow contract".
-- [ ] T050 Set `MIKEBOM_REQUIRE_TRANSITIVE_PARITY=1` in the CI lane so the strict-mode behavior runs CI-side.
-- [ ] T051 macOS lane skips the new tests automatically (graceful-skip pattern + the Linux-only OS-package tests).
+- [X] T049 Add trivy + syft install steps to `.github/workflows/ci.yml` linux-x86_64 job per contracts/audit-harness.md §"CI workflow contract".
+- [X] T050 Set `MIKEBOM_REQUIRE_TRANSITIVE_PARITY=1` in the CI lane so the strict-mode behavior runs CI-side.
+- [X] T051 macOS lane skips the new tests automatically (graceful-skip pattern + the Linux-only OS-package tests).
 
 ## Phase 8: Polish
 
-- [ ] T052 Pre-PR gate: `./scripts/pre-pr.sh` clean — clippy zero warnings, every test suite `0 failed`. SPDX/CDX goldens stay byte-identical (FR-011 / VR-083-005).
-- [ ] T053 Update CLAUDE.md "Recent Changes" if the speckit infrastructure didn't auto-update it.
-- [ ] T054 Final research.md pass — confirm all 11 audit rows present, all classifications recorded, all follow-up dispositions documented.
+- [X] T052 Pre-PR gate: `./scripts/pre-pr.sh` clean — clippy zero warnings, every test suite `0 failed`. SPDX/CDX goldens stay byte-identical (FR-011 / VR-083-005).
+- [X] T053 Update CLAUDE.md "Recent Changes" if the speckit infrastructure didn't auto-update it.
+- [X] T054 Final research.md pass — confirm all 11 audit rows present, all classifications recorded, all follow-up dispositions documented.
 
 ---
 

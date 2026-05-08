@@ -347,10 +347,16 @@ Per-ecosystem audit progress as of milestone-083 in-flight commit. Updated as ea
 | rpm | ⏳ deferred | TBD | TBD | TBD | (Linux CI) |
 | apk | ⏳ deferred | TBD | TBD | TBD | (Linux CI) |
 
-**Headline findings** for follow-up issue filings:
-- **cargo** — 2 gaps: workspace-member version mismatch, `clap_derive` zero outgoing edges
-- **Go** — 1 gap: cache-empty offline mode under-emits (31 edges vs trivy's 142)
-- **Maven** — 1 gap: cache-empty offline mode emits zero transitive edges
-- **npm** — open question: mikebom's 150 edges vs trivy's 94 — needs source-format tiebreaker
-- **pip-poetry** — open question: 62 / 36 / 138 spread — needs `poetry show --tree` tiebreaker
-- **gem** — ✅ tight mikebom/trivy agreement (196 vs 196) — no follow-up needed beyond the regression-test baseline pin
+**Filed follow-up issues** (post-audit):
+- **#172** — cargo: workspace-member version mismatch (clap@4.5.21 → clap_builder@4.5.9)
+- **#173** — cargo: proc-macro crates emit zero outgoing edges (clap_derive case)
+- **#174** — Go: cache-empty offline mode emits direct-only fallback (31 vs trivy's 142)
+- **#175** — Maven: cache-empty offline mode emits zero transitive edges + version-extraction bug
+
+**Open questions deferred to follow-up source-format-tiebreaker work**:
+- **npm** — mikebom's 150 edges vs trivy's 94 — needs `npm ls --all` source-of-truth comparison
+- **pip-poetry** — 62 / 36 / 138 spread — needs `poetry show --tree` source-of-truth comparison
+
+**Tight-agreement ecosystems** (no follow-up needed):
+- **gem** — mikebom 196 vs trivy 196 (one-component-count off-by-one), classification: minor differences
+- **pip-plain** — unanimous zero (matches expected per FR-008)

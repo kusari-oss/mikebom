@@ -104,6 +104,33 @@ jobs:
       - name: Set MIKEBOM_REQUIRE_SPDX3_VALIDATOR
         run: echo "MIKEBOM_REQUIRE_SPDX3_VALIDATOR=1" >> "$GITHUB_ENV"
 
+      # Milestone 083 — install trivy + syft pinned at the audit's
+      # comparison-baseline versions (research §1). These power the
+      # `transitive_parity_*` integration tests that compare mikebom's
+      # per-ecosystem edge emission against trivy + syft as oracle
+      # tools. Linux is the authoritative gate; macOS lane skips
+      # (matches the SPDX 3 conformance pattern + the dpkg/rpm/apk
+      # OS-package fixtures are Linux-only per FR-009).
+      - name: Install trivy
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y wget gnupg
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key \
+            | sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" \
+            | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update -qq
+          sudo apt-get install -y trivy=0.69.3
+          trivy --version
+      - name: Install syft
+        run: |
+          set -euo pipefail
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+            | sh -s -- -b /usr/local/bin v1.27.0
+          syft version
+      - name: Set MIKEBOM_REQUIRE_TRANSITIVE_PARITY
+        run: echo "MIKEBOM_REQUIRE_TRANSITIVE_PARITY=1" >> "$GITHUB_ENV"
+
       # Pin `+stable` explicitly on clippy/test so these never fall through
       # to nightly even if something earlier changes the default.
       #

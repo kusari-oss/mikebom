@@ -68,6 +68,7 @@ These flip behavior in CI but are inappropriate for normal operator use.
 | Var | Accepted values | Purpose |
 |---|---|---|
 | `MIKEBOM_REQUIRE_SPDX3_VALIDATOR` | `1` (strict mode) | When set, the SPDX 3 conformance gate (the JPEWdev `spdx3-validate` integration) is REQUIRED to be present and pass. Without this var, the gate runs when the validator is on `$PATH` and silently skips otherwise. CI lanes that strictly enforce SPDX 3 conformance set this; local-dev workflows leave it unset. |
+| `MIKEBOM_REQUIRE_TRANSITIVE_PARITY` | `1` (strict mode) | When set, the transitive-parity audit suite (`transitive_parity_*` integration tests, milestone 083) REQUIRES trivy 0.69.3 + syft 1.27.0 on `$PATH`. Without this var, tests graceful-skip when the external tools are missing. CI's Linux lane sets this so cross-tool divergence is gated; macOS lane skips entirely (OS-package fixtures are Linux-only per the milestone-083 FR-009). |
 | `MIKEBOM_PREPR_EBPF` | `1` | Local pre-PR opt-in for the eBPF feature gate. When set, `./scripts/pre-pr.sh` adds `--features ebpf-tracing` to clippy and test invocations. Linux only. |
 
 ### Test-side env vars (golden regeneration)

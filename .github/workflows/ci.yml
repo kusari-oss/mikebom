@@ -160,6 +160,47 @@ jobs:
       - name: Tests
         run: cargo +stable test --workspace
 
+      # Milestone 089 — production-deps vuln gate. Re-uses the trivy
+      # 0.69.3 install above. Excludes test fixtures (intentionally
+      # vulnerable) via path-skip. Fails the lane on any HIGH-severity
+      # advisory under target `Cargo.lock` not listed in milestone 089's
+      # known-acceptances.md. See specs/089-bump-sigstore-vulns/.
+      - name: Production-deps vuln gate
+        run: |
+          trivy --quiet fs \
+            --scanners vuln \
+            --skip-dirs tests/fixtures \
+            --skip-dirs mikebom-cli/tests/fixtures \
+            --skip-dirs target \
+            --severity HIGH \
+            --format json \
+            --output /tmp/prod-vulns.json \
+            .
+          # Extract accepted advisory IDs from milestone-089 known-acceptances.md.
+          # Empty file (no residual vulns) is OK.
+          ACC_FILE="specs/089-bump-sigstore-vulns/known-acceptances.md"
+          if [ -f "$ACC_FILE" ]; then
+            grep -oE 'GHSA-[a-z0-9-]+|CVE-[0-9]+-[0-9]+' "$ACC_FILE" | sort -u > /tmp/accepted-ids.txt
+          else
+            : > /tmp/accepted-ids.txt
+          fi
+          # Find HIGH advisories under Cargo.lock NOT on the acceptance list.
+          UNACCEPTED=$(jq -r '
+            [.Results[]?
+             | select(.Target == "Cargo.lock")
+             | .Vulnerabilities[]?
+             | select(.Severity == "HIGH")
+             | .VulnerabilityID
+            ] | unique | .[]
+          ' /tmp/prod-vulns.json | grep -vxF -f /tmp/accepted-ids.txt || true)
+          if [ -n "$UNACCEPTED" ]; then
+            echo "::error::Unaccepted HIGH advisories in production deps:"
+            echo "$UNACCEPTED"
+            echo "::error::Either fix the vulnerable dep, or add a justified entry to $ACC_FILE."
+            exit 1
+          fi
+          echo "✓ no unaccepted HIGH production-deps vulns"
+
   lint-and-test-macos:
     name: Lint + test (macos-latest)
     runs-on: macos-latest

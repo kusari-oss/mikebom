@@ -44,8 +44,8 @@ Repository-relative paths from `/Users/mlieberman/Projects/mikebom/`:
 
 - [X] T005 [US2] Edit `specs/083-transitive-correctness/research.md §8 — Ecosystem: cargo` per quickstart Recipe 3, change 1: strikethrough gap #2's original observation, append the "Closed by milestone 087" annotation block (root-cause one-liner + reference to `transitive_parity_cargo.rs::EXPECTED_REPRESENTATIVE_EDGES` as the lock-down test). Mirrors gap #1's existing closure annotation. Verifies VR-088-005. **Also**: updated the "Tiebreaker resolution" + "Follow-up disposition" lines that referenced gap #2 as open.
 - [X] T006 [US2] Edit `specs/083-transitive-correctness/research.md` "Filed follow-up issues" footer per quickstart Recipe 3, change 2: append `. **Closed by milestone 087.**` to the `#173 — cargo: proc-macro crates emit zero outgoing edges (clap_derive case)` row. Mirrors how #172 is annotated. Verifies VR-088-006.
-- [ ] T007 [US2] Open the PR with `Closes #173` in the body so GitHub auto-closes issue #173 on merge. Verifies VR-088-007. **(deferred to commit step)**
-- [ ] T008 [US2] Post-merge: run `gh issue view 173` and confirm state is `closed`. Optional follow-up: post a closure comment on #173 linking PR #180 (milestone 087 root-cause fix) + this milestone's PR. Verifies VR-088-008. **(deferred to post-merge)**
+- [X] T007 [US2] Open the PR with `Closes #173` in the body so GitHub auto-closes issue #173 on merge. Verifies VR-088-007. **Result**: PR #182 opened with `Closes #173` in body.
+- [X] T008 [US2] Post-merge: run `gh issue view 173` and confirm state is `closed`. Verifies VR-088-008. **Result**: state=CLOSED, closedAt=2026-05-09T12:17:21Z, closedByPullRequestsReferences=#182, stateReason=COMPLETED.
 
 ## Phase 4: Polish
 

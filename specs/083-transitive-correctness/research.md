@@ -175,18 +175,18 @@ The 3 SBOM tools disagree massively (317 / 85 / 721 post-087). Set-theoretic dec
 **Specific gaps surfaced (mikebom-side)**:
 
 1. ~~**Workspace-member version mismatch**: mikebom emits `clap@4.5.21 → clap_builder@4.5.9` instead of `clap@4.5.21 → clap_builder@4.5.21`.~~ **Closed by milestone 087** (issue #172). Root cause: the cargo reader's `package_to_entry` and `workspace_root_deps` builder both stripped the disambiguating version from `dependencies = ["name version"]` lockfile entries, AND the `parse_lockfile` source-None skip dropped workspace members from the component set so the multi-version-same-name lookup couldn't resolve. Fix: preserve the `name version` form in both depends parsers + dual-key insert into `name_to_purl` + emit workspace members as components. See `specs/087-fix-cargo-workspace-version/`.
-2. **clap_derive emits zero outgoing edges**: mikebom emits no DEPENDS_ON entries from `clap_derive`, despite Cargo.lock showing it depends on `proc-macro2`, `quote`, `syn`. Trivy + syft both emit those edges. Suggests the cargo reader skips proc-macro crate dep extraction entirely for procedural-macro-typed Cargo.toml entries. (Issue #173 — open.)
+2. ~~**clap_derive emits zero outgoing edges**: mikebom emits no DEPENDS_ON entries from `clap_derive`, despite Cargo.lock showing it depends on `heck`, `proc-macro2`, `quote`, `syn`.~~ **Closed by milestone 087** (issue #173). Same root cause as gap #1: `parse_lockfile`'s `pkg.source.is_none()` skip dropped workspace MEMBERS from the component set, so `clap_derive@4.5.18` (a workspace-member proc-macro crate) had no PURL to attach outgoing edges to. With the skip removed, mikebom now emits 4 outgoing `DEPENDS_ON` edges from clap_derive (heck, proc-macro2, quote, syn) matching the lockfile + matching trivy + syft. Pinned in `mikebom-cli/tests/transitive_parity_cargo.rs::EXPECTED_REPRESENTATIVE_EDGES` per milestone 088.
 
 **Specific gaps surfaced (cross-tool)**:
 
 3. **syft over-emits 721 edges trivy + mikebom don't see** — likely because syft's cargo classifier walks `Cargo.toml` `[dependencies]` of every package in the source tree (including dev-deps + build-deps), where mikebom + trivy filter to runtime-deps via the lockfile structure. Not a mikebom gap — more an upstream classification difference.
 4. **trivy under-emits relative to mikebom** (85 vs 317) — trivy filters more aggressively than mikebom on cargo. Not a mikebom gap.
 
-**Tiebreaker resolution** (planned for follow-up): re-derive ground truth from `Cargo.lock` by parsing `[[package]] dependencies = [...]` directly via the `toml` crate. Pre-implementation hypothesis: the Cargo.lock direct read will match mikebom's set on the agreement edges + match trivy + syft on the workspace-internal edges (gap #1, now closed) + match trivy + syft on the proc-macro edges (gap #2). Tiebreaker work tracked in follow-up issue.
+**Tiebreaker resolution** (planned for follow-up): re-derive ground truth from `Cargo.lock` by parsing `[[package]] dependencies = [...]` directly via the `toml` crate. Pre-implementation hypothesis: the Cargo.lock direct read will match mikebom's set on the agreement edges + match trivy + syft on the workspace-internal edges (gap #1, now closed) + match trivy + syft on the proc-macro edges (gap #2, now closed). Tiebreaker work tracked in follow-up issue.
 
 **Indirect-vs-direct decision**: **N/A — already covered by milestone-052/part-2 lifecycle scope work** (per research §6). cargo's `[dev-dependencies]` vs `[dependencies]` distinction is mapped to CDX `scope: excluded` and SPDX 2.3 typed `DEV_DEPENDENCY_OF`.
 
-**Follow-up disposition**: gap #1 closed by milestone 087 (issue #172). Gap #2 remains open as issue #173. The audit's regression test (`mikebom-cli/tests/transitive_parity_cargo.rs`) pins mikebom's post-087 317-edge count + 4 representative edges (the new one being `clap → clap_builder`, which encodes the version-disambiguation invariant via PURL-prefix matching); future cargo-reader fixes bump the baseline per quickstart.md Recipe 3.
+**Follow-up disposition**: gap #1 closed by milestone 087 (issue #172); gap #2 closed by milestone 087 as a side-effect of the same skip-removal, with the regression test pin landing in milestone 088 (issue #173). The audit's regression test (`mikebom-cli/tests/transitive_parity_cargo.rs`) pins mikebom's post-087 317-edge count + 8 representative edges (4 milestone-087 baseline + 4 milestone-088 `clap_derive →` proc-macro outgoing edges); future cargo-reader fixes bump the baseline per quickstart.md Recipe 3.
 
 ### Ecosystem: npm
 
@@ -349,7 +349,7 @@ Per-ecosystem audit progress as of milestone-083 in-flight commit. Updated as ea
 
 **Filed follow-up issues** (post-audit):
 - **#172** — cargo: workspace-member version mismatch (clap@4.5.21 → clap_builder@4.5.9). **Closed by milestone 087.**
-- **#173** — cargo: proc-macro crates emit zero outgoing edges (clap_derive case)
+- **#173** — cargo: proc-macro crates emit zero outgoing edges (clap_derive case). **Closed by milestone 087.**
 - **#174** — Go: cache-empty offline mode emits direct-only fallback (31 vs trivy's 142)
 - **#175** — Maven: cache-empty offline mode emits zero transitive edges + version-extraction bug
 

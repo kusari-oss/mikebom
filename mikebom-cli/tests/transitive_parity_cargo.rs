@@ -29,14 +29,19 @@ const EXPECTED_MIKEBOM_EDGE_COUNT: usize = 317;
 /// syft for follow-up triage; this baseline test catches mikebom
 /// regressing AGAINST ITSELF.
 ///
-/// Known divergences (logged for follow-up per FR-005):
-/// - mikebom emits zero outgoing edges from `clap_derive` despite
-///   it having proc-macro deps in the lockfile (issue #173 — open).
-///
 /// Closed by milestone 087:
 /// - The `clap@4.5.21 → clap_builder@4.5.9` wrong-version edge is
 ///   gone. mikebom now correctly emits `→ clap_builder@4.5.21`,
 ///   pinned below as the post-087 invariant.
+///
+/// Closed by milestone 088 (locked-down by milestone 087's fix):
+/// - `clap_derive@4.5.18` (a workspace-member proc-macro crate) emits
+///   its 4 declared outgoing edges (heck, proc-macro2, quote, syn) per
+///   `Cargo.lock`. Pre-087 mikebom emitted ZERO outgoing edges from
+///   `clap_derive` because the workspace-member skip dropped the
+///   source crate from the component set. Pinned below as the
+///   post-088 invariant; future cargo-reader changes that drop
+///   proc-macro outgoing edges fail this test.
 const EXPECTED_REPRESENTATIVE_EDGES: &[(&str, &str)] = &[
     // Confirmed in mikebom output — clap workspace root depends on automod.
     ("pkg:cargo/clap", "pkg:cargo/automod"),
@@ -49,6 +54,16 @@ const EXPECTED_REPRESENTATIVE_EDGES: &[(&str, &str)] = &[
     // PURL-prefix matcher strips `@<version>` so the test still
     // requires both endpoints to be present + correctly emitted.
     ("pkg:cargo/clap", "pkg:cargo/clap_builder"),
+    // Milestone 088 invariant — proc-macro outgoing-edge pin (closes
+    // #173): clap_derive@4.5.18 is a workspace-member proc-macro crate;
+    // its 4 declared deps in Cargo.lock MUST emit as outgoing
+    // DEPENDS_ON edges. Pre-087 mikebom emitted zero edges from
+    // clap_derive because the workspace-member skip removed the
+    // source crate from the component set.
+    ("pkg:cargo/clap_derive", "pkg:cargo/heck"),
+    ("pkg:cargo/clap_derive", "pkg:cargo/proc-macro2"),
+    ("pkg:cargo/clap_derive", "pkg:cargo/quote"),
+    ("pkg:cargo/clap_derive", "pkg:cargo/syn"),
 ];
 
 fn fixture() -> PathBuf {

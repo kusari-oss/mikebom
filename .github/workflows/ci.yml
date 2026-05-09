@@ -65,7 +65,7 @@ jobs:
       # bump cleanly invalidates. See specs/090-split-test-fixtures-repo/
       # contracts/fixture-path-helper.md for the full contract.
       - name: Cache fixture repo
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/mikebom/fixtures
           key: mikebom-fixtures-${{ runner.os }}-${{ hashFiles('tests/fixtures.rev') }}
@@ -231,7 +231,7 @@ jobs:
 
       # Milestone 090 — fixture-repo cache (see Linux lane above).
       - name: Cache fixture repo
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/mikebom/fixtures
           key: mikebom-fixtures-${{ runner.os }}-${{ hashFiles('tests/fixtures.rev') }}
@@ -286,7 +286,7 @@ jobs:
 
       # Milestone 090 — fixture-repo cache (see Linux lane above).
       - name: Cache fixture repo
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/mikebom/fixtures
           key: mikebom-fixtures-${{ runner.os }}-${{ hashFiles('tests/fixtures.rev') }}

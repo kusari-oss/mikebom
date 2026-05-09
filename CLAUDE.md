@@ -1,6 +1,6 @@
 # mikebom Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-05-08
+Auto-generated from all feature plans. Last updated: 2026-05-09
 
 ## Active Technologies
 - Rust stable (user-space only; no eBPF touched in this milestone) (002-python-npm-ecosystem)
@@ -76,6 +76,8 @@ Auto-generated from all feature plans. Last updated: 2026-05-08
 - N/A — purely emission-time identifier resolution. (087-fix-cargo-workspace-version)
 - Rust stable (workspace toolchain inherited from milestones 001–087; no nightly required for this user-space-only test-pinning work). + existing only — no new crates. The regression test (`mikebom-cli/tests/transitive_parity_cargo.rs`) already uses `serde_json` (parsing emitted SBOM JSON), `tracing`, `anyhow`, and the milestone-083 `transitive_parity_common` helper. **No additions to the dependency tree.** (088-cargo-procmacro-edges)
 - N/A — purely test infrastructure. The regression test runs against the milestone-083 audit fixture (`mikebom-cli/tests/fixtures/transitive_parity/cargo/`), which is unchanged. (088-cargo-procmacro-edges)
+- Rust stable (workspace toolchain inherited from milestones 001–088; no nightly required). + bumping `sigstore = "0.10"` → `sigstore = "0.11"` in `mikebom-cli/Cargo.toml:141`. **Dropping** `sigstore-trust-root-rustls-tls` from the feature list (eliminates the `tough` transitive). Existing features kept: `bundle`, `cosign-rustls-tls`, `fulcio-rustls-tls`. No new direct Cargo deps. The transitively-promoted `pem = "3"` and `x509-parser = "0.16"` direct deps may need bumps if sigstore 0.11's openidconnect 4.0 forces newer versions; verified during smoke-test. (089-bump-sigstore-vulns)
+- N/A — pure dep-bump milestone. No state, no persistence. (089-bump-sigstore-vulns)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -138,9 +140,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 089-bump-sigstore-vulns: Added Rust stable (workspace toolchain inherited from milestones 001–088; no nightly required). + bumping `sigstore = "0.10"` → `sigstore = "0.11"` in `mikebom-cli/Cargo.toml:141`. **Dropping** `sigstore-trust-root-rustls-tls` from the feature list (eliminates the `tough` transitive). Existing features kept: `bundle`, `cosign-rustls-tls`, `fulcio-rustls-tls`. No new direct Cargo deps. The transitively-promoted `pem = "3"` and `x509-parser = "0.16"` direct deps may need bumps if sigstore 0.11's openidconnect 4.0 forces newer versions; verified during smoke-test.
 - 088-cargo-procmacro-edges: Added Rust stable (workspace toolchain inherited from milestones 001–087; no nightly required for this user-space-only test-pinning work). + existing only — no new crates. The regression test (`mikebom-cli/tests/transitive_parity_cargo.rs`) already uses `serde_json` (parsing emitted SBOM JSON), `tracing`, `anyhow`, and the milestone-083 `transitive_parity_common` helper. **No additions to the dependency tree.**
 - 087-fix-cargo-workspace-version: Added Rust stable (workspace toolchain inherited from milestones 001–086; no nightly). + existing only — no new crates. The cargo dep-string parsing uses `str::split_whitespace` which we already have. The dual-key insert in `scan_fs/mod.rs` mirrors milestone 085's existing maven pattern.
-- 083-transitive-correctness: Added Rust stable (workspace toolchain inherited from milestones 001–082; no nightly). + Existing only — `serde`/`serde_json` (parsing emitted SBOM JSON), `tracing`, `anyhow`. The audit harness shells out to `trivy` and `syft` as external CLI tools (similar to milestone 078's `spdx3-validate` shell-out pattern). Source-format direct readers use existing per-ecosystem parsers in `mikebom-cli/src/scan_fs/package_db/` for tiebreaker comparisons (we don't re-implement; we re-invoke). For OS package managers, native tools (`dpkg-query`, `rpm`, `apk`) are shelled out. **No new Cargo dependencies.**
 
 
 <!-- MANUAL ADDITIONS START -->

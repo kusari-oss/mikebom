@@ -134,11 +134,14 @@ zip = { version = "0.6", default-features = false, features = ["deflate-miniz"] 
 rpm = { version = "0.22", default-features = false, features = [] }
 
 # Feature 006 — SBOMit compliance: DSSE envelope signing + Fulcio keyless +
-# Rekor transparency log. Pin to 0.10.x because 0.13+ forces aws-lc-rs via
+# Rekor transparency log. Pin to 0.11.x because 0.12+ forces aws-lc-rs via
 # the `cert` feature, violating Constitution Principle I (pure Rust, zero C).
-# rustls-tls variants chosen to match existing reqwest rustls posture. See
-# specs/006-sbomit-suite/research.md R1 for the audit.
-sigstore = { version = "0.10", default-features = false, features = ["sigstore-trust-root-rustls-tls", "cosign-rustls-tls", "fulcio-rustls-tls", "rekor-rustls-tls", "bundle"] }
+# rustls-tls variants chosen to match existing reqwest rustls posture.
+# `sigstore-trust-root-*` features dropped in milestone 089 — mikebom doesn't
+# use sigstore's TUF client, and the feature dragged in the vulnerable
+# `tough` transitive (see specs/089-bump-sigstore-vulns/research.md §2).
+# See specs/006-sbomit-suite/research.md R1 for the original audit.
+sigstore = { version = "0.11", default-features = false, features = ["cosign-rustls-tls", "fulcio-rustls-tls", "rekor-rustls-tls", "bundle"] }
 # Feature 006 — PEM + X.509 parsing for cert SAN + SPKI extraction in
 # `mikebom sbom verify`. Transitive deps of sigstore, promoted to direct
 # for re-use.

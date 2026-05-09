@@ -48,6 +48,17 @@ sigstore = { version = "0.10", default-features = false, features =
 (Exact feature names TBD during implementation; the principle is
 "rustls, no native-tls, no openssl-sys".)
 
+**Update — milestone 089 (2026-05-09)**: the dep was bumped from `0.10`
+to `0.11`, and the `sigstore-trust-root-rustls-tls` feature was dropped
+because mikebom doesn't use sigstore's TUF client (the feature dragged
+in the vulnerable `tough` transitive). The aws-lc-rs version cliff is
+**0.12+**, not 0.13+ as previously documented at
+`mikebom-cli/Cargo.toml:137-138` — corrected in milestone 089. See
+`specs/089-bump-sigstore-vulns/research.md §1` for the corrected feature-
+flag audit, and `specs/089-bump-sigstore-vulns/known-acceptances.md`
+for residual rustls-webpki advisories that await an upstream sigstore
+bump from `rustls-webpki = "0.102"` to `0.103`.
+
 **Alternatives considered**:
 - **Hand-rolled DSSE + ed25519 via `ed25519-dalek`**: would avoid the
   larger `sigstore` dep, but loses Fulcio/Rekor for free. We'd have to

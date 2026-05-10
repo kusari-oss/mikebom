@@ -63,7 +63,25 @@ pub fn build_metadata(
     sbom_type_override: Option<crate::generate::lifecycle_phases::SbomType>,
 ) -> serde_json::Value {
     let version = env!("CARGO_PKG_VERSION");
-    let timestamp = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    // Determinism: honor `MIKEBOM_FIXED_TIMESTAMP` (same env-var
+    // contract as `scan_cmd::scan_created_timestamp`) so two
+    // back-to-back scans inside a test produce byte-identical
+    // metadata.timestamp + annotations[].timestamp values. Without
+    // this, two scans straddling a 1-second boundary produced
+    // differing `bom.annotations[].timestamp` strings (the normalizer
+    // masks `metadata.timestamp` but not per-annotation timestamps).
+    // Pre-existing latent bug from milestone 080 — surfaced as a
+    // Linux-CI flake on milestone 092's PR. An unparseable env value
+    // is treated as unset (defensive belt-and-braces, matching
+    // scan_created_timestamp).
+    let timestamp = {
+        let resolved = std::env::var("MIKEBOM_FIXED_TIMESTAMP")
+            .ok()
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+            .map(|dt| dt.with_timezone(&Utc))
+            .unwrap_or_else(Utc::now);
+        resolved.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    };
 
     // Serialize the enum via serde to reuse the existing kebab-case rename
     // attributes. Dropping quotes so the property value is a bare string.

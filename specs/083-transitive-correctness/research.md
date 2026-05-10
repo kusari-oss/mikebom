@@ -265,13 +265,15 @@ mikebom 62 vs trivy 36 — mikebom emits ~2× more edges. syft emits 138 (after 
 
 **Diff classification**: **gap surfaced** — both mikebom + trivy emit zero edges from a real Maven project's pom.xml on cache-empty CI runs
 
-mikebom + trivy both fail to emit dep edges from `pom.xml` alone when `~/.m2/repository/` is empty — they need the cached parent + dependency POMs to resolve transitive declarations. syft emits 8 edges, possibly via a different parsing strategy. mikebom additionally has the milestone-085 + earlier-discovered Maven-reader bugs (commons-lang3 emits a malformed `version: "64"` when `~/.m2/` IS populated, surfaced in the local-cache-populated audit run earlier).
+mikebom + trivy both fail to emit dep edges from `pom.xml` alone when `~/.m2/repository/` is empty — they need the cached parent + dependency POMs to resolve transitive declarations. syft emits 8 edges, possibly via a different parsing strategy. mikebom additionally had the version-extraction bug (commons-lang3 emitted a malformed `version: "64"` — the parent's version — when `~/.m2/` IS populated, surfaced in the local-cache-populated audit run earlier).
 
 **Specific gap**: mikebom's Maven reader needs (a) inline parent-POM-less transitive resolution OR (b) a deps.dev / Maven Central fallback for cache-empty cases. Currently it emits zero in this fixture.
 
 **Indirect-vs-direct decision**: Maven `<scope>compile/test/provided/runtime</scope>` is mapped to lifecycle-scope work in milestone-052/part-2. No new decision.
 
-**Follow-up disposition**: **gap surfaced** — file follow-up for "Maven reader: cache-empty offline mode emits zero transitive edges (and version-extracted-incorrectly when cache populated)". Regression test pins the 0-edge cache-empty baseline.
+**Follow-up disposition**: **partially closed**.
+- **Closed by milestone 092**: the populated-cache version-extraction bug — pre-092 mikebom emitted `commons-lang3@64` (parent's version) because `parse_pom_xml` discarded the project's own `<version>` whenever project-level `<groupId>` was inherited from `<parent>`. milestone 092 added a `self_version: Option<String>` field that captures `<project>/<version>` independently of `self_coord`; populated-cache scans now correctly emit `commons-lang3@3.14.0`. See specs/092-fix-maven-version-extract/.
+- **Still open** (track 1 of #175): cache-empty zero-edge fallback. A future milestone analogous to milestone-055's Go proxy fetch (Maven Central `.pom` HTTP fetch with semaphore-bounded concurrency) would close it. Regression test at `mikebom-cli/tests/transitive_parity_maven.rs` continues to pin the 0-edge cache-empty baseline pending that work.
 
 ### Ecosystem: pip-plain
 

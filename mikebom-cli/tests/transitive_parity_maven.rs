@@ -1,18 +1,35 @@
 //! Maven transitive-parity regression test — milestone 083.
 //!
 //! Fixture: apache/commons-lang @ rel/commons-lang-3.14.0 (commit
-//! `c8774fa`). Manifest only — commons-lang has no parent POM
-//! resolution needed at this version (it's the top of its own
-//! release lineage).
+//! `c8774fa`). The fixture pom.xml declares a `<parent>` block
+//! (commons-parent@64) and inherits its `<groupId>` from the parent;
+//! the project's own `<version>` is `3.14.0`.
 //!
-//! Audit finding (mikebom-side gap): mikebom emits only 1 dep edge
-//! from this fixture, with a malformed version string
-//! (`commons-lang3@64`). This appears to be a pom.xml reader
-//! extracting the wrong version field — possibly a property
-//! reference that resolves to a build-system value rather than the
-//! library's GAV. Pinning current behavior pending a follow-up
-//! cycle to fix the Maven reader's version resolution. See
-//! research.md §8 for the full per-tool comparison.
+//! ## Closed by milestone 092 (populated-cache version-extraction)
+//!
+//! Pre-092, mikebom's pom.xml parser captured the project-level
+//! `<version>` only when project-level `<groupId>` was ALSO present.
+//! For commons-lang3 (which omits project-level `<groupId>` and
+//! inherits it from `<parent>`), `self_coord` was None and the
+//! project's own version was discarded — `build_maven_main_module_entry`
+//! fell back to the parent's version, emitting
+//! `pkg:maven/org.apache.commons/commons-lang3@64` (parent's
+//! `commons-parent@64`) instead of `@3.14.0`. Milestone 092 added a
+//! `self_version: Option<String>` field to `PomXmlDocument`,
+//! populated independently of `self_coord`, and threaded it through
+//! `build_maven_main_module_entry` + the property-substitution arms.
+//! See specs/092-fix-maven-version-extract/.
+//!
+//! ## Remaining gap (track 1 of #175 — out of scope for milestone 092)
+//!
+//! Even post-092, with `$M2_REPO` empty (the CI baseline), mikebom
+//! emits ZERO transitive dep edges from this fixture. Maven's parent
+//! POM inheritance + property substitution model means a single
+//! isolated `pom.xml` can't self-resolve transitive deps without
+//! cached or fetched parent POMs. trivy 0.69.3 also emits 0 in the
+//! same configuration; syft 1.27.0 emits 8 via DEPENDENCY_OF
+//! reverse-direction. A future milestone analogous to milestone-055's
+//! Go proxy fetch would close this gap.
 
 mod transitive_parity_common;
 
@@ -25,13 +42,12 @@ const FIXTURE_SUBPATH: &str = "maven";
 /// `$M2_REPO` is empty. Mikebom's maven reader needs cached parent
 /// POMs in `$M2_REPO` to resolve transitive dep declarations; with
 /// the cache empty, the reader extracts ZERO transitive edges.
-/// Real-world output on a developer's box with `~/.m2/` populated
-/// will be a small number of edges (1 was observed in the audit run
-/// from a populated cache; the actual count depends on which POMs
-/// happen to be cached). The 0-edge cache-empty count is what CI
-/// sees. Future Maven-reader work that adds parent-POM resolution
-/// without cache hits (or via deps.dev fallback per research §2) will
-/// bump this.
+/// Milestone 092 fixed the **version-extraction** bug for the
+/// populated-cache case (the main-module emission path now correctly
+/// reports `commons-lang3@3.14.0` instead of the parent's `@64`),
+/// but the cache-empty zero-edge gap (track 1 of #175) is unchanged
+/// here and will require a future milestone analogous to
+/// milestone-055's Go proxy fetch.
 const EXPECTED_MIKEBOM_EDGE_COUNT: usize = 0;
 
 fn fixture() -> PathBuf {

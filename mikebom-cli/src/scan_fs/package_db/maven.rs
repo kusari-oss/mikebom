@@ -542,8 +542,20 @@ pub(crate) struct PomXmlDocument {
     /// inherited from `<parent>`). `self_coord` is only populated
     /// when groupId AND artifactId are both present; this field is
     /// populated whenever artifactId is present, so sidecar readers
-    /// can apply parent-inheritance themselves. Feature 007 US1.
+    /// can apply parent-inheritance themselves. Feature 007 US1. See
+    /// also `self_version` for the parallel `<version>` inheritance
+    /// gap (milestone 092).
     pub self_artifact_id: Option<String>,
+    /// Raw `<project>/<version>` element value, even when the POM
+    /// lacks a project-level `<groupId>` (which forces `self_coord =
+    /// None` because `self_coord` requires all three project-level
+    /// GAV components). Populated whenever the parser observed a
+    /// project-level `<version>` element, parallel to
+    /// `self_artifact_id`. Sidecar readers prefer this over
+    /// `parent_coord.2` when emitting main-module entries so the
+    /// project's own version takes precedence over the parent POM's
+    /// version. Milestone 092 / FR-001.
+    pub self_version: Option<String>,
     /// `<project>/<modules>/<module>` element values — relative
     /// subdirectories pointing at child POMs in a multi-module
     /// reactor build. Each `<module>` value is a directory path
@@ -709,6 +721,13 @@ pub(crate) fn parse_pom_xml(bytes: &[u8]) -> PomXmlDocument {
     // need it even when self_coord is None (child POM relying on
     // parent for groupId). Feature 007 US1.
     doc.self_artifact_id = self_a.clone();
+    // Always expose the raw project-level <version> when present, even
+    // when self_coord is None (child POM omitting <groupId> — inherited
+    // from <parent>). Without this, the project's own version is
+    // discarded for any pom with <parent> + omitted project-level
+    // <groupId>, and sidecar readers fall back to parent's version.
+    // Milestone 092 / FR-001.
+    doc.self_version = self_v.clone();
     if let (Some(g), Some(a), Some(v)) = (parent_g, parent_a, parent_v) {
         doc.parent_coord = Some((g, a, v));
     }
@@ -735,7 +754,21 @@ pub(crate) fn resolve_maven_property(
         let close_abs = open + close;
         let key = &result[open + 2..close_abs];
         let replacement = match key {
-            "project.version" => doc.self_coord.as_ref().map(|(_, _, v)| v.clone()),
+            // Milestone 092: fall back to `self_version` when
+            // `self_coord` is None (project-level <groupId> omitted,
+            // inherited from <parent>). Skip self_version if it's a
+            // placeholder (would be circular for a pom with
+            // `<version>${project.version}</version>`). See research.md §1.
+            "project.version" => doc
+                .self_coord
+                .as_ref()
+                .map(|(_, _, v)| v.clone())
+                .or_else(|| {
+                    doc.self_version
+                        .as_ref()
+                        .filter(|v| !v.contains("${"))
+                        .cloned()
+                }),
             "project.groupId" => doc.self_coord.as_ref().map(|(g, _, _)| g.clone()),
             "project.artifactId" => doc.self_coord.as_ref().map(|(_, a, _)| a.clone()),
             other => doc.properties.get(other).cloned(),
@@ -3348,10 +3381,24 @@ fn resolve_pom_property_value(
                 .as_ref()
                 .map(|c| c.1.clone())
                 .or_else(|| self_doc.self_artifact_id.clone()),
+            // Milestone 092: prefer self_version when it's a literal,
+            // skip it when it's a placeholder (e.g., child POM with
+            // `<version>${project.version}</version>` — using
+            // self_version would be circular). Fall through to
+            // parent_coord.2 (Maven's documented inheritance: a child
+            // that declares `<version>${project.version}</version>`
+            // resolves to the parent's version).
             "project.version" => self_doc
                 .self_coord
                 .as_ref()
                 .map(|c| c.2.clone())
+                .or_else(|| {
+                    self_doc
+                        .self_version
+                        .as_ref()
+                        .filter(|v| !v.contains("${"))
+                        .cloned()
+                })
                 .or_else(|| {
                     self_doc.parent_coord.as_ref().map(|c| c.2.clone())
                 }),
@@ -3409,10 +3456,18 @@ fn build_maven_main_module_entry(
         .as_ref()
         .map(|c| c.1.clone())
         .or_else(|| doc.self_artifact_id.clone())?;
+    // Milestone 092 / FR-001: prefer the project's own <version>
+    // (captured via `self_version` independent of self_coord) over
+    // the parent's version. Without this, a pom that omits
+    // project-level <groupId> but declares its own <version> would
+    // have `self_coord = None` and fall through to `parent_coord.2`
+    // — emitting the parent's version as the project's version.
+    // See specs/092-fix-maven-version-extract/research.md §1.
     let raw_version = doc
         .self_coord
         .as_ref()
         .map(|c| c.2.clone())
+        .or_else(|| doc.self_version.clone())
         .or_else(|| doc.parent_coord.as_ref().map(|c| c.2.clone()))?;
     let mut warned_unresolved = false;
     let mut resolve = |raw: &str| -> String {
@@ -3672,6 +3727,92 @@ mod tests {
                 "1.2.3".to_string(),
             ))
         );
+    }
+
+    /// Milestone 092 / FR-001: project's own `<version>` MUST be
+    /// captured even when project-level `<groupId>` is omitted (the
+    /// commons-lang3 / typical-Apache-project shape, where the child
+    /// inherits groupId from `<parent>`). Pre-092, `self_v` was
+    /// captured locally but discarded by the constructor at line 703
+    /// (which gates on BOTH self_g + self_a being present); the new
+    /// `self_version` field exposes it independently of `self_coord`.
+    #[test]
+    fn parse_pom_xml_extracts_self_version_when_groupid_inherited() {
+        // Commons-lang3 shape — exact bug-trigger fixture.
+        let pom = r#"<?xml version="1.0" encoding="UTF-8"?>
+<project>
+  <parent>
+    <groupId>org.apache.commons</groupId>
+    <artifactId>commons-parent</artifactId>
+    <version>64</version>
+  </parent>
+  <modelVersion>4.0.0</modelVersion>
+  <artifactId>commons-lang3</artifactId>
+  <version>3.14.0</version>
+</project>"#;
+        let doc = parse_pom_xml(pom.as_bytes());
+        // self_coord remains None because project-level <groupId> is
+        // absent (constructor at line 703 requires both g and a).
+        assert_eq!(doc.self_coord, None);
+        assert_eq!(
+            doc.self_artifact_id,
+            Some("commons-lang3".to_string())
+        );
+        // The new field — captures the project's own version even
+        // though self_coord is None. THIS is the milestone-092 fix.
+        assert_eq!(doc.self_version, Some("3.14.0".to_string()));
+        assert_eq!(
+            doc.parent_coord,
+            Some((
+                "org.apache.commons".to_string(),
+                "commons-parent".to_string(),
+                "64".to_string(),
+            ))
+        );
+    }
+
+    /// Milestone 092: when project-level `<version>` is absent (full
+    /// inheritance — child relies on parent's version), `self_version`
+    /// stays None so `build_maven_main_module_entry` falls through to
+    /// `parent_coord.2` per FR-002.
+    #[test]
+    fn parse_pom_xml_self_version_is_none_when_project_version_absent() {
+        let pom = r#"<?xml version="1.0" encoding="UTF-8"?>
+<project>
+  <parent>
+    <groupId>com.example</groupId>
+    <artifactId>parent</artifactId>
+    <version>1.0</version>
+  </parent>
+  <artifactId>child</artifactId>
+</project>"#;
+        let doc = parse_pom_xml(pom.as_bytes());
+        assert_eq!(doc.self_coord, None);
+        assert_eq!(doc.self_version, None);
+        assert_eq!(doc.self_artifact_id, Some("child".to_string()));
+        assert_eq!(
+            doc.parent_coord,
+            Some(("com.example".to_string(), "parent".to_string(), "1.0".to_string()))
+        );
+    }
+
+    /// Milestone 092: fully-populated project-level GAV continues to
+    /// populate self_coord AND self_version (additive — no behavior
+    /// change for the pre-092 happy path).
+    #[test]
+    fn parse_pom_xml_self_version_populated_alongside_self_coord() {
+        let pom = r#"<?xml version="1.0" encoding="UTF-8"?>
+<project>
+  <groupId>com.example</groupId>
+  <artifactId>app</artifactId>
+  <version>1.2.3</version>
+</project>"#;
+        let doc = parse_pom_xml(pom.as_bytes());
+        assert_eq!(
+            doc.self_coord,
+            Some(("com.example".to_string(), "app".to_string(), "1.2.3".to_string()))
+        );
+        assert_eq!(doc.self_version, Some("1.2.3".to_string()));
     }
 
     #[test]

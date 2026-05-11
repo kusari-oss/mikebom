@@ -247,6 +247,7 @@ fn median_of_5(image: &std::path::Path, formats: &str) -> Duration {
 }
 
 #[test]
+#[ignore = "wall-clock perf test — opt in via `cargo test -- --ignored`, runs in dedicated .github/workflows/perf.yml lane"]
 fn dual_format_is_at_least_30_percent_faster_than_two_sequential_scans() {
     // Allow reviewers to point the benchmark at a real image
     // (`debian:12-slim.tar` is the spec's named fixture) by setting

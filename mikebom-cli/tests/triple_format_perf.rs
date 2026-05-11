@@ -197,6 +197,7 @@ fn median_of_5(image: &std::path::Path, formats: &str) -> Duration {
 }
 
 #[test]
+#[ignore = "wall-clock perf test — opt in via `cargo test -- --ignored`, runs in dedicated .github/workflows/perf.yml lane"]
 fn triple_format_is_at_least_25_percent_faster_than_three_sequential_scans() {
     let (_fixture_guard, image) = if let Ok(p) = std::env::var("MIKEBOM_PERF_IMAGE") {
         let p = PathBuf::from(p);

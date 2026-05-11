@@ -1,0 +1,69 @@
+name: Bug report
+description: Report a bug or unexpected behavior in mikebom
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report! Please fill
+        in the fields below so we can reproduce and triage quickly.
+
+        If you've found a **security vulnerability**, please STOP and
+        report it through GitHub Security Advisories instead — see
+        [SECURITY.md](https://github.com/kusari-sandbox/mikebom/blob/main/SECURITY.md).
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Operating system
+      description: Where did you see the bug?
+      options:
+        - linux-x86_64
+        - linux-aarch64
+        - macOS aarch64 (Apple Silicon)
+        - macOS x86_64 (Intel)
+        - Windows
+        - Other (specify in "Additional context")
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: mikebom version
+      description: Output of `mikebom --version`
+      placeholder: e.g., mikebom 0.1.0-alpha.30
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Command + output
+      description: Paste the exact command you ran and the full output (stdout + stderr).
+      placeholder: |
+        $ mikebom sbom scan --path ./my-project --format spdx-2.3-json
+        ...
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual
+      description: What did you expect to happen? What actually happened?
+      placeholder: |
+        Expected: ...
+        Actual: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else? Screenshots, fixture pom.xml/Cargo.lock, related issues, environment details.
+    validations:
+      required: false

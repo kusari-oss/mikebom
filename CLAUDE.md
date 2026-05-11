@@ -84,6 +84,7 @@ Auto-generated from all feature plans. Last updated: 2026-05-10
 - N/A — purely in-process per-scan resolution. Mirrors milestones 002–055. (091-go-sum-transitive-fallback)
 - Rust stable (workspace toolchain inherited from milestones 001–091; no nightly required for this user-space-only bug fix). + existing only — `quick-xml = "0.31"` (already used by `parse_pom_xml`), `serde`/`serde_json`, `tracing`, `anyhow`. **No new crates.** (092-fix-maven-version-extract)
 - N/A — pure metadata transform on the maven main-module emission code path; no caches, no persistence. (092-fix-maven-version-extract)
+- N/A — this milestone touches Markdown + (potentially) Cargo.toml metadata only. + None new. The existing `release.yml` artifact-naming convention is the only behavioral input that informs the cargo-binstall integration choice. (093-repo-polish-quickwins)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -146,9 +147,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 093-repo-polish-quickwins: Added N/A — this milestone touches Markdown + (potentially) Cargo.toml metadata only. + None new. The existing `release.yml` artifact-naming convention is the only behavioral input that informs the cargo-binstall integration choice.
 - 092-fix-maven-version-extract: Added Rust stable (workspace toolchain inherited from milestones 001–091; no nightly required for this user-space-only bug fix). + existing only — `quick-xml = "0.31"` (already used by `parse_pom_xml`), `serde`/`serde_json`, `tracing`, `anyhow`. **No new crates.**
 - 091-go-sum-transitive-fallback: Added Rust stable (workspace toolchain inherited from milestones 001–090; no nightly required for this user-space-only Go-reader extension). + existing only — `parse_go_sum` at `legacy.rs:353`, `WorkspaceContext.go_sum_modules` at `graph_resolver.rs`, `ResolutionStep` enum at `graph_resolver.rs:64`. **No new Cargo dependencies.**
-- 090-split-test-fixtures-repo: Added Rust stable (workspace toolchain inherited from milestones 001–089; no nightly required for this user-space-only test-infra refactor). + ONE new direct dep on `mikebom-cli` — `git2 = "0.19"` for pure-Rust Git clone in `build.rs`. Alternative: shell out to `git` via `std::process::Command` (mikebom already does this in golang reader + cargo reader). **Decision**: shell out to `git` — same pattern as existing readers (Constitution-friendly: zero new transitive crates, no `git2`'s `libgit2-sys` C dependency). The `git` binary is already a hard prereq for any mikebom dev setup.
 
 
 <!-- MANUAL ADDITIONS START -->

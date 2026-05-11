@@ -1657,5 +1657,5 @@ per-release breakdown.
 
 ---
 
-[Unreleased]: https://github.com/mlieberman85/mikebom/compare/v0.1.0-alpha.3...HEAD
-[0.1.0-alpha.3]: https://github.com/mlieberman85/mikebom/releases/tag/v0.1.0-alpha.3
+[Unreleased]: https://github.com/kusari-sandbox/mikebom/compare/v0.1.0-alpha.3...HEAD
+[0.1.0-alpha.3]: https://github.com/kusari-sandbox/mikebom/releases/tag/v0.1.0-alpha.3

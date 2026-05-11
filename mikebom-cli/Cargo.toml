@@ -202,3 +202,13 @@ wiremock = "0.6"
 aya = { version = "0.13", optional = true }
 aya-log = { version = "0.2", optional = true }
 libc = { version = "0.2", optional = true }
+
+# Milestone 093: cargo-binstall auto-discovery metadata. Locks the
+# pkg-url template to mikebom's existing release-tarball naming
+# (`mikebom-vX.Y.Z-<rust-triple>.tar.gz`) so `cargo binstall mikebom`
+# resolves the binary deterministically regardless of future
+# binstall-default changes. cargo treats unknown package.metadata.*
+# keys as opaque pass-through; this block cannot break the build.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-{ target }{ archive-suffix }"
+pkg-fmt = "tgz"

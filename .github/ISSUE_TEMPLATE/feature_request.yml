@@ -1,0 +1,47 @@
+name: Feature request
+description: Suggest a new feature or improvement for mikebom
+title: "[FEATURE] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion! For non-trivial features please open
+        an issue here first so we can align on direction before code is
+        written. mikebom uses the speckit lifecycle for feature work —
+        see [CONTRIBUTING.md](https://github.com/kusari-sandbox/mikebom/blob/main/CONTRIBUTING.md).
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: What are you trying to accomplish? Why is the current behavior insufficient?
+      placeholder: |
+        I want to scan ... so I can ...
+        Today mikebom does ... which doesn't ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How would you like mikebom to handle this? A new flag, a new subcommand, a new ecosystem reader, a new output field?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else have you tried or considered? Existing workarounds, other SBOM tools' approaches.
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links to related issues, upstream spec references, prior art.
+    validations:
+      required: false

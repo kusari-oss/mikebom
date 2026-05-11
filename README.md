@@ -232,10 +232,25 @@ sudo install -m 0755 mikebom /usr/local/bin/mikebom
 mikebom --version
 ```
 
-Or build from source:
+### Via cargo binstall (Rust toolchain users)
+
+If you already have [`cargo binstall`](https://github.com/cargo-bins/cargo-binstall)
+installed, you can skip the `gh release download` dance:
 
 ```bash
-git clone https://github.com/mlieberman85/mikebom.git
+cargo binstall --git https://github.com/kusari-sandbox/mikebom mikebom
+```
+
+`mikebom-cli`'s [`[package.metadata.binstall]`](mikebom-cli/Cargo.toml)
+block pins the URL template to the existing release-tarball naming so
+discovery is deterministic. Once mikebom is published to crates.io
+(planned for a future milestone), bare `cargo binstall mikebom` will
+work without the `--git` flag.
+
+### Or build from source
+
+```bash
+git clone https://github.com/kusari-sandbox/mikebom.git
 cd mikebom
 cargo build --release
 # binary: ./target/release/mikebom
@@ -638,7 +653,7 @@ tests/fixtures/   Real + synthetic fixtures consumed by integration tests
 ## Reporting issues and contributing
 
 Open an issue or PR at
-[github.com/mlieberman85/mikebom](https://github.com/mlieberman85/mikebom).
+[github.com/kusari-sandbox/mikebom](https://github.com/kusari-sandbox/mikebom).
 CI enforces `cargo +stable clippy --workspace --all-targets` and
 `cargo +stable test --workspace` on every PR; run both locally before
 opening one.

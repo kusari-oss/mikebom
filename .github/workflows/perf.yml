@@ -1,0 +1,62 @@
+name: Performance benchmarks
+
+# Wall-clock perf tests (triple_format_perf.rs, dual_format_perf.rs) are
+# marked #[ignore] in the default lane to avoid blocking PRs on
+# shared-CI-runner timing noise. This workflow runs them on demand
+# (perf label or workflow_dispatch) and on a daily schedule against
+# main. 3-attempt retry per test absorbs runner-noise spikes.
+#
+# NOT required for PR merge. Default-lane structural-correctness
+# coverage lives in mikebom-cli/tests/triple_format_structural.rs.
+#
+# See specs/094-deflake-perf-tests/ for the full rationale.
+
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * *'  # 06:00 UTC daily — off-peak for both NA and EU
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  perf:
+    name: Wall-clock perf benchmarks
+    # Gate the pull_request trigger to fire only on the `perf` label.
+    # workflow_dispatch + schedule always pass this check.
+    if: github.event_name != 'pull_request' || github.event.label.name == 'perf'
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable (2026-04-25)
+
+      - name: Cache cargo + build
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          key: perf-${{ matrix.runner }}
+
+      - name: Run triple_format_perf (with retry)
+        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3.0.2
+        with:
+          max_attempts: 3
+          timeout_minutes: 5
+          command: cargo +stable test --workspace -- --ignored --test-threads=1 triple_format_is_at_least_25_percent_faster_than_three_sequential_scans
+
+      - name: Run dual_format_perf (with retry)
+        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3.0.2
+        with:
+          max_attempts: 3
+          timeout_minutes: 5
+          command: cargo +stable test --workspace -- --ignored --test-threads=1 dual_format_is_at_least_30_percent_faster_than_two_sequential_scans

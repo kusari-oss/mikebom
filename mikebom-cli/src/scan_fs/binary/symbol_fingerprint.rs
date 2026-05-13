@@ -34,9 +34,30 @@ struct SymbolFingerprint {
     required: usize,
 }
 
-/// v1 starter set per research §3. Each library lists ≥10 public-API
+/// Symbol-fingerprint starter set. Milestone 096 shipped 3 libraries
+/// (openssl, zlib, libcurl); milestone 099 expanded to 7 by adding
+/// sqlite, pcre, pcre2, gnutls. Each library lists ≥10 public-API
 /// symbols; a match fires when ≥80% are present in the binary's
 /// `.dynsym` table.
+///
+/// Documented omissions per milestone-099 spec §1 + FR-004. These
+/// libraries are intentionally NOT in the fingerprint table; future
+/// maintainers should consult the per-library rationale before adding
+/// them:
+///
+///   - boringssl: drop-in OpenSSL ABI replacement; symbol overlap with
+///     openssl prevents reliable disambiguation at the symbol level.
+///     Operators wanting fork identification rely on the version-string
+///     scanner's `BoringSSL ` anchor (milestone 026).
+///   - libressl: same reasoning — OpenBSD's OpenSSL fork shares ABI.
+///     Version-string scanner's `LibreSSL ` anchor handles disambiguation.
+///   - llvm: API surface too broad (hundreds of public-API entry points
+///     across libLLVMCore / libLLVMAnalysis / ...); no stable 10-symbol
+///     slice. Different mikebom releases would pick different slices.
+///     Defer until a versioned compiler-libs strategy emerges.
+///   - openjdk: the launcher binary doesn't statically link JDK APIs
+///     (those live in libjvm.so loaded via JNI). Symbol fingerprinting
+///     at the launcher level yields no signal. Defer indefinitely.
 const FINGERPRINTS: &[SymbolFingerprint] = &[
     SymbolFingerprint {
         library: "openssl",
@@ -83,6 +104,82 @@ const FINGERPRINTS: &[SymbolFingerprint] = &[
             "curl_global_init",
             "curl_version",
             "curl_slist_append",
+        ],
+        required: 8,
+    },
+    // Milestone 099 — SQLite. `sqlite3_*` prefix → near-zero collision
+    // risk; most-statically-linked C library in CLI tooling. API stable
+    // since SQLite 3.0 (2004).
+    SymbolFingerprint {
+        library: "sqlite",
+        symbols: &[
+            "sqlite3_open",
+            "sqlite3_close",
+            "sqlite3_exec",
+            "sqlite3_prepare_v2",
+            "sqlite3_step",
+            "sqlite3_finalize",
+            "sqlite3_bind_int",
+            "sqlite3_column_text",
+            "sqlite3_errmsg",
+            "sqlite3_libversion",
+        ],
+        required: 8,
+    },
+    // Milestone 099 — PCRE 8.x. `pcre_*` prefix (distinct from `pcre2_*`).
+    // API frozen as of PCRE 8.45 (final 8.x release, 2021).
+    SymbolFingerprint {
+        library: "pcre",
+        symbols: &[
+            "pcre_compile",
+            "pcre_exec",
+            "pcre_free",
+            "pcre_study",
+            "pcre_get_substring",
+            "pcre_version",
+            "pcre_fullinfo",
+            "pcre_compile2",
+            "pcre_dfa_exec",
+            "pcre_jit_exec",
+        ],
+        required: 8,
+    },
+    // Milestone 099 — PCRE 10.x. 8-bit width variant only (`pcre2_*_8`
+    // — `libpcre2-8`); 16-bit / 32-bit variants deferred per
+    // research §3 (separate `libpcre2-{16,32}` artifacts; same NVD CPE
+    // `pcre:pcre2`).
+    SymbolFingerprint {
+        library: "pcre2",
+        symbols: &[
+            "pcre2_compile_8",
+            "pcre2_match_8",
+            "pcre2_match_data_create_8",
+            "pcre2_substring_get_byname_8",
+            "pcre2_substring_get_bynumber_8",
+            "pcre2_get_ovector_pointer_8",
+            "pcre2_code_free_8",
+            "pcre2_match_data_free_8",
+            "pcre2_compile_context_create_8",
+            "pcre2_set_compile_extra_options_8",
+        ],
+        required: 8,
+    },
+    // Milestone 099 — GnuTLS. `gnutls_*` prefix; Mozilla NSS / OpenSSL
+    // alternative common on Debian-derived distros. API stable since
+    // GnuTLS 3.0 (2011).
+    SymbolFingerprint {
+        library: "gnutls",
+        symbols: &[
+            "gnutls_init",
+            "gnutls_deinit",
+            "gnutls_handshake",
+            "gnutls_record_send",
+            "gnutls_record_recv",
+            "gnutls_global_init",
+            "gnutls_global_deinit",
+            "gnutls_set_default_priority",
+            "gnutls_credentials_set",
+            "gnutls_session_set_ptr",
         ],
         required: 8,
     },
@@ -294,5 +391,120 @@ mod tests {
         // 8 distinct zlib symbols → matches.
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].matched_count, 8);
+    }
+
+    // ====================================================================
+    // Milestone 099 — symbol-fingerprint expansion
+    // (sqlite, pcre, pcre2, gnutls)
+    // ====================================================================
+
+    /// T006 — SQLite full set matches (FR-001 / SC-001 / Contract 1).
+    /// Distinctive `sqlite3_*` prefix; all 10 symbols → one match.
+    #[test]
+    fn sqlite_full_set_matches() {
+        let s = syms(&[
+            "sqlite3_open",
+            "sqlite3_close",
+            "sqlite3_exec",
+            "sqlite3_prepare_v2",
+            "sqlite3_step",
+            "sqlite3_finalize",
+            "sqlite3_bind_int",
+            "sqlite3_column_text",
+            "sqlite3_errmsg",
+            "sqlite3_libversion",
+        ]);
+        let hits = scan(&s);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].library, "sqlite");
+        assert_eq!(hits[0].matched_count, 10);
+        assert_eq!(hits[0].total_count, 10);
+    }
+
+    /// T007 — SQLite under-threshold guard (FR-007 / Contract 2).
+    /// Only 7 of 10 symbols → under the 8/10 threshold → no match.
+    /// The threshold logic is shared across all libraries, so this one
+    /// test guards the threshold gate for all 7 fingerprints uniformly.
+    #[test]
+    fn sqlite_seven_of_ten_below_threshold() {
+        let s = syms(&[
+            "sqlite3_open",
+            "sqlite3_close",
+            "sqlite3_exec",
+            "sqlite3_prepare_v2",
+            "sqlite3_step",
+            "sqlite3_finalize",
+            "sqlite3_bind_int",
+        ]);
+        assert!(scan(&s).is_empty());
+    }
+
+    /// T010 — PCRE 8.x full set matches (FR-001 / SC-002 / Contract 3).
+    /// `pcre_*` prefix; the test asserts the matched library is `pcre`
+    /// (NOT `pcre2`) — the `hits.len() == 1` + library-name check
+    /// jointly verify the 8.x / 10.x disambiguation per Contract 3.
+    #[test]
+    fn pcre_full_set_matches() {
+        let s = syms(&[
+            "pcre_compile",
+            "pcre_exec",
+            "pcre_free",
+            "pcre_study",
+            "pcre_get_substring",
+            "pcre_version",
+            "pcre_fullinfo",
+            "pcre_compile2",
+            "pcre_dfa_exec",
+            "pcre_jit_exec",
+        ]);
+        let hits = scan(&s);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].library, "pcre");
+        assert_eq!(hits[0].matched_count, 10);
+    }
+
+    /// T011 — PCRE 10.x (8-bit width) full set matches.
+    /// `pcre2_*_8` prefix; asserts the matched library is `pcre2`
+    /// (NOT `pcre`) — same disambiguation guarantee as T010.
+    #[test]
+    fn pcre2_full_set_matches() {
+        let s = syms(&[
+            "pcre2_compile_8",
+            "pcre2_match_8",
+            "pcre2_match_data_create_8",
+            "pcre2_substring_get_byname_8",
+            "pcre2_substring_get_bynumber_8",
+            "pcre2_get_ovector_pointer_8",
+            "pcre2_code_free_8",
+            "pcre2_match_data_free_8",
+            "pcre2_compile_context_create_8",
+            "pcre2_set_compile_extra_options_8",
+        ]);
+        let hits = scan(&s);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].library, "pcre2");
+        assert_eq!(hits[0].matched_count, 10);
+    }
+
+    /// T014 — GnuTLS full set matches (FR-001 / SC-003).
+    /// `gnutls_*` prefix.
+    #[test]
+    fn gnutls_full_set_matches() {
+        let s = syms(&[
+            "gnutls_init",
+            "gnutls_deinit",
+            "gnutls_handshake",
+            "gnutls_record_send",
+            "gnutls_record_recv",
+            "gnutls_global_init",
+            "gnutls_global_deinit",
+            "gnutls_set_default_priority",
+            "gnutls_credentials_set",
+            "gnutls_session_set_ptr",
+        ]);
+        let hits = scan(&s);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].library, "gnutls");
+        assert_eq!(hits[0].matched_count, 10);
     }
 }

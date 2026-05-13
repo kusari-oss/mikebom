@@ -176,7 +176,19 @@ fn mikebom_itself_does_not_emit_spurious_symbol_fingerprints() {
             // the version-string spurious-match test.
             matches!(
                 purl,
-                "pkg:generic/openssl" | "pkg:generic/zlib" | "pkg:generic/libcurl"
+                // Milestone-096 v1 fingerprints.
+                "pkg:generic/openssl"
+                    | "pkg:generic/zlib"
+                    | "pkg:generic/libcurl"
+                    // Milestone-099 v2 fingerprint expansion. Mikebom
+                    // uses rustls + Rust's own regex crate (NOT linking
+                    // any of these libraries) so the assertion still
+                    // holds — a regression here would mean mikebom
+                    // now actually depends on the matched library.
+                    | "pkg:generic/sqlite"
+                    | "pkg:generic/pcre"
+                    | "pkg:generic/pcre2"
+                    | "pkg:generic/gnutls"
             )
         })
         .collect();

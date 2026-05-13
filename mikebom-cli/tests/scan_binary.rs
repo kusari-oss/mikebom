@@ -213,6 +213,12 @@ fn scan_non_binary_files_skipped() {
 /// - `/var/lib/dpkg/info/<pkg>.list` with one file entry (absolute path)
 ///
 /// The caller is responsible for writing the binary at the claimed path.
+///
+/// Milestone 100: `#[cfg(unix)]` because all callers are
+/// `#[cfg(unix)]`-gated tests (dpkg-fed Debian-rootfs scenarios);
+/// on Windows the helper would be `dead_code` and trip the
+/// `-D warnings` clippy gate.
+#[cfg(unix)]
 fn setup_debian_rootfs(
     dir: &Path,
     pkg_name: &str,
@@ -247,6 +253,10 @@ fn setup_debian_rootfs(
 /// whose basename matches `needle`. This is the specific signature of a
 /// file-level binary component from the binary walker (as opposed to
 /// linkage-evidence pkg:generic/<soname> components).
+///
+/// Milestone 100: `#[cfg(unix)]` — same reason as `setup_debian_rootfs`
+/// above; all callers are `#[cfg(unix)]`-gated.
+#[cfg(unix)]
 fn count_file_level_for(sbom: &Value, needle: &str) -> usize {
     sbom["components"]
         .as_array()

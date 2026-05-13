@@ -272,8 +272,10 @@ jobs:
 
       - name: Package zip
         shell: pwsh
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          $stage = "mikebom-${{ github.ref_name }}-$env:TARGET"
+          $stage = "mikebom-$env:REF_NAME-$env:TARGET"
           New-Item -ItemType Directory -Path $stage | Out-Null
           Copy-Item "target/$env:TARGET/release/mikebom.exe" "$stage/mikebom.exe"
           Copy-Item README.md "$stage/README.md"

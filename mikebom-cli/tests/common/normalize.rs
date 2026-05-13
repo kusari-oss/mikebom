@@ -125,7 +125,7 @@ pub const WORKSPACE_PLACEHOLDER: &str = "<WORKSPACE>";
 /// `\\?\C:\...` form which milestone 100 then forward-slashes to
 /// `//?/C:/...`. We strip that prefix here so the replace target
 /// matches the emitted strings.
-fn cross_host_align(raw: &str, workspace: &Path) -> (String, String, String) {
+pub fn cross_host_align(raw: &str, workspace: &Path) -> (String, String, String) {
     let ws_str = workspace.to_string_lossy().to_string();
     let fixtures_cache: String = env!("MIKEBOM_FIXTURES_DIR").into();
     if cfg!(windows) {

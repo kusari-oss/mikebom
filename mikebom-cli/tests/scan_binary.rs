@@ -57,8 +57,14 @@ fn find_file_level(sbom: &Value) -> Option<&Value> {
 
 fn find_system_binary() -> Option<PathBuf> {
     // On macOS: /bin/ls is a fat Mach-O (CAFEBABE). On Linux:
-    // /bin/ls is ELF. Both work with our reader.
-    for candidate in ["/bin/ls", "/usr/bin/ls"] {
+    // /bin/ls is ELF. On Windows: cmd.exe / notepad.exe are PE.
+    // All three work with our reader (milestone 100).
+    for candidate in [
+        "/bin/ls",
+        "/usr/bin/ls",
+        r"C:\Windows\System32\cmd.exe",
+        r"C:\Windows\System32\notepad.exe",
+    ] {
         let p = PathBuf::from(candidate);
         if p.is_file() {
             return Some(p);

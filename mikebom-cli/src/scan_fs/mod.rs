@@ -16,6 +16,7 @@ pub mod docker_image;
 pub mod oci_pull;
 pub mod os_release;
 pub mod package_db;
+pub mod sbom_path;
 pub mod walker;
 
 use std::path::Path;
@@ -168,7 +169,9 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
                 technique: ResolutionTechnique::FilePathPattern,
                 confidence: FILE_PATH_CONFIDENCE,
                 source_connection_ids: vec![],
-                source_file_paths: vec![path_string],
+                source_file_paths: vec![crate::scan_fs::sbom_path::normalize_sbom_path_str(
+                    &path_string,
+                )],
                 deps_dev_match: None,
             },
             licenses: vec![],
@@ -539,7 +542,9 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
                     technique: ResolutionTechnique::PackageDatabase,
                     confidence: PACKAGE_DB_CONFIDENCE,
                     source_connection_ids: vec![],
-                    source_file_paths: vec![entry.source_path.clone()],
+                    source_file_paths: vec![crate::scan_fs::sbom_path::normalize_sbom_path_str(
+                        &entry.source_path,
+                    )],
                     deps_dev_match: None,
                 },
                 licenses,

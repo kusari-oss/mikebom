@@ -692,10 +692,6 @@ Architecture: amd64";
         assert!(out.is_empty());
     }
 
-    // Milestone 100: `#[cfg(unix)]` — dpkg is Debian/Ubuntu-only;
-    // tests exercising the reader's filesystem layout (rootfs paths
-    // like `/var/lib/dpkg/status`) don't apply on Windows.
-    #[cfg(unix)]
     #[test]
     fn read_function_reads_from_rootfs_relative_path() {
         let dir = tempfile::tempdir().unwrap();
@@ -728,9 +724,6 @@ Architecture: arm64
 
     /// FR-005 case 1: status.d/-only layout (distroless / chainguard).
     /// `read()` must discover both stanzas.
-    ///
-    /// Milestone 100: `#[cfg(unix)]` — dpkg is Linux-only.
-    #[cfg(unix)]
     #[test]
     fn parses_status_d_only_layout() {
         let dir = tempfile::tempdir().unwrap();
@@ -862,9 +855,6 @@ Architecture: arm64
     /// FR-003: when both sources contribute the same purl, the
     /// status.d/ entry wins (defensive against pathological mixed
     /// images).
-    ///
-    /// Milestone 100: `#[cfg(unix)]` — dpkg is Linux-only.
-    #[cfg(unix)]
     #[test]
     fn status_d_wins_over_status_on_purl_collision() {
         let dir = tempfile::tempdir().unwrap();

@@ -105,14 +105,8 @@ fn assert_or_update_golden(label: &str, normalized: &str) {
         );
         return;
     }
-    // Milestone 100: strip CR on read so Windows runners (where git's
-    // default `core.autocrlf=true` may rewrite checked-out goldens to
-    // CRLF) compare apples-to-apples against the LF-emitted SBOM.
-    // The committed .gitattributes pins `eol=lf` for future checkouts
-    // but doesn't retroactively fix already-checked-out files.
-    let golden = std::fs::read_to_string(&path)
-        .expect("read pinned golden")
-        .replace("\r\n", "\n");
+    let golden =
+        std::fs::read_to_string(&path).expect("read pinned golden");
     if golden != normalized {
         // Write the actual produced output alongside the golden so a
         // maintainer can diff them with their own tooling — cleaner
@@ -201,14 +195,7 @@ fn run_case(case: &EcosystemCase) {
 }
 
 // One test per ecosystem so a failure names the offender directly.
-//
-// Milestone 100: apk + deb + rpm production readers are
-// `#[cfg(unix)]`-gated (Linux-only OS package managers); on Windows
-// they don't compile and the emitted SBOM has no `pkg:{apk,deb,rpm}`
-// components, so the goldens (minted on Linux with those components)
-// can never match. Gate the corresponding regression tests to match.
 
-#[cfg(unix)]
 #[test]
 fn cdx_regression_apk() {
     run_case(&CASES[0]);
@@ -219,7 +206,6 @@ fn cdx_regression_cargo() {
     run_case(&CASES[1]);
 }
 
-#[cfg(unix)]
 #[test]
 fn cdx_regression_deb() {
     run_case(&CASES[2]);
@@ -250,7 +236,6 @@ fn cdx_regression_pip() {
     run_case(&CASES[7]);
 }
 
-#[cfg(unix)]
 #[test]
 fn cdx_regression_rpm() {
     run_case(&CASES[8]);

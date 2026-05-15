@@ -255,3 +255,17 @@ fn cdx_regression_pip() {
 fn cdx_regression_rpm() {
     run_case(&CASES[8]);
 }
+
+// Milestone 103: source-tree-build ecosystems (Bazel WORKSPACE/MODULE,
+// CMake FetchContent/ExternalProject_Add). Fixtures are stay-set
+// under mikebom-cli/tests/fixtures/{bazel,cmake}/.
+
+#[test]
+fn cdx_regression_bazel() {
+    run_case(&CASES[9]);
+}
+
+#[test]
+fn cdx_regression_cmake() {
+    run_case(&CASES[10]);
+}

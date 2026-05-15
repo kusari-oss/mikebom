@@ -464,6 +464,12 @@ spdx3_anno!(c50_spdx3, "mikebom:macho-build-version",      component);
 spdx3_anno!(c51_spdx3, "mikebom:macho-build-tools",        component);
 spdx3_anno!(c52_spdx3, "mikebom:pe-linker-version",        component);
 
+// Milestone 103 — Bazel WORKSPACE / CMake source-tree readers.
+// Both emit as `Annotation` elements with the
+// `mikebom:<key>=<value>` statement prefix.
+spdx3_anno!(c53_spdx3, "mikebom:download-url",             component);
+spdx3_anno!(c54_spdx3, "mikebom:bazel-archive-name",       component);
+
 // C47 — document-level user-defined identifiers (milestone 073).
 // Per `contracts/identifiers-annotation.md` C-1 SPDX 3 and C-2
 // SPDX 3: user-defined identifiers ride `Element.externalIdentifier[]`

@@ -100,6 +100,8 @@ Auto-generated from all feature plans. Last updated: 2026-05-14
 - N/A — per-test in-memory; `actual.cdx.json` written to a per-test tempdir on failure for diagnostic purposes only. (101-windows-smoke-experimental)
 - Rust stable (workspace toolchain inherited from milestones 001–101; no nightly required). + Existing only — `regex = "1"` (CMakeLists.txt pattern extraction; already a direct dep per milestone 013), `toml = "0.8"` (conanfile.txt INI-shaped parsing; already direct dep), `serde_json` (vcpkg.json parsing; workspace), `tracing` (parse-error warnings per FR-015), `anyhow`/`thiserror` (error propagation). **No new crates.** No subprocess calls. No network access. (102-cpp-bazel-cmake-readers)
 - N/A — all parsing is in-process per scan; results flow through the existing `PackageDbEntry` → `ResolvedComponent` pipeline. (102-cpp-bazel-cmake-readers)
+- Rust stable (workspace toolchain inherited from milestones 001–102; no nightly required). + Existing only — `regex = "1"` (workspace; already used by vcpkg/conan in PR-A), `tracing`, `anyhow`, std. **Zero new Cargo dependencies.** (103-bazel-cmake-impl)
+- N/A — all parsing is in-process; reader returns `Vec<PackageDbEntry>` to the existing `read_all` dispatcher. (103-bazel-cmake-impl)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -162,9 +164,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 103-bazel-cmake-impl: Added Rust stable (workspace toolchain inherited from milestones 001–102; no nightly required). + Existing only — `regex = "1"` (workspace; already used by vcpkg/conan in PR-A), `tracing`, `anyhow`, std. **Zero new Cargo dependencies.**
 - 102-cpp-bazel-cmake-readers: Added Rust stable (workspace toolchain inherited from milestones 001–101; no nightly required). + Existing only — `regex = "1"` (CMakeLists.txt pattern extraction; already a direct dep per milestone 013), `toml = "0.8"` (conanfile.txt INI-shaped parsing; already direct dep), `serde_json` (vcpkg.json parsing; workspace), `tracing` (parse-error warnings per FR-015), `anyhow`/`thiserror` (error propagation). **No new crates.** No subprocess calls. No network access.
 - 101-windows-smoke-experimental: Added Rust stable (workspace toolchain inherited from milestones 001–100; no nightly required for this user-space test-and-docs work). + Existing only — `std::process::Command` (binary invocation), `std::time::Instant` + `std::thread` (60-second timeout via spawn-and-kill), `tempfile` (already in dev-deps), `serde_json::Value` (JSON parsing), `env!("CARGO_BIN_EXE_mikebom")` (cargo's integration-test binary-path mechanism), `env!("MIKEBOM_FIXTURES_DIR")` (milestone-090's fixture cache). **No new crates.**
-- 100-windows-host-build: Added Rust stable (workspace toolchain inherited from milestones 001–099; no nightly required for Windows-host work). + Existing only. Workspace deps (`object`, `serde`, `clap`, `tokio`, `reqwest` with `rustls-tls`, `chrono`, `regex`, `sha2`, `git2`-free since we shell out to git) all support Windows. Verified at planning-time via `cargo tree --target x86_64-pc-windows-msvc -p mikebom` (run during T002).
 
 
 <!-- MANUAL ADDITIONS START -->

@@ -146,6 +146,7 @@ Exactly one of `--path` or `--image` is required.
 | `--no-hashes` | bool | off | Omit per-component content hashes. |
 | `--deb-codename <VALUE>` | string | auto-detect | Override `distro=` qualifier on deb PURLs. |
 | `--no-package-db` | bool | off | Skip installed-package DB reads (dpkg/apk). |
+| `--include-vendored` | bool | off | Emit CMake `add_subdirectory(third_party/\|vendor/...)` entries. |
 | `--no-deep-hash` | bool | off | Skip per-file SHA-256 of installed-package contents. |
 | `--json` | bool | off | Print a JSON summary to stdout. |
 | `--no-clearly-defined` | bool | off | Skip ClearlyDefined enrichment. |
@@ -318,6 +319,28 @@ Skip reading installed-package databases (`/var/lib/dpkg/status`,
 `/lib/apk/db/installed`). On by default because production container images
 routinely clean up `.deb`/`.apk` artefact caches and the db is then the only
 complete source. Pass this flag to fall back to pure artefact-file scanning.
+
+### `--include-vendored`
+
+Include vendored C/C++ dependencies declared via CMake
+`add_subdirectory(third_party/<name>)` or `add_subdirectory(vendor/<name>)`.
+Default **OFF** — bare `add_subdirectory(...)` is also how CMake projects
+include first-party `src/` and `tests/` sub-modules, so the gate requires
+an explicit opt-in to avoid false positives. The path-prefix check rejects
+anything that isn't under `third_party/` or `vendor/`.
+
+When enabled, mikebom emits one `pkg:generic/<name>` component per
+vendored entry with a `mikebom:vendored = true` property. The version
+segment is backfilled from a co-located `version.txt` or `.version` file
+when present; otherwise the PURL has no version.
+
+```bash
+# Opt in via flag
+mikebom sbom scan --path . --output project.cdx.json --include-vendored
+
+# Opt in via env var (accepts "1", "true", etc.)
+MIKEBOM_INCLUDE_VENDORED=1 mikebom sbom scan --path . --output project.cdx.json
+```
 
 ### `--no-deep-hash`
 

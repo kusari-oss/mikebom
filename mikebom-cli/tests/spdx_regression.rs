@@ -212,3 +212,15 @@ fn pip_byte_identity() {
 fn rpm_byte_identity() {
     run_case(&CASES[8]);
 }
+
+// Milestone 103: source-tree-build ecosystems.
+
+#[test]
+fn bazel_byte_identity() {
+    run_case(&CASES[9]);
+}
+
+#[test]
+fn cmake_byte_identity() {
+    run_case(&CASES[10]);
+}

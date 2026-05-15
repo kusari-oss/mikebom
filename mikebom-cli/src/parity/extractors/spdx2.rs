@@ -384,6 +384,11 @@ spdx23_anno!(c50_spdx23, "mikebom:macho-build-version",      component);
 spdx23_anno!(c51_spdx23, "mikebom:macho-build-tools",        component);
 spdx23_anno!(c52_spdx23, "mikebom:pe-linker-version",        component);
 
+// Milestone 103 — Bazel WORKSPACE / CMake source-tree readers.
+// Both emit as `Package.annotations[].comment` entries.
+spdx23_anno!(c53_spdx23, "mikebom:download-url",             component);
+spdx23_anno!(c54_spdx23, "mikebom:bazel-archive-name",       component);
+
 // ============================================================
 // Sections D-G — custom SPDX 2.3 extractors
 // ============================================================

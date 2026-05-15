@@ -55,10 +55,20 @@ pub struct EcosystemCase {
     pub deb_codename: Option<&'static str>,
 }
 
-/// The canonical 9-ecosystem fixture matrix. Order is alphabetical
-/// by `label` and is byte-stable across all consumers — adding,
-/// reordering, or removing entries is a breaking change for every
-/// test that iterates `CASES` and produces per-index goldens.
+/// The canonical fixture matrix. Indices 0..=8 are the original 9
+/// ecosystems in alphabetical order — this prefix is byte-stable
+/// across all consumers because seven downstream tests hard-code
+/// indices 0..=8 (cdx_regression, spdx_regression, spdx3_regression,
+/// spdx_schema_validation, spdx3_schema_validation,
+/// spdx_annotation_fidelity, spdx_cdx_parity, openvex_sidecar).
+///
+/// Indices 9+ are reserved for ecosystems added after milestone 010's
+/// goldens shipped. Milestone 103 appends `bazel` (9) and `cmake` (10);
+/// they live at the tail rather than alphabetical position to avoid
+/// shifting every existing index. New entries MUST be appended only.
+///
+/// Reordering, inserting, or removing entries is a breaking change
+/// for every index-based consumer above.
 pub const CASES: &[EcosystemCase] = &[
     EcosystemCase { label: "apk",    fixture_subpath: "apk/synthetic",         deb_codename: None },
     EcosystemCase { label: "cargo",  fixture_subpath: "cargo/lockfile-v3",     deb_codename: None },
@@ -69,6 +79,9 @@ pub const CASES: &[EcosystemCase] = &[
     EcosystemCase { label: "npm",    fixture_subpath: "npm/node-modules-walk", deb_codename: None },
     EcosystemCase { label: "pip",    fixture_subpath: "python/simple-venv",    deb_codename: None },
     EcosystemCase { label: "rpm",    fixture_subpath: "rpm/bdb-only",          deb_codename: None },
+    // Milestone 103 — appended after original 9; see ordering note above.
+    EcosystemCase { label: "bazel",  fixture_subpath: "bazel",                 deb_codename: None },
+    EcosystemCase { label: "cmake",  fixture_subpath: "cmake",                 deb_codename: None },
 ];
 
 /// Path to the `mikebom` binary built by cargo's integration-test
@@ -136,14 +149,35 @@ pub fn local_fixture_path(rel: &str) -> PathBuf {
     workspace_root().join("tests").join("fixtures").join(rel)
 }
 
-/// Resolve an `EcosystemCase`'s fixture path. Dispatches to
-/// `local_fixture_path` for OS-package-based ecosystems (apk, deb,
-/// rpm — their synthetic fixtures stay in mikebom main repo) and to
-/// `fixture_path` for everything else.
+/// Path to a crate-local fixture under `mikebom-cli/tests/fixtures/`.
+/// Resolves against the test crate's `CARGO_MANIFEST_DIR`.
+///
+/// Use this for: fixtures introduced by milestones 102 (vcpkg, conan)
+/// and 103 (bazel, cmake) which live alongside the test crate rather
+/// than at the workspace root. Their dedicated integration tests
+/// already use `CARGO_MANIFEST_DIR.join("tests/fixtures/<name>")`
+/// directly; this helper exposes the same path for CASES-driven
+/// regression suites that share the lookup logic.
+pub fn crate_fixture_path(rel: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join(rel)
+}
+
+/// Resolve an `EcosystemCase`'s fixture path. Dispatches to:
+///   * `local_fixture_path` (workspace-root `tests/fixtures/`) for
+///     legacy OS-package-based ecosystems (apk/deb/rpm) whose
+///     synthetic fixtures predate the milestone-090 split;
+///   * `crate_fixture_path` (`mikebom-cli/tests/fixtures/`) for the
+///     milestone-103 source-tree-build ecosystems (bazel/cmake) which
+///     live alongside the test crate consistent with milestone 102
+///     PR-A's vcpkg/conan precedent;
+///   * `fixture_path` (sibling fixtures repo) for everything else.
 pub fn case_fixture_path(case: &EcosystemCase) -> PathBuf {
-    if matches!(case.label, "apk" | "deb" | "rpm") {
-        local_fixture_path(case.fixture_subpath)
-    } else {
-        fixture_path(case.fixture_subpath)
+    match case.label {
+        "apk" | "deb" | "rpm" => local_fixture_path(case.fixture_subpath),
+        "bazel" | "cmake" => crate_fixture_path(case.fixture_subpath),
+        _ => fixture_path(case.fixture_subpath),
     }
 }

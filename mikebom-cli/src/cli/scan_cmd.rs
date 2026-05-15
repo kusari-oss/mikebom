@@ -248,10 +248,11 @@ pub struct ScanArgs {
     /// require explicit opt-in. When enabled, version is backfilled
     /// from a co-located `version.txt` or `.version` file when present;
     /// otherwise the PURL has no version segment. Also accepts
-    /// `MIKEBOM_INCLUDE_VENDORED=1` env var (the milestone-102 readers
-    /// read the env var directly to avoid plumbing through the 75-call
-    /// `scan_path` chain).
-    #[arg(long, env = "MIKEBOM_INCLUDE_VENDORED")]
+    /// `MIKEBOM_INCLUDE_VENDORED=1` env var which is read directly by
+    /// the milestone-102 C/C++ readers in `read_all` (no clap-level
+    /// env binding here, so the env var accepts "1"/"true"/etc. without
+    /// clap's bool-env strictness).
+    #[arg(long)]
     pub include_vendored: bool,
 
     /// Skip the deps.dev transitive dep-graph enrichment step.

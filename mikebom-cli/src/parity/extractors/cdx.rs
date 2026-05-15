@@ -516,6 +516,15 @@ cdx_anno!(c50_cdx, "mikebom:macho-build-version",       component);
 cdx_anno!(c51_cdx, "mikebom:macho-build-tools",         component);
 cdx_anno!(c52_cdx, "mikebom:pe-linker-version",         component);
 
+// Milestone 103 — Bazel WORKSPACE / CMake source-tree readers.
+// `mikebom:download-url`: declared upstream archive URL from Bazel
+// `http_archive.urls[0]` or CMake `FetchContent_Declare(URL ...)` /
+// `ExternalProject_Add(URL ...)`. `mikebom:bazel-archive-name`:
+// original `http_archive.name = "..."` label when sanitization
+// re-maps it. Both emit as `component.properties[].value` entries.
+cdx_anno!(c53_cdx, "mikebom:download-url",              component);
+cdx_anno!(c54_cdx, "mikebom:bazel-archive-name",        component);
+
 // ============================================================
 // Section D — Evidence (D1, D2 — CDX-native shape)
 // ============================================================

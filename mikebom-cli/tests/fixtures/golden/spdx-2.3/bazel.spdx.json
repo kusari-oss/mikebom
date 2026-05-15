@@ -1,0 +1,255 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "annotations": [
+    {
+      "annotationDate": "1970-01-01T00:00:00Z",
+      "annotationType": "OTHER",
+      "annotator": "Tool: mikebom-0.1.0-alpha.33",
+      "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:generation-context\",\"value\":\"filesystem-scan\"}"
+    },
+    {
+      "annotationDate": "1970-01-01T00:00:00Z",
+      "annotationType": "OTHER",
+      "annotator": "Tool: mikebom-0.1.0-alpha.33",
+      "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:os-release-missing-fields\",\"value\":[\"ID\",\"VERSION_ID\"]}"
+    },
+    {
+      "annotationDate": "1970-01-01T00:00:00Z",
+      "annotationType": "OTHER",
+      "annotator": "Tool: mikebom-0.1.0-alpha.33",
+      "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-ring-buffer-overflows\",\"value\":0}"
+    },
+    {
+      "annotationDate": "1970-01-01T00:00:00Z",
+      "annotationType": "OTHER",
+      "annotator": "Tool: mikebom-0.1.0-alpha.33",
+      "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-events-dropped\",\"value\":0}"
+    },
+    {
+      "annotationDate": "1970-01-01T00:00:00Z",
+      "annotationType": "OTHER",
+      "annotator": "Tool: mikebom-0.1.0-alpha.33",
+      "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-uprobe-attach-failures\",\"value\":[]}"
+    },
+    {
+      "annotationDate": "1970-01-01T00:00:00Z",
+      "annotationType": "OTHER",
+      "annotator": "Tool: mikebom-0.1.0-alpha.33",
+      "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-kprobe-attach-failures\",\"value\":[]}"
+    }
+  ],
+  "creationInfo": {
+    "comment": "Scope: manifest (declared transitives included). Observed lifecycle phases: pre-build. Per-component scope detail in mikebom:sbom-tier annotations.",
+    "created": "1970-01-01T00:00:00Z",
+    "creators": [
+      "Tool: mikebom-0.1.0-alpha.33",
+      "Organization: mikebom contributors"
+    ]
+  },
+  "dataLicense": "CC0-1.0",
+  "documentDescribes": [
+    "SPDXRef-DocumentRoot-AHM7XA6AZK57BJQW"
+  ],
+  "documentNamespace": "https://mikebom.kusari.dev/spdx/EJIWCES7A3UDOBLUCIXIYASSIOUJS7CF",
+  "name": "bazel",
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-DocumentRoot-AHM7XA6AZK57BJQW",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:generic/bazel@0.0.0",
+          "referenceType": "purl"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:mikebom:bazel:0.0.0:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "name": "bazel",
+      "supplier": "Organization: mikebom contributors",
+      "versionInfo": "0.0.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-SFZ6ZH3BHKUFYZNC",
+      "annotations": [
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.33",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:sbom-tier\",\"value\":\"source\"}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.33",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/mikebom-cli/tests/fixtures/bazel/MODULE.bazel\"]}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.33",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.identity\",\"value\":{\"confidence\":0.85,\"technique\":\"package-database\"}}"
+        }
+      ],
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:bazel/abseil-cpp@20240722.0",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "name": "abseil-cpp",
+      "versionInfo": "20240722.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-LM6FBYXSKLDBXQVU",
+      "annotations": [
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.33",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:sbom-tier\",\"value\":\"source\"}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.33",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/mikebom-cli/tests/fixtures/bazel/MODULE.bazel\"]}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.33",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.identity\",\"value\":{\"confidence\":0.85,\"technique\":\"package-database\"}}"
+        }
+      ],
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:bazel/googletest@1.14.0",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "name": "googletest",
+      "versionInfo": "1.14.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-NDJKRQLKYSDRTD3Q",
+      "annotations": [
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.33",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:sbom-tier\",\"value\":\"source\"}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.33",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/mikebom-cli/tests/fixtures/bazel/WORKSPACE.bazel\"]}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.33",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.identity\",\"value\":{\"confidence\":0.85,\"technique\":\"package-database\"}}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.33",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:bazel-archive-name\",\"value\":\"rules_foo\"}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.33",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:download-url\",\"value\":\"https://github.com/foo/rules_foo.git\"}"
+        }
+      ],
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:bazel/rules_foo@deadbee",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "name": "rules_foo",
+      "versionInfo": "deadbee"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-QUIZBKSWTOAVWLHQ",
+      "annotations": [
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.33",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:sbom-tier\",\"value\":\"source\"}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.33",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/mikebom-cli/tests/fixtures/bazel/WORKSPACE.bazel\"]}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.33",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.identity\",\"value\":{\"confidence\":0.85,\"technique\":\"package-database\"}}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.33",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:bazel-archive-name\",\"value\":\"rules_python\"}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.33",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:download-url\",\"value\":\"https://github.com/bazelbuild/rules_python/archive/0.30.0.tar.gz\"}"
+        }
+      ],
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:bazel/rules_python@0.30.0",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "name": "rules_python",
+      "versionInfo": "0.30.0"
+    }
+  ],
+  "relationships": [
+    {
+      "relatedSpdxElement": "SPDXRef-DocumentRoot-AHM7XA6AZK57BJQW",
+      "relationshipType": "DESCRIBES",
+      "spdxElementId": "SPDXRef-DOCUMENT"
+    }
+  ],
+  "spdxVersion": "SPDX-2.3"
+}

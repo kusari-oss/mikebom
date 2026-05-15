@@ -55,6 +55,9 @@ jobs:
         with:
           components: clippy
 
+      - name: Cache cargo + build artifacts
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+
       # dtolnay/rust-toolchain leaves the bootstrap installer
       # (`rustup-init`) sitting at `~/.cargo/bin/rustup-init` alongside
       # the real `rustup`/`cargo`/`rustc` binaries. Cargo's `+stable`
@@ -69,12 +72,23 @@ jobs:
       # Removing it forces `cargo +<channel>` to dispatch to the real
       # `rustup`, which exists, is on PATH, and understands the
       # `+<channel>` syntax correctly. No-op if not present.
+      #
+      # CRITICAL: this step MUST run AFTER `Swatinem/rust-cache`.
+      # That action caches `$CARGO_HOME/bin` and on cache-hit restores
+      # `rustup-init` — undoing this cleanup if it runs before. Verified
+      # via PR #217 macOS failure logs (2026-05-15).
       - name: Remove rustup-init (prevents `cargo +stable` dispatch race)
         shell: bash
-        run: rm -f "$HOME/.cargo/bin/rustup-init" "$HOME/.cargo/bin/rustup-init.exe"
-
-      - name: Cache cargo + build artifacts
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        run: |
+          rm -f "$HOME/.cargo/bin/rustup-init" "$HOME/.cargo/bin/rustup-init.exe"
+          # Verification — fail loudly if removal didn't take so the
+          # next `cargo +stable` doesn't produce the same opaque error.
+          if [ -e "$HOME/.cargo/bin/rustup-init" ] || [ -e "$HOME/.cargo/bin/rustup-init.exe" ]; then
+            echo "ERROR: rustup-init still present after rm — cargo +<channel> will route to the installer."
+            ls -la "$HOME/.cargo/bin/" || true
+            exit 1
+          fi
+          echo "rustup-init absent from \$HOME/.cargo/bin (good); cargo +<channel> will dispatch to rustup."
 
       # Milestone 090 — fixture-repo cache. mikebom-cli/build.rs
       # clones https://github.com/kusari-sandbox/mikebom-test-fixtures
@@ -244,13 +258,22 @@ jobs:
         with:
           components: clippy
 
-      # See lint-and-test job for the rationale.
-      - name: Remove rustup-init (prevents `cargo +stable` dispatch race)
-        shell: bash
-        run: rm -f "$HOME/.cargo/bin/rustup-init" "$HOME/.cargo/bin/rustup-init.exe"
-
       - name: Cache cargo + build artifacts
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+
+      # See lint-and-test job for the rationale. MUST run AFTER
+      # Swatinem/rust-cache or its $CARGO_HOME/bin restore re-creates
+      # rustup-init.
+      - name: Remove rustup-init (prevents `cargo +stable` dispatch race)
+        shell: bash
+        run: |
+          rm -f "$HOME/.cargo/bin/rustup-init" "$HOME/.cargo/bin/rustup-init.exe"
+          if [ -e "$HOME/.cargo/bin/rustup-init" ] || [ -e "$HOME/.cargo/bin/rustup-init.exe" ]; then
+            echo "ERROR: rustup-init still present after rm — cargo +<channel> will route to the installer."
+            ls -la "$HOME/.cargo/bin/" || true
+            exit 1
+          fi
+          echo "rustup-init absent from \$HOME/.cargo/bin (good)."
 
       # Milestone 090 — fixture-repo cache (see Linux lane above).
       - name: Cache fixture repo
@@ -291,17 +314,25 @@ jobs:
         with:
           components: clippy
 
+      - name: Cache cargo + build artifacts
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+
       # See lint-and-test job for the rationale. This supersedes the
       # milestone-101 Windows-only `rustup default stable` workaround
       # — that one papered over the symptom on one lane; this one
       # fixes the root cause (rustup-init left on PATH alongside
-      # rustup) on every lane.
+      # rustup) on every lane. MUST run AFTER Swatinem/rust-cache or
+      # its $CARGO_HOME/bin restore re-creates rustup-init.
       - name: Remove rustup-init (prevents `cargo +stable` dispatch race)
         shell: bash
-        run: rm -f "$HOME/.cargo/bin/rustup-init" "$HOME/.cargo/bin/rustup-init.exe"
-
-      - name: Cache cargo + build artifacts
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        run: |
+          rm -f "$HOME/.cargo/bin/rustup-init" "$HOME/.cargo/bin/rustup-init.exe"
+          if [ -e "$HOME/.cargo/bin/rustup-init" ] || [ -e "$HOME/.cargo/bin/rustup-init.exe" ]; then
+            echo "ERROR: rustup-init still present after rm — cargo +<channel> will route to the installer."
+            ls -la "$HOME/.cargo/bin/" || true
+            exit 1
+          fi
+          echo "rustup-init absent from \$HOME/.cargo/bin (good)."
 
       # Milestone 090 — fixture-repo cache. Windows uses the same
       # ~/.cache/mikebom/fixtures path; the build.rs shells out to
@@ -376,17 +407,25 @@ jobs:
       - name: Make stable the default toolchain
         run: rustup default stable
 
+      - name: Cache cargo + build artifacts
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+
       # See lint-and-test job for the rationale. The eBPF lane
       # installs nightly + stable in sequence; rm runs once after
-      # both installs are complete so any `rustup-init` left by
-      # either invocation is cleaned up before the first
+      # both installs and after Swatinem/rust-cache restores so any
+      # `rustup-init` left by either invocation OR by a cache-hit
+      # `$CARGO_HOME/bin` restore is cleaned up before the first
       # `cargo +stable` call.
       - name: Remove rustup-init (prevents `cargo +stable` dispatch race)
         shell: bash
-        run: rm -f "$HOME/.cargo/bin/rustup-init" "$HOME/.cargo/bin/rustup-init.exe"
-
-      - name: Cache cargo + build artifacts
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        run: |
+          rm -f "$HOME/.cargo/bin/rustup-init" "$HOME/.cargo/bin/rustup-init.exe"
+          if [ -e "$HOME/.cargo/bin/rustup-init" ] || [ -e "$HOME/.cargo/bin/rustup-init.exe" ]; then
+            echo "ERROR: rustup-init still present after rm — cargo +<channel> will route to the installer."
+            ls -la "$HOME/.cargo/bin/" || true
+            exit 1
+          fi
+          echo "rustup-init absent from \$HOME/.cargo/bin (good)."
 
       # Milestone 090 — fixture-repo cache (see Linux lane above).
       - name: Cache fixture repo

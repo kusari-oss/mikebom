@@ -33,15 +33,6 @@ jobs:
         with:
           components: rust-src
 
-      # See ci.yml::lint-and-test for the rationale — dtolnay/rust-
-      # toolchain leaves `rustup-init` on PATH alongside the real
-      # `rustup`/`cargo`, and cargo's `+<channel>` dispatch can route
-      # to `rustup-init` non-deterministically, producing the
-      # `unexpected argument '+stable' found` flake on any runner.
-      - name: Remove rustup-init (prevents `cargo +<channel>` dispatch race)
-        shell: bash
-        run: rm -f "$HOME/.cargo/bin/rustup-init" "$HOME/.cargo/bin/rustup-init.exe"
-
       - name: Cache cargo + nightly build artifacts
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
         with:
@@ -49,6 +40,24 @@ jobs:
           workspaces: |
             .
             mikebom-ebpf
+
+      # See ci.yml::lint-and-test for the rationale — dtolnay/rust-
+      # toolchain leaves `rustup-init` on PATH alongside the real
+      # `rustup`/`cargo`, and cargo's `+<channel>` dispatch can route
+      # to `rustup-init` non-deterministically, producing the
+      # `unexpected argument '+stable' found` flake on any runner.
+      # MUST run AFTER Swatinem/rust-cache or its $CARGO_HOME/bin
+      # restore re-creates rustup-init.
+      - name: Remove rustup-init (prevents `cargo +<channel>` dispatch race)
+        shell: bash
+        run: |
+          rm -f "$HOME/.cargo/bin/rustup-init" "$HOME/.cargo/bin/rustup-init.exe"
+          if [ -e "$HOME/.cargo/bin/rustup-init" ] || [ -e "$HOME/.cargo/bin/rustup-init.exe" ]; then
+            echo "ERROR: rustup-init still present after rm — cargo +<channel> will route to the installer."
+            ls -la "$HOME/.cargo/bin/" || true
+            exit 1
+          fi
+          echo "rustup-init absent from \$HOME/.cargo/bin (good)."
 
       - name: Install bpf-linker
         run: cargo +nightly install bpf-linker --locked
@@ -78,15 +87,24 @@ jobs:
         with:
           targets: x86_64-unknown-linux-gnu
 
-      # See ci.yml::lint-and-test for the rationale.
-      - name: Remove rustup-init (prevents `cargo +stable` dispatch race)
-        shell: bash
-        run: rm -f "$HOME/.cargo/bin/rustup-init" "$HOME/.cargo/bin/rustup-init.exe"
-
       - name: Cache cargo + cross-compiled build
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
         with:
           key: ${{ env.TARGET }}
+
+      # See ci.yml::lint-and-test for the rationale. MUST run AFTER
+      # Swatinem/rust-cache or its $CARGO_HOME/bin restore re-creates
+      # rustup-init.
+      - name: Remove rustup-init (prevents `cargo +stable` dispatch race)
+        shell: bash
+        run: |
+          rm -f "$HOME/.cargo/bin/rustup-init" "$HOME/.cargo/bin/rustup-init.exe"
+          if [ -e "$HOME/.cargo/bin/rustup-init" ] || [ -e "$HOME/.cargo/bin/rustup-init.exe" ]; then
+            echo "ERROR: rustup-init still present after rm — cargo +<channel> will route to the installer."
+            ls -la "$HOME/.cargo/bin/" || true
+            exit 1
+          fi
+          echo "rustup-init absent from \$HOME/.cargo/bin (good)."
 
       # Use `cross` on both Linux targets so binaries pin a wide-compat
       # glibc baseline (~2.17/2.18) instead of whatever the
@@ -167,15 +185,24 @@ jobs:
         with:
           targets: aarch64-unknown-linux-gnu
 
-      # See ci.yml::lint-and-test for the rationale.
-      - name: Remove rustup-init (prevents `cargo +stable` dispatch race)
-        shell: bash
-        run: rm -f "$HOME/.cargo/bin/rustup-init" "$HOME/.cargo/bin/rustup-init.exe"
-
       - name: Cache cargo + cross-compiled build
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
         with:
           key: ${{ env.TARGET }}
+
+      # See ci.yml::lint-and-test for the rationale. MUST run AFTER
+      # Swatinem/rust-cache or its $CARGO_HOME/bin restore re-creates
+      # rustup-init.
+      - name: Remove rustup-init (prevents `cargo +stable` dispatch race)
+        shell: bash
+        run: |
+          rm -f "$HOME/.cargo/bin/rustup-init" "$HOME/.cargo/bin/rustup-init.exe"
+          if [ -e "$HOME/.cargo/bin/rustup-init" ] || [ -e "$HOME/.cargo/bin/rustup-init.exe" ]; then
+            echo "ERROR: rustup-init still present after rm — cargo +<channel> will route to the installer."
+            ls -la "$HOME/.cargo/bin/" || true
+            exit 1
+          fi
+          echo "rustup-init absent from \$HOME/.cargo/bin (good)."
 
       - name: Install cross
         run: cargo install cross --locked
@@ -237,15 +264,24 @@ jobs:
         with:
           targets: aarch64-apple-darwin
 
-      # See ci.yml::lint-and-test for the rationale.
-      - name: Remove rustup-init (prevents `cargo +stable` dispatch race)
-        shell: bash
-        run: rm -f "$HOME/.cargo/bin/rustup-init" "$HOME/.cargo/bin/rustup-init.exe"
-
       - name: Cache cargo + build
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
         with:
           key: ${{ env.TARGET }}
+
+      # See ci.yml::lint-and-test for the rationale. MUST run AFTER
+      # Swatinem/rust-cache or its $CARGO_HOME/bin restore re-creates
+      # rustup-init.
+      - name: Remove rustup-init (prevents `cargo +stable` dispatch race)
+        shell: bash
+        run: |
+          rm -f "$HOME/.cargo/bin/rustup-init" "$HOME/.cargo/bin/rustup-init.exe"
+          if [ -e "$HOME/.cargo/bin/rustup-init" ] || [ -e "$HOME/.cargo/bin/rustup-init.exe" ]; then
+            echo "ERROR: rustup-init still present after rm — cargo +<channel> will route to the installer."
+            ls -la "$HOME/.cargo/bin/" || true
+            exit 1
+          fi
+          echo "rustup-init absent from \$HOME/.cargo/bin (good)."
 
       - name: Build userspace binary
         run: cargo build --release --target "$TARGET" --package mikebom
@@ -285,15 +321,24 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      # See ci.yml::lint-and-test for the rationale.
-      - name: Remove rustup-init (prevents `cargo +stable` dispatch race)
-        shell: bash
-        run: rm -f "$HOME/.cargo/bin/rustup-init" "$HOME/.cargo/bin/rustup-init.exe"
-
       - name: Cache cargo + build
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
         with:
           key: ${{ env.TARGET }}
+
+      # See ci.yml::lint-and-test for the rationale. MUST run AFTER
+      # Swatinem/rust-cache or its $CARGO_HOME/bin restore re-creates
+      # rustup-init.
+      - name: Remove rustup-init (prevents `cargo +stable` dispatch race)
+        shell: bash
+        run: |
+          rm -f "$HOME/.cargo/bin/rustup-init" "$HOME/.cargo/bin/rustup-init.exe"
+          if [ -e "$HOME/.cargo/bin/rustup-init" ] || [ -e "$HOME/.cargo/bin/rustup-init.exe" ]; then
+            echo "ERROR: rustup-init still present after rm — cargo +<channel> will route to the installer."
+            ls -la "$HOME/.cargo/bin/" || true
+            exit 1
+          fi
+          echo "rustup-init absent from \$HOME/.cargo/bin (good)."
 
       - name: Build userspace binary
         run: cargo build --release --target $env:TARGET --package mikebom

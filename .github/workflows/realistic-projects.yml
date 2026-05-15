@@ -73,14 +73,45 @@ jobs:
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable (2026-04-25)
 
-      # See ci.yml::lint-and-test for the rationale. This realistic-
-      # projects workflow is where the flake surfaced on PR #214.
-      - name: Remove rustup-init (prevents `cargo +stable` dispatch race)
-        shell: bash
-        run: rm -f "$HOME/.cargo/bin/rustup-init" "$HOME/.cargo/bin/rustup-init.exe"
-
       - name: Cache cargo + build artifacts
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          # Bumped 2026-05-15 to invalidate snapshots that captured a
+          # `~/.cargo/bin/cargo` which is itself broken (renamed/linked
+          # to rustup-init by an earlier dtolnay run). The fresh cache
+          # is built post-cleanup so the snapshot is always clean.
+          prefix-key: v1-rust
+
+      # See ci.yml::lint-and-test for the rationale. This realistic-
+      # projects workflow is where the flake surfaced on PR #214.
+      # MUST run AFTER Swatinem/rust-cache or its $CARGO_HOME/bin
+      # restore re-creates rustup-init.
+      - name: Remove rustup-init + verify cargo works (`cargo +stable` dispatch race)
+        shell: bash
+        run: |
+          rm -f "$HOME/.cargo/bin/rustup-init" "$HOME/.cargo/bin/rustup-init.exe"
+          # Sanity-check: cargo must actually dispatch as cargo, not
+          # as rustup-init. The plain `rm` isn't enough if a cached
+          # `~/.cargo/bin/cargo` is itself the rustup-init binary
+          # (different file name, same broken installer body) —
+          # observed on PR #217 realistic-projects macOS lane.
+          if ! cargo --version > /dev/null 2>&1; then
+            echo "ERROR: \`cargo --version\` fails — \$HOME/.cargo/bin/cargo is not a working cargo proxy."
+            echo "--- ls -la \$HOME/.cargo/bin/ ---"
+            ls -la "$HOME/.cargo/bin/" || true
+            echo "--- file \$HOME/.cargo/bin/cargo ---"
+            file "$HOME/.cargo/bin/cargo" || true
+            echo "--- cargo --version output ---"
+            cargo --version 2>&1 || true
+            exit 1
+          fi
+          echo "cargo --version OK: $(cargo --version)"
+          if [ -e "$HOME/.cargo/bin/rustup-init" ] || [ -e "$HOME/.cargo/bin/rustup-init.exe" ]; then
+            echo "ERROR: rustup-init still present after rm."
+            ls -la "$HOME/.cargo/bin/" || true
+            exit 1
+          fi
+          echo "rustup-init absent from \$HOME/.cargo/bin (good)."
 
       # Per FR-007: live `git clone --depth 1 --branch <tag>` per CI run,
       # cached by <project>:<tag>. Cache hit → skip clone; cache miss →

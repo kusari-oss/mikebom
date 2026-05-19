@@ -72,8 +72,15 @@ enum ValidationResult {
 fn run_validator(fixture_path: &Path) -> ValidationResult {
     let bin_path = validator_path();
     if !bin_path.exists() {
-        let require =
-            std::env::var("MIKEBOM_REQUIRE_SPDX3_VALIDATOR").ok().as_deref() == Some("1");
+        // Issue #221: serialize env-var read against the writer tests
+        // (validator_absence_{graceful_skip_local,hard_fail_ci}) which
+        // briefly mutate MIKEBOM_REQUIRE_SPDX3_VALIDATOR under ENV_LOCK.
+        // Without this guard, a parallel scheduling overlap can make a
+        // reader observe a writer's temporary "1" value.
+        let require = {
+            let _g = ENV_LOCK.lock().expect("env lock poisoned");
+            std::env::var("MIKEBOM_REQUIRE_SPDX3_VALIDATOR").ok().as_deref() == Some("1")
+        };
         if require {
             // Caller will fail the assertion downstream when it sees
             // a non-Skipped Fail. Encode the absence as a Fail so the
@@ -597,7 +604,12 @@ fn validator_absence_hard_fail_ci() {
 fn validator_pinned_version_check() {
     let bin_path = validator_path();
     if !bin_path.exists() {
-        if std::env::var("MIKEBOM_REQUIRE_SPDX3_VALIDATOR").ok().as_deref() == Some("1") {
+        // Issue #221: see comment in run_validator — same env-var race.
+        let require = {
+            let _g = ENV_LOCK.lock().expect("env lock poisoned");
+            std::env::var("MIKEBOM_REQUIRE_SPDX3_VALIDATOR").ok().as_deref() == Some("1")
+        };
+        if require {
             panic!(
                 "MIKEBOM_REQUIRE_SPDX3_VALIDATOR=1 but validator binary missing at {}",
                 bin_path.display()

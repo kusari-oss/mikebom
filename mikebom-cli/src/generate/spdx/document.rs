@@ -253,6 +253,13 @@ pub fn build_document(
     // logic then falls through to the synthesize_root path with
     // the operator-supplied identity (clean replacement).
     let override_active = artifacts.root_override.is_active();
+    // Issue #229: capture the dropped main-module PURLs so the
+    // relationship builder can alias them to the synthesized root's
+    // SPDXID — otherwise dep edges sourced at those PURLs vanish
+    // (their PURL is no longer in the components view, so the
+    // resolver silently drops them) and the new root ends up
+    // orphaned from the dependency graph.
+    let mut dropped_main_module_purls: Vec<String> = Vec::new();
     let filtered_components_owned: Option<Vec<mikebom_common::resolution::ResolvedComponent>> =
         if override_active {
             let mut keep: Vec<mikebom_common::resolution::ResolvedComponent> =
@@ -269,6 +276,7 @@ pub fn build_document(
                         "override is set; dropping manifest-derived main-module component '{}' from emitted SBOM (per milestone 077 clean-replacement; see GitHub issue #151)",
                         c.purl
                     );
+                    dropped_main_module_purls.push(c.purl.as_str().to_string());
                 } else {
                     keep.push(c.clone());
                 }
@@ -439,8 +447,21 @@ pub fn build_document(
         packages.insert(0, root_pkg);
     }
 
+    // Issue #229: when override is active, alias every dropped
+    // main-module PURL to the synthesized root's SPDXID so dep
+    // edges originally sourced at those PURLs are rewritten to
+    // source from the new root. In the non-override path the alias
+    // list is empty and behavior is unchanged.
+    let purl_aliases: Vec<(String, SpdxId)> =
+        match (override_active, root_ids.first()) {
+            (true, Some(root_id)) => dropped_main_module_purls
+                .iter()
+                .map(|p| (p.clone(), root_id.clone()))
+                .collect(),
+            _ => Vec::new(),
+        };
     let relationships =
-        super::relationships::build_relationships(artifacts, &root_ids);
+        super::relationships::build_relationships(artifacts, &root_ids, &purl_aliases);
 
     // Two creator entries: a `Tool:` identifying mikebom (used
     // throughout the document as the `annotator` field on every

@@ -631,3 +631,149 @@ fn override_orthogonal_to_other_identifier_flags() {
     // If serde isn't present (fixture variation), the test of slot
     // (iv) is moot — slots (i)-(iii) still verify orthogonality.
 }
+
+// ---------------------------------------------------------------------
+// Issue #229 — root-name must preserve the dependency-graph wiring
+// between the synthesized root and the manifest's direct dependencies
+// in SPDX 2.3 and SPDX 3, not just CycloneDX.
+// ---------------------------------------------------------------------
+
+#[test]
+fn root_override_preserves_root_outgoing_edges_in_all_formats() {
+    // Pre-fix behaviour: in CDX the renamed root inherited the
+    // manifest-derived main-module's `dependsOn` edges (via the
+    // primary-dependency fallback in cyclonedx/dependencies.rs).
+    // In SPDX 2.3 + SPDX 3 the edges silently vanished because
+    // `build_relationships` resolves edge sources via a PURL→ID map
+    // built from `artifacts.components` only — the dropped main
+    // module's PURL was no longer in that map, so its outgoing
+    // edges fell through the "PURL not present" branch.
+    let fake_home = tempfile::tempdir().unwrap();
+    let fixture = build_cargo_fixture_named("foo-internal", "0.5.1");
+
+    // --- CycloneDX (the known-good baseline) -------------------------
+    let cdx = run_scan_returning_json(
+        fake_home.path(),
+        fixture.path(),
+        &["--root-name", "widget-svc", "--root-version", "1.2.3"],
+        "cyclonedx-json",
+        "out.cdx.json",
+    );
+    let root_ref = cdx["metadata"]["component"]["bom-ref"]
+        .as_str()
+        .expect("metadata.component.bom-ref present");
+    let cdx_root_deps: Vec<String> = cdx["dependencies"]
+        .as_array()
+        .unwrap_or(&Vec::new())
+        .iter()
+        .find(|d| d["ref"].as_str() == Some(root_ref))
+        .and_then(|d| d["dependsOn"].as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(
+        !cdx_root_deps.is_empty(),
+        "CDX baseline: synthesized root must have outgoing dependsOn edges; got {cdx_root_deps:?}"
+    );
+
+    // --- SPDX 2.3 ----------------------------------------------------
+    let spdx = run_scan_returning_json(
+        fake_home.path(),
+        fixture.path(),
+        &["--root-name", "widget-svc", "--root-version", "1.2.3"],
+        "spdx-2.3-json",
+        "out.spdx.json",
+    );
+    let rels = spdx["relationships"].as_array().expect("relationships[]");
+    let root_spdxid = rels
+        .iter()
+        .find(|r| r["relationshipType"].as_str() == Some("DESCRIBES"))
+        .and_then(|r| r["relatedSpdxElement"].as_str())
+        .expect("DESCRIBES edge present");
+    let mut spdx_root_deps: Vec<String> = Vec::new();
+    let packages = spdx["packages"].as_array().expect("packages[]");
+    for r in rels {
+        if r["spdxElementId"].as_str() == Some(root_spdxid)
+            && r["relationshipType"].as_str() == Some("DEPENDS_ON")
+        {
+            let target = r["relatedSpdxElement"].as_str().unwrap_or("");
+            let pkg = packages
+                .iter()
+                .find(|p| p["SPDXID"].as_str() == Some(target));
+            if let Some(p) = pkg {
+                let purl = p["externalRefs"]
+                    .as_array()
+                    .and_then(|arr| {
+                        arr.iter()
+                            .find(|r| r["referenceType"].as_str() == Some("purl"))
+                    })
+                    .and_then(|r| r["referenceLocator"].as_str())
+                    .unwrap_or("");
+                spdx_root_deps.push(purl.to_string());
+            }
+        }
+    }
+    assert!(
+        !spdx_root_deps.is_empty(),
+        "issue #229 (SPDX 2.3): synthesized root must have outgoing DEPENDS_ON edges; got {spdx_root_deps:?}"
+    );
+    assert_eq!(
+        spdx_root_deps.iter().collect::<std::collections::BTreeSet<_>>(),
+        cdx_root_deps.iter().collect::<std::collections::BTreeSet<_>>(),
+        "issue #229: SPDX 2.3 root outgoing edges must match CDX exactly",
+    );
+
+    // --- SPDX 3.0.1 --------------------------------------------------
+    let spdx3 = run_scan_returning_json(
+        fake_home.path(),
+        fixture.path(),
+        &["--root-name", "widget-svc", "--root-version", "1.2.3"],
+        "spdx-3-json",
+        "out.spdx3.json",
+    );
+    let graph = spdx3["@graph"].as_array().expect("@graph");
+    let root_iri = graph
+        .iter()
+        .find(|e| e["type"].as_str() == Some("SpdxDocument"))
+        .and_then(|d| d["rootElement"].as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.as_str())
+        .expect("SpdxDocument.rootElement present");
+    let mut spdx3_root_deps: Vec<String> = Vec::new();
+    for e in graph {
+        let ty = e["type"].as_str().unwrap_or("");
+        if ty != "Relationship" && ty != "LifecycleScopedRelationship" {
+            continue;
+        }
+        if e["from"].as_str() != Some(root_iri) {
+            continue;
+        }
+        if e["relationshipType"].as_str() != Some("dependsOn") {
+            continue;
+        }
+        let to_iris: Vec<&str> = e["to"]
+            .as_array()
+            .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+            .unwrap_or_default();
+        for iri in to_iris {
+            let purl = graph
+                .iter()
+                .find(|p| p["spdxId"].as_str() == Some(iri))
+                .and_then(|p| p["software_packageUrl"].as_str())
+                .unwrap_or("");
+            spdx3_root_deps.push(purl.to_string());
+        }
+    }
+    assert!(
+        !spdx3_root_deps.is_empty(),
+        "issue #229 (SPDX 3): synthesized root must have outgoing dependsOn edges; got {spdx3_root_deps:?}"
+    );
+    assert_eq!(
+        spdx3_root_deps.iter().collect::<std::collections::BTreeSet<_>>(),
+        cdx_root_deps.iter().collect::<std::collections::BTreeSet<_>>(),
+        "issue #229: SPDX 3 root outgoing edges must match CDX exactly",
+    );
+}

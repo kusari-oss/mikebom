@@ -89,9 +89,22 @@ pub struct SpdxRelationship {
 ///    implicitly carries `CONTAINED_BY` as the inverse — consumers
 ///    get both readings). Orphans (parent_purl points nowhere
 ///    resolvable) are dropped rather than producing dangling edges.
+///
+/// `purl_aliases` (issue #229): alias entries `(dropped_purl, new_id)`
+/// used when milestone 077's `--root-name` override has filtered the
+/// manifest-derived main-module Package out of `packages[]` and
+/// replaced it with a synthesized root carrying a different PURL.
+/// Without this alias step, dependency edges sourced at the dropped
+/// main-module's PURL silently disappear (the PURL is no longer in
+/// `artifacts.components`, so the resolver falls through the "PURL
+/// not present" branch), leaving the new root with zero outgoing
+/// edges. Inserting the alias rewrites those edges to source from the
+/// synthetic root's SPDXID, preserving CDX↔SPDX parity. Pass `&[]`
+/// when no override is active.
 pub fn build_relationships(
     artifacts: &ScanArtifacts<'_>,
     roots: &[SpdxId],
+    purl_aliases: &[(String, SpdxId)],
 ) -> Vec<SpdxRelationship> {
     let mut out: Vec<SpdxRelationship> = Vec::new();
 
@@ -116,6 +129,11 @@ pub fn build_relationships(
     let mut purl_to_id: BTreeMap<String, SpdxId> = BTreeMap::new();
     for c in artifacts.components {
         purl_to_id.insert(c.purl.as_str().to_string(), SpdxId::for_purl(&c.purl));
+    }
+    // Aliases override component-derived entries when both exist —
+    // override callers pass `(dropped_main_module_purl, synthetic_id)`.
+    for (purl, id) in purl_aliases {
+        purl_to_id.insert(purl.clone(), id.clone());
     }
 
     // 2. Dependency edges.
@@ -171,12 +189,20 @@ pub fn build_relationships(
     // 3. Containment edges from parent_purl. Top-level PURLs (set of
     //    components with `parent_purl = None`) are the only valid
     //    parent targets; orphan pointers are dropped.
-    let top_level: std::collections::HashSet<&str> = artifacts
+    //
+    //    Issue #229: aliased PURLs (dropped main-module → synthetic
+    //    root) also count as valid containment parents, so children
+    //    whose `parent_purl` references a filtered-out main module
+    //    are re-parented to the new root instead of being dropped.
+    let mut top_level: std::collections::HashSet<&str> = artifacts
         .components
         .iter()
         .filter(|c| c.parent_purl.is_none())
         .map(|c| c.purl.as_str())
         .collect();
+    for (purl, _) in purl_aliases {
+        top_level.insert(purl.as_str());
+    }
     for c in artifacts.components {
         let Some(parent_purl) = c.parent_purl.as_deref() else {
             continue;
@@ -306,7 +332,7 @@ mod tests {
         let comps: Vec<ResolvedComponent> = vec![];
         let arts = mk_artifacts(&comps, &[], &integ);
         let root = SpdxId::synthetic_root("AAAAAAAAAAAAAAAA");
-        let rels = build_relationships(&arts, std::slice::from_ref(&root));
+        let rels = build_relationships(&arts, std::slice::from_ref(&root), &[]);
         assert_eq!(rels.len(), 1);
         assert_eq!(rels[0].source, SpdxId::document());
         assert_eq!(rels[0].target, root);
@@ -328,7 +354,7 @@ mod tests {
         let rels_arr = [rel];
         let arts = mk_artifacts(&comps, &rels_arr, &integ);
         let root = SpdxId::for_purl(&comps[0].purl);
-        let rels = build_relationships(&arts, std::slice::from_ref(&root));
+        let rels = build_relationships(&arts, std::slice::from_ref(&root), &[]);
         let dep = rels
             .iter()
             .find(|r| r.kind == SpdxRelationshipType::DependsOn)
@@ -352,7 +378,7 @@ mod tests {
         let rels_arr = [rel];
         let arts = mk_artifacts(&comps, &rels_arr, &integ);
         let root = SpdxId::for_purl(&comps[0].purl);
-        let rels = build_relationships(&arts, std::slice::from_ref(&root));
+        let rels = build_relationships(&arts, std::slice::from_ref(&root), &[]);
         let dev = rels
             .iter()
             .find(|r| r.kind == SpdxRelationshipType::DevDependencyOf)
@@ -371,7 +397,7 @@ mod tests {
         let comps = vec![parent, child];
         let arts = mk_artifacts(&comps, &[], &integ);
         let root = SpdxId::for_purl(&comps[0].purl);
-        let rels = build_relationships(&arts, std::slice::from_ref(&root));
+        let rels = build_relationships(&arts, std::slice::from_ref(&root), &[]);
         let contains = rels
             .iter()
             .find(|r| r.kind == SpdxRelationshipType::Contains)
@@ -389,10 +415,93 @@ mod tests {
         let comps = vec![child];
         let arts = mk_artifacts(&comps, &[], &integ);
         let root = SpdxId::synthetic_root("AAAAAAAAAAAAAAAA");
-        let rels = build_relationships(&arts, std::slice::from_ref(&root));
+        let rels = build_relationships(&arts, std::slice::from_ref(&root), &[]);
         // Only the DESCRIBES edge; the orphan containment is dropped.
         assert_eq!(rels.len(), 1);
         assert_eq!(rels[0].kind, SpdxRelationshipType::Describes);
+    }
+
+    #[test]
+    fn purl_alias_rewrites_depends_on_source_to_synthetic_root() {
+        // Issue #229 regression: when --root-name drops the manifest-
+        // derived main module and synthesizes a new root, dep edges
+        // sourced at the dropped PURL must be rewritten to source from
+        // the synthetic root's SPDXID (otherwise the new root ends up
+        // orphaned from the dependency graph, and the SPDX output
+        // diverges from CDX). Only `direct_dep` is in the components
+        // view here — the old main module's PURL is gone, but its
+        // outgoing edge is present in `relationships`; the alias step
+        // is what reconnects it.
+        let direct_dep = mk_component("pkg:cargo/dep@1", "dep", "1");
+        let rel = Relationship {
+            from: "pkg:cargo/old-main@1".to_string(),
+            to: direct_dep.purl.as_str().to_string(),
+            relationship_type: RelationshipType::DependsOn,
+            provenance: prov(),
+        };
+        let integ = empty_integrity();
+        let comps = vec![direct_dep];
+        let rels_arr = [rel];
+        let arts = mk_artifacts(&comps, &rels_arr, &integ);
+        let synth_root = SpdxId::synthetic_root("FFFFFFFFFFFFFFFF");
+        let aliases = vec![("pkg:cargo/old-main@1".to_string(), synth_root.clone())];
+        let rels = build_relationships(&arts, std::slice::from_ref(&synth_root), &aliases);
+        let dep = rels
+            .iter()
+            .find(|r| r.kind == SpdxRelationshipType::DependsOn)
+            .expect("DEPENDS_ON edge present after alias rewrite");
+        assert_eq!(dep.source, synth_root, "edge source rewritten to synthetic root");
+        assert_eq!(dep.target, SpdxId::for_purl(&comps[0].purl));
+    }
+
+    #[test]
+    fn purl_alias_rewrites_reversed_dev_dependency_of_target() {
+        // Issue #229: the alias also has to win for direction-reversed
+        // edges (DevDependsOn / BuildDependsOn / TestDependsOn).
+        // Internal `(old-main DevDependsOn dep)` becomes SPDX
+        // `(dep) DEV_DEPENDENCY_OF (synthetic-root)` after the alias.
+        let direct_dep = mk_component("pkg:npm/dep@1", "dep", "1");
+        let rel = Relationship {
+            from: "pkg:npm/old-main@1".to_string(),
+            to: direct_dep.purl.as_str().to_string(),
+            relationship_type: RelationshipType::DevDependsOn,
+            provenance: prov(),
+        };
+        let integ = empty_integrity();
+        let comps = vec![direct_dep];
+        let rels_arr = [rel];
+        let arts = mk_artifacts(&comps, &rels_arr, &integ);
+        let synth_root = SpdxId::synthetic_root("DEADBEEFDEADBEEF");
+        let aliases = vec![("pkg:npm/old-main@1".to_string(), synth_root.clone())];
+        let rels = build_relationships(&arts, std::slice::from_ref(&synth_root), &aliases);
+        let dev = rels
+            .iter()
+            .find(|r| r.kind == SpdxRelationshipType::DevDependencyOf)
+            .expect("DEV_DEPENDENCY_OF edge present");
+        assert_eq!(dev.source, SpdxId::for_purl(&comps[0].purl));
+        assert_eq!(dev.target, synth_root, "edge target rewritten to synthetic root");
+    }
+
+    #[test]
+    fn purl_alias_rewrites_containment_parent_to_synthetic_root() {
+        // Issue #229: a child whose parent_purl pointed at the
+        // dropped main module should be re-parented to the synthetic
+        // root via the alias step (otherwise the CONTAINS edge is
+        // dropped as orphan).
+        let mut child = mk_component("pkg:maven/x/y/child@1", "child", "1");
+        child.parent_purl = Some("pkg:maven/x/y/old-main@1".to_string());
+        let integ = empty_integrity();
+        let comps = vec![child];
+        let arts = mk_artifacts(&comps, &[], &integ);
+        let synth_root = SpdxId::synthetic_root("CAFEBABE12345678");
+        let aliases = vec![("pkg:maven/x/y/old-main@1".to_string(), synth_root.clone())];
+        let rels = build_relationships(&arts, std::slice::from_ref(&synth_root), &aliases);
+        let contains = rels
+            .iter()
+            .find(|r| r.kind == SpdxRelationshipType::Contains)
+            .expect("CONTAINS edge present after alias rewrite");
+        assert_eq!(contains.source, synth_root);
+        assert_eq!(contains.target, SpdxId::for_purl(&comps[0].purl));
     }
 
     #[test]
@@ -410,7 +519,7 @@ mod tests {
         let rels_arr = [rel];
         let arts = mk_artifacts(&comps, &rels_arr, &integ);
         let root = SpdxId::for_purl(&comps[0].purl);
-        let rels = build_relationships(&arts, std::slice::from_ref(&root));
+        let rels = build_relationships(&arts, std::slice::from_ref(&root), &[]);
         // Only the DESCRIBES edge remains.
         assert_eq!(rels.len(), 1);
     }

@@ -48,6 +48,13 @@ pub fn build_document(
     // The downstream pick_root_iri then synthesizes a root from the
     // override values verbatim.
     let override_active = scan.root_override.is_active();
+    // Issue #229: capture the dropped main-module PURLs so the
+    // post-`pick_root_iri` alias step (below) can map them to the
+    // synthesized root IRI in `package_iri_by_purl`. Without this
+    // dependency edges sourced at those PURLs silently disappear in
+    // `build_dependency_relationships`, leaving the new root with
+    // zero outgoing edges (parity break vs CycloneDX).
+    let mut dropped_main_module_purls: Vec<String> = Vec::new();
     let filtered_components_owned: Option<Vec<ResolvedComponent>> =
         if override_active {
             let mut keep: Vec<ResolvedComponent> = Vec::with_capacity(scan.components.len());
@@ -63,6 +70,7 @@ pub fn build_document(
                         "override is set; dropping manifest-derived main-module component '{}' from emitted SBOM (per milestone 077 clean-replacement; see GitHub issue #151)",
                         c.purl
                     );
+                    dropped_main_module_purls.push(c.purl.as_str().to_string());
                 } else {
                     keep.push(c.clone());
                 }
@@ -247,7 +255,7 @@ pub fn build_document(
     // Two-pass Package build: (a) precompute the PURL → IRI
     // lookup, (b) build agents against the lookup, (c) build
     // Packages with agent attachments inlined.
-    let package_iri_by_purl =
+    let mut package_iri_by_purl =
         super::v3_packages::build_iri_lookup(scan.components, &doc_iri);
 
     let agent_build = super::v3_agents::build_agents(
@@ -301,6 +309,19 @@ pub fn build_document(
         &mut packages,
         scan.components,
     );
+
+    // Issue #229: when --root-name produced a synthesized root, alias
+    // every dropped main-module PURL → synthesized root IRI so dep
+    // edges originally sourced at those PURLs get rewritten to source
+    // from the new root in build_dependency_relationships. Mirrors the
+    // SPDX 2.3 alias path in `relationships.rs`.
+    if synthetic_root_added {
+        if let Some(synth_iri) = root_iris.first().cloned() {
+            for purl in &dropped_main_module_purls {
+                package_iri_by_purl.insert(purl.clone(), synth_iri.clone());
+            }
+        }
+    }
 
     // 3. SpdxDocument (placed in the graph before the per-element
     // sections so a JSON-walker reading top-down hits the document

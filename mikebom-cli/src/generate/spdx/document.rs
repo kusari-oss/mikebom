@@ -318,6 +318,7 @@ pub fn build_document(
             root_override: artifacts.root_override.clone(),
             user_metadata: artifacts.user_metadata.clone(),
             sbom_type_override: artifacts.sbom_type_override,
+            spdx2_edge_style: artifacts.spdx2_edge_style,
         }
     } else {
         ScanArtifacts {
@@ -341,6 +342,7 @@ pub fn build_document(
             root_override: artifacts.root_override.clone(),
             user_metadata: artifacts.user_metadata.clone(),
             sbom_type_override: artifacts.sbom_type_override,
+            spdx2_edge_style: artifacts.spdx2_edge_style,
         }
     };
     let artifacts: &ScanArtifacts<'_> = &view_artifacts;
@@ -865,6 +867,7 @@ mod tests {
             root_override: crate::generate::RootComponentOverride::default(),
             user_metadata: mikebom::binding::user_metadata::UserMetadata::default(),
             sbom_type_override: None,
+            spdx2_edge_style: crate::generate::Spdx2EdgeStyle::Typed,
         }
     }
 

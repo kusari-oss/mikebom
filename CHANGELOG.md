@@ -7,6 +7,31 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### Issue #228 — SPDX 2.3 cross-format parity for scoped deps
+
+Adds a `mikebom:lifecycle-scope` annotation to every scoped Package in SPDX 2.3 output and introduces a new `--spdx2-edge-style {typed|flat}` CLI flag that controls how scoped dependency edges (dev / build / test) are expressed on the wire.
+
+**Background.** Milestone 052/part-2 removed the legacy `mikebom:dev-dependency` annotation from SPDX 2.3 emission on the grounds that the spec-native typed reversed-direction relationship variants — `DEV_DEPENDENCY_OF` / `BUILD_DEPENDENCY_OF` / `TEST_DEPENDENCY_OF` — already carried the same signal. That decision is still defensible per Constitution Principle V, but it leaves SPDX 2.3 consumers that walk only `DEPENDS_ON` (the Trivy / Syft convention, which covers most deployed SBOM-consumer tooling — verified by source-code review of `aquasecurity/trivy` `spdxRelationshipType()` and `anchore/syft` `lookupRelationship()`) unable to see scope-on-edge. Issue #228's reporter ran exactly that walk against `go.mod` projects with test deps (e.g. `testify`) and observed the SPDX-vs-CDX edge-count delta.
+
+**The default doesn't change.** mikebom continues to emit the spec-native typed variants on SPDX 2.3 — those edges are still the highest-fidelity expression of scope and remain the SPDX 2.3 default emission (`--spdx2-edge-style=typed`). What does change is that the target Package now ALSO carries a `mikebom:lifecycle-scope: "development" | "build" | "test"` annotation, so consumers walking a flat `DEPENDS_ON` view of the graph can still recover the dev/build/test distinction by inspecting the Package itself. The annotation is the same one CDX has carried since milestone 052/part-2 (parity-catalog row C42) — issue #228 simply extends it to SPDX 2.3 under Constitution Principle V's documented parity-gap carve-out. SPDX 3 is unaffected — it carries scope natively via `LifecycleScopedRelationship.scope` and intentionally does not emit the annotation.
+
+The new `--spdx2-edge-style=flat` mode is opt-in: when set, every dep — runtime, dev, build, test — emits as a natural-direction `DEPENDS_ON` edge, and scope info lives entirely on the Package annotation. This is the right setting for downstream tooling that's been built against Trivy or Syft output. Default-`typed` preserves the spec-richest emission for any consumer that understands the typed variants; `flat` exists for parity with the de-facto consumer ecosystem.
+
+**Why this matters to SBOM consumers.** Knowing whether a component is dev-only, build-only, or test-only — vs. a deployed-runtime dependency — is consumer-critical signal. It is the difference between an actionable CVE on a shipped artifact and one that doesn't affect production. Tooling that can't distinguish these scopes will over-report risk against test deps (`testify`, `junit`, `criterion`, `mocha`) and under-report against deployed runtime deps. The annotation guarantees that signal is recoverable from the document in either edge style.
+
+#### Added
+
+- **`--spdx2-edge-style <STYLE>`** CLI flag on `mikebom sbom scan`. Accepts `typed` (default — current behavior, spec-native typed variants) or `flat` (every dep as natural-direction `DEPENDS_ON`). Only affects the `spdx-2.3-json` format; CDX and SPDX 3 emission are unaffected.
+- **`mikebom:lifecycle-scope` Package annotation in SPDX 2.3 output**, emitted for every non-runtime scoped Package regardless of edge style. The annotation field name and `development` / `build` / `test` value set match the existing CDX `mikebom:lifecycle-scope` property (parity-catalog row C42).
+- **Five new unit tests** covering the alias rewrite paths: `flat_edge_style_collapses_dev_to_depends_on` and `typed_is_the_default_edge_style` in `generate/spdx/relationships.rs`; `lifecycle_scope_annotation_emitted_for_test_scope`, `lifecycle_scope_annotation_emitted_for_dev_and_build`, and `lifecycle_scope_annotation_omitted_for_runtime_and_none` in `generate/spdx/annotations.rs`.
+- **`docs/reference/sbom-format-mapping.md`** rows B2 and C42 extended with the SPDX 2.3 emission story, the edge-style flag, and the consumer-importance rationale per Constitution Principle V's documentation requirement.
+- **`docs/user-guide/cli-reference.md`** new `--spdx2-edge-style` section with examples.
+
+#### Changed
+
+- **SPDX 2.3 byte-identity goldens regenerated for `maven` and `bazel`** — the only two ecosystem fixtures in the suite that exercise non-runtime scopes (maven `<scope>test</scope>` on junit; Bazel `dev_dependency` rules). Diff is purely additive: one new `mikebom:lifecycle-scope` annotation per scoped Package, no edge-type changes (default mode unchanged). The other 9 SPDX 2.3 goldens (apk, cargo, cmake, deb, gem, golang, npm, pip, rpm) are byte-identical to alpha.34.
+- **`spdx3_annotation_fidelity.rs::collect_spdx23`** updated to skip the `mikebom:lifecycle-scope` field when computing cross-format-fidelity diffs — the annotation is SPDX-2.3-only by design (SPDX 3 carries the same signal natively), so the fidelity test would otherwise flag an intentional asymmetry as drift.
+
 ### Milestone 073 — identifiers (built-in + user-defined)
 
 Adds dedicated identifier flags (`--repo`, `--git-ref`, `--image-id`, `--attestation`, `--id <scheme>=<value>`) to `mikebom sbom scan` (path + image modes) and `mikebom trace run`, plus auto-detected identifiers on `--path` scans (from the git origin remote, with `upstream` + first-listed fallbacks per the 3-step Q1 algorithm) and `--image` scans (from the resolved image reference + manifest digest, in the `image:<registry>/<name>:<tag>@sha256:<digest>` canonical Q3 shape). Built-in schemes (`repo:`, `git:`, `image:`, `attestation:`) ride per-format standards-native carriers (CDX `metadata.component.externalReferences[]`, SPDX 2.3 dual-carrier on main-module `Package.externalRefs[PERSISTENT-ID]` + `creationInfo.creators` redundant text line, SPDX 3 `Element.externalIdentifier[]`); user-defined schemes (e.g., `acme_corp_id:`, `internal_ticket:`) ride a `mikebom:identifiers` document-level annotation per Constitution Principle V's documented-exception path. Sets up milestone 074's `--bind-to-source <identifier>` resolution path with no additional emission-side work needed at that point.

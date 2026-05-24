@@ -109,6 +109,7 @@ pub fn build_document(
             root_override: scan.root_override.clone(),
             user_metadata: scan.user_metadata.clone(),
             sbom_type_override: scan.sbom_type_override,
+            spdx2_edge_style: scan.spdx2_edge_style,
         };
         &view_scan_storage
     } else {

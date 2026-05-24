@@ -527,6 +527,48 @@ pub struct ScanArgs {
     )]
     pub sbom_type:
         Option<crate::generate::lifecycle_phases::SbomType>,
+
+    // ────────────────────────────────────────────────────────────
+    // Issue #228 — SPDX 2.3 edge-emission style.
+    // ────────────────────────────────────────────────────────────
+
+    /// Controls how the SPDX 2.3 emitter encodes scoped dependency
+    /// edges (dev / build / test). Default `typed` emits the spec-
+    /// native typed reversed-direction variants
+    /// (`DEV_DEPENDENCY_OF` / `BUILD_DEPENDENCY_OF` /
+    /// `TEST_DEPENDENCY_OF`) — the SPDX 2.3 native answer for "what
+    /// scope is this edge?". `flat` emits every dep as natural-
+    /// direction `DEPENDS_ON` regardless of scope, matching the
+    /// Trivy convention and aligning with what consumers walking
+    /// only `DEPENDS_ON` expect to see. In BOTH modes the
+    /// `mikebom:lifecycle-scope` annotation is set on the target
+    /// Package for non-runtime deps, so the scope distinction is
+    /// recoverable from the document regardless of edge style. Only
+    /// affects the `spdx-2.3-json` format; CDX and SPDX 3 emission
+    /// are unaffected. See `docs/reference/sbom-format-mapping.md`
+    /// C42 for the cross-format mapping.
+    #[arg(
+        long = "spdx2-edge-style",
+        value_name = "STYLE",
+        value_parser = parse_spdx2_edge_style_flag,
+        default_value = "typed",
+    )]
+    pub spdx2_edge_style: crate::generate::Spdx2EdgeStyle,
+}
+
+/// Clap value_parser for `--spdx2-edge-style`. Accepts `typed`
+/// (default) and `flat` (issue #228 alignment with consumer-default
+/// flat-`DEPENDS_ON` graphs).
+pub(crate) fn parse_spdx2_edge_style_flag(
+    value: &str,
+) -> Result<crate::generate::Spdx2EdgeStyle, String> {
+    match value {
+        "typed" => Ok(crate::generate::Spdx2EdgeStyle::Typed),
+        "flat" => Ok(crate::generate::Spdx2EdgeStyle::Flat),
+        other => Err(format!(
+            "invalid --spdx2-edge-style '{other}'; valid values: typed, flat"
+        )),
+    }
 }
 
 /// Clap value_parser for `--sbom-type`. Wraps
@@ -1803,6 +1845,9 @@ pub async fn execute(
         // per-component `mikebom:sbom-tier` annotations preserve
         // auto-detected values.
         sbom_type_override: args.sbom_type,
+        // Issue #228: edge-style flag (default `typed` preserves the
+        // milestone-052/part-2 typed reversed-direction emission).
+        spdx2_edge_style: args.spdx2_edge_style,
     };
     let output_cfg = OutputConfig {
         mikebom_version: env!("CARGO_PKG_VERSION"),
@@ -2420,6 +2465,7 @@ mod tests {
             // Milestone 081 — default the new operator-assert flag to
             // None so the helper's "minimal flags" contract holds.
             sbom_type: None,
+            spdx2_edge_style: crate::generate::Spdx2EdgeStyle::Typed,
             // Milestone 102 — default vendored-deps emission OFF.
             include_vendored: false,
         }

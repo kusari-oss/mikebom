@@ -158,6 +158,23 @@ pub struct ScanArtifacts<'a> {
     /// struct-literal call sites compiling.
     pub sbom_type_override:
         Option<crate::generate::lifecycle_phases::SbomType>,
+    /// Issue #228 — selects the SPDX 2.3 relationship-type vocabulary
+    /// the emitter uses for scoped dependency edges (dev / build /
+    /// test). Both modes are spec-conformant; the flag exists because
+    /// some downstream SBOM consumers only implement the basic
+    /// relationship vocabulary (`DEPENDS_ON` / `CONTAINS` /
+    /// `DESCRIBES`) and ignore the typed scoped variants. `Full`
+    /// (default) emits the spec-native typed reversed-direction
+    /// variants (`DEV_DEPENDENCY_OF` / `BUILD_DEPENDENCY_OF` /
+    /// `TEST_DEPENDENCY_OF`). `Basic` collapses every dep — runtime,
+    /// dev, build, test — into natural-direction `DEPENDS_ON` for
+    /// compatibility with the basic-vocabulary consumer set. Scope
+    /// info still rides on the target Package's
+    /// `mikebom:lifecycle-scope` annotation in both modes. CDX and
+    /// SPDX 3 are unaffected. See
+    /// `docs/reference/sbom-format-mapping.md` C42 + the
+    /// `--spdx2-relationship-compat` CLI flag.
+    pub spdx2_relationship_compat: Spdx2RelationshipCompat,
 }
 
 /// Milestone 077 — operator-supplied overrides for the root component
@@ -224,6 +241,51 @@ pub fn percent_encode_purl_name(s: &str) -> String {
         }
     }
     out
+}
+
+/// Issue #228 — SPDX 2.3 relationship-vocabulary compatibility
+/// selector. Both modes are spec-conformant, but they are not
+/// equivalent: `Full` (default) preserves more information than
+/// `Basic`. Per Constitution Principle X (Transparency), mikebom
+/// defaults to the spec-native mechanism that carries the most
+/// consumer-actionable signal, and the SPDX 2.3 spec defines the
+/// typed scoped relationship variants for exactly the purpose of
+/// expressing dev/build/test scope on a dependency edge. Choosing
+/// `Basic` is a deliberate downshift — accept the information loss
+/// when targeting consumers that don't implement those variants.
+///
+/// `Full` (default): each scoped dep emits the spec-native typed
+/// reversed-direction variant — `DEV_DEPENDENCY_OF` /
+/// `BUILD_DEPENDENCY_OF` / `TEST_DEPENDENCY_OF`. Runtime deps emit
+/// as natural-direction `DEPENDS_ON`. The SPDX 2.3 spec's
+/// purpose-built field for the dev/build/test distinction — a
+/// consumer that implements the full SPDX 2.3 relationshipType enum
+/// sees the scope on every edge directly.
+///
+/// `Basic`: every dep — runtime, dev, build, test — emits as natural-
+/// direction `DEPENDS_ON`. The scope distinction lives entirely on
+/// the target Package via the `mikebom:lifecycle-scope` annotation
+/// (which is also emitted under `Full`, so consumers can rely on it
+/// in either mode). Use only when emitting for downstream tooling
+/// that doesn't implement the typed scoped variants (Trivy, Syft,
+/// and tooling built on top of them — empirically the dominant
+/// consumer set, but spec-incomplete).
+///
+/// CDX and SPDX 3 emission are unaffected — CDX always carries scope
+/// on the component (`scope: "excluded"` plus the
+/// `mikebom:lifecycle-scope` property), and SPDX 3 always uses
+/// `LifecycleScopedRelationship` with `relationshipType: "dependsOn"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Spdx2RelationshipCompat {
+    /// Full SPDX 2.3 relationship vocabulary — typed
+    /// reversed-direction edges for scoped deps;
+    /// natural-direction `DEPENDS_ON` for runtime. Default.
+    #[default]
+    Full,
+    /// Basic SPDX 2.3 vocabulary only — every dep emits as natural-
+    /// direction `DEPENDS_ON` regardless of scope. Scope info lives
+    /// on the target Package's `mikebom:lifecycle-scope` annotation.
+    Basic,
 }
 
 /// Document-level scope mode for a single mikebom scan. Surfaced

@@ -70,18 +70,34 @@ pub struct SpdxRelationship {
 ///    correspond to any component in the scan, the edge is skipped
 ///    with a debug log rather than crashing — edge corruption from
 ///    upstream enrichment shouldn't poison the SBOM. Direction and
-///    verb per the data-model.md §3.4 table:
+///    verb depend on `ScanArtifacts.spdx2_relationship_compat`
+///    (issue #228):
+///
+///    **`Spdx2RelationshipCompat::Full` (default)** — per the
+///    data-model.md §3.4 table:
 ///
 ///    | internal `RelationshipType` | SPDX `relationshipType`          | direction |
 ///    |-----------------------------|----------------------------------|-----------|
 ///    | `DependsOn`                 | `DEPENDS_ON`                     | same      |
 ///    | `DevDependsOn`              | `DEV_DEPENDENCY_OF`              | reversed  |
 ///    | `BuildDependsOn`            | `BUILD_DEPENDENCY_OF`            | reversed  |
+///    | `TestDependsOn`             | `TEST_DEPENDENCY_OF`             | reversed  |
 ///
-///    Reversal for dev/build dep edges matches SPDX semantics —
+///    Reversal for dev/build/test dep edges matches SPDX semantics —
 ///    `(A) DEV_DEPENDENCY_OF (B)` means "A is a dev dep of B", so
 ///    internal `(A DevDependsOn B)` "A needs B for dev" swaps to
-///    `(B) DEV_DEPENDENCY_OF (A)` = "B is a dev dep of A".
+///    `(B) DEV_DEPENDENCY_OF (A)` = "B is a dev dep of A". This is
+///    the spec-richest emission and the SPDX 2.3 spec's full answer
+///    for "what scope is this edge?".
+///
+///    **`Spdx2RelationshipCompat::Basic`** — every dep variant maps
+///    to `DEPENDS_ON` in natural direction. Drops scope-on-edge in
+///    favor of the basic SPDX 2.3 relationship vocabulary the
+///    typical downstream consumer set (Trivy, Syft, and tooling
+///    built on top of them) actually implements. Scope info lives
+///    on the target Package's `mikebom:lifecycle-scope` annotation
+///    (which is set in both modes — see C42 in
+///    `docs/reference/sbom-format-mapping.md`).
 ///
 /// 3. **Containment edges** (FR-011): for each component whose
 ///    `parent_purl` is set AND points at a top-level component in
@@ -158,19 +174,34 @@ pub fn build_relationships(
                 continue;
             }
         };
-        let (source, target, kind) = match rel.relationship_type {
-            RelationshipType::DependsOn => {
+        // Issue #228: `Spdx2RelationshipCompat::Basic` collapses
+        // every dep — runtime, dev, build, test — into a natural-
+        // direction `DEPENDS_ON` edge, restricting emission to the
+        // basic SPDX 2.3 relationship vocabulary downstream consumers
+        // actually implement (Trivy, Syft, etc.). Scope info still
+        // rides on the target Package's `mikebom:lifecycle-scope`
+        // annotation (emitted in both modes) so the dev/build/test
+        // distinction is recoverable from the document regardless of
+        // which compat mode is in effect.
+        let (source, target, kind) = match (
+            artifacts.spdx2_relationship_compat,
+            rel.relationship_type.clone(),
+        ) {
+            (_, RelationshipType::DependsOn) => {
                 (from_id, to_id, SpdxRelationshipType::DependsOn)
             }
-            RelationshipType::DevDependsOn => {
+            (crate::generate::Spdx2RelationshipCompat::Basic, _) => {
+                (from_id, to_id, SpdxRelationshipType::DependsOn)
+            }
+            (crate::generate::Spdx2RelationshipCompat::Full, RelationshipType::DevDependsOn) => {
                 // Reverse direction for *_DEPENDENCY_OF verbs (see
                 // module docs).
                 (to_id, from_id, SpdxRelationshipType::DevDependencyOf)
             }
-            RelationshipType::BuildDependsOn => {
+            (crate::generate::Spdx2RelationshipCompat::Full, RelationshipType::BuildDependsOn) => {
                 (to_id, from_id, SpdxRelationshipType::BuildDependencyOf)
             }
-            RelationshipType::TestDependsOn => {
+            (crate::generate::Spdx2RelationshipCompat::Full, RelationshipType::TestDependsOn) => {
                 // Same direction-reversal convention as DevDependsOn /
                 // BuildDependsOn — internal `(A) TestDependsOn (B)`
                 // "A needs B for tests" → SPDX
@@ -323,6 +354,7 @@ mod tests {
             root_override: crate::generate::RootComponentOverride::default(),
             user_metadata: mikebom::binding::user_metadata::UserMetadata::default(),
             sbom_type_override: None,
+            spdx2_relationship_compat: crate::generate::Spdx2RelationshipCompat::Full,
         }
     }
 
@@ -361,6 +393,88 @@ mod tests {
             .expect("DEPENDS_ON edge present");
         assert_eq!(dep.source, SpdxId::for_purl(&comps[0].purl));
         assert_eq!(dep.target, SpdxId::for_purl(&comps[1].purl));
+    }
+
+    /// Issue #228 — helper that builds artifacts in basic-vocabulary
+    /// compat mode for the regression tests. Stand-alone helper
+    /// rather than a param on `mk_artifacts` so the other ~10 tests
+    /// stay unchanged.
+    fn mk_artifacts_basic<'a>(
+        comps: &'a [ResolvedComponent],
+        rels: &'a [Relationship],
+        integ: &'a TraceIntegrity,
+    ) -> ScanArtifacts<'a> {
+        let mut a = mk_artifacts(comps, rels, integ);
+        a.spdx2_relationship_compat = crate::generate::Spdx2RelationshipCompat::Basic;
+        a
+    }
+
+    #[test]
+    fn basic_compat_collapses_dev_to_depends_on() {
+        // Issue #228 — under Spdx2RelationshipCompat::Basic, internal
+        // DevDependsOn / BuildDependsOn / TestDependsOn must all emit
+        // as natural-direction DEPENDS_ON. Scope info lives on the
+        // target Package's `mikebom:lifecycle-scope` annotation, not
+        // on the edge.
+        let a = mk_component("pkg:npm/a@1", "a", "1");
+        let b = mk_component("pkg:npm/b@1", "b", "1");
+        for variant in [
+            RelationshipType::DevDependsOn,
+            RelationshipType::BuildDependsOn,
+            RelationshipType::TestDependsOn,
+        ] {
+            let rel = Relationship {
+                from: a.purl.as_str().to_string(),
+                to: b.purl.as_str().to_string(),
+                relationship_type: variant.clone(),
+                provenance: prov(),
+            };
+            let integ = empty_integrity();
+            let comps = vec![a.clone(), b.clone()];
+            let rels_arr = [rel];
+            let arts = mk_artifacts_basic(&comps, &rels_arr, &integ);
+            let root = SpdxId::for_purl(&comps[0].purl);
+            let rels = build_relationships(&arts, std::slice::from_ref(&root), &[]);
+            let dep = rels
+                .iter()
+                .find(|r| r.kind == SpdxRelationshipType::DependsOn && r.source != SpdxId::document())
+                .unwrap_or_else(|| panic!("variant {variant:?}: expected DEPENDS_ON, got {rels:#?}"));
+            assert_eq!(
+                dep.source,
+                SpdxId::for_purl(&comps[0].purl),
+                "variant {variant:?}: natural direction (A->B)"
+            );
+            assert_eq!(dep.target, SpdxId::for_purl(&comps[1].purl));
+            // And no typed `*_DEPENDENCY_OF` variant should leak through.
+            let leaked: Vec<_> = rels
+                .iter()
+                .filter(|r| matches!(
+                    r.kind,
+                    SpdxRelationshipType::DevDependencyOf
+                        | SpdxRelationshipType::BuildDependencyOf
+                        | SpdxRelationshipType::TestDependencyOf
+                ))
+                .collect();
+            assert!(
+                leaked.is_empty(),
+                "variant {variant:?}: no typed scoped edges expected in Basic mode, got {leaked:#?}"
+            );
+        }
+    }
+
+    #[test]
+    fn full_is_the_default_relationship_compat() {
+        // Default compat mode preserves the milestone-052/part-2
+        // typed reversed-direction emission. Belt-and-suspenders
+        // alongside `dev_depends_on_reverses_to_dev_dependency_of`:
+        // asserts that the *default* value of Spdx2RelationshipCompat
+        // is Full (so a caller that constructs
+        // `ScanArtifacts { .. spdx2_relationship_compat: Default::default(), .. }`
+        // gets the spec-rich emission).
+        assert_eq!(
+            crate::generate::Spdx2RelationshipCompat::default(),
+            crate::generate::Spdx2RelationshipCompat::Full,
+        );
     }
 
     #[test]

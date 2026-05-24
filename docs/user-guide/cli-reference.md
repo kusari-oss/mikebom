@@ -181,6 +181,7 @@ Exactly one of `--path` or `--image` is required.
 | `--scan-target-name <NAME>` | string | auto-derived | Operator override for the document/SBOM name field. |
 | `--metadata-file <PATH>` | path | (none) | JSON sidecar with user-supplied metadata. |
 | `--sbom-type <TYPE>` | enum (`design`/`source`/`build`/`analyzed`/`deployed`/`runtime`) | auto-detect | Operator-asserted CISA SBOM Type. |
+| `--spdx2-relationship-compat <PROFILE>` | enum (`full`/`basic`) | `full` | SPDX 2.3 relationship-vocabulary compatibility for scoped deps (issue #228). |
 
 ### `--path <PATH>`
 
@@ -663,6 +664,69 @@ mikebom sbom scan --path . --sbom-type build --output build.cdx.json
 
 See also: [SBOM types](../reference/sbom-types.md) for the four-column
 equivalence reference and per-format field positions.
+
+### `--spdx2-relationship-compat <PROFILE>`
+
+Selects the SPDX 2.3 relationship-type vocabulary mikebom uses for
+scoped dependency edges (dev, build, test). Only affects the
+`spdx-2.3-json` format — CDX and SPDX 3 emission are unaffected.
+
+**Both modes are spec-conformant, but they are not equivalent.** The
+SPDX 2.3 spec defines `DEV_DEPENDENCY_OF`, `BUILD_DEPENDENCY_OF`,
+and `TEST_DEPENDENCY_OF` for exactly the purpose of expressing
+dev/build/test scope on a dependency edge — the spec's intent is
+clearly that you should use the most specific field that applies.
+Constitution Principle X (Transparency) further requires mikebom to
+default to the spec-native mechanism that preserves the most
+consumer-actionable signal. mikebom defaults to `full` for both
+reasons: we want more transparency in SBOM output, not less.
+
+`basic` is provided as an explicit downshift for compatibility with
+downstream tooling that doesn't implement the typed scoped variants.
+Choose it deliberately, knowing you're trading spec-rich expression
+for tool-compat reach.
+
+Valid values:
+
+- **`full`** (default): emit the spec-native typed reversed-direction
+  variants `DEV_DEPENDENCY_OF`, `BUILD_DEPENDENCY_OF`,
+  `TEST_DEPENDENCY_OF`. Every scoped edge carries its scope in the
+  relationship type itself — the SPDX 2.3 spec's purpose-built
+  field. Use this when emitting SBOMs for tooling that implements
+  the full SPDX 2.3 relationshipType enum, and as the standing
+  default for any output you intend to be maximally informative.
+- **`basic`**: emit every dep, regardless of scope, as a natural-
+  direction `DEPENDS_ON` edge. Use this when emitting SBOMs for
+  downstream tooling that only implements the basic relationship
+  vocabulary (e.g., Trivy, Syft, and tooling built on top of them).
+  Such consumers would silently drop the typed scoped variants
+  altogether, so collapsing scoped deps to `DEPENDS_ON` makes the
+  graph readable to them — at the cost of moving the dev/build/test
+  signal off the edge and onto the Package annotation.
+
+**Crucially, the scope distinction is preserved in BOTH modes via the
+`mikebom:lifecycle-scope` annotation on the target Package** (values
+`development` / `build` / `test`; absent on runtime deps). This means
+the dev/build/test signal is always recoverable from the document
+itself — `full` puts it both on the edge and on the Package; `basic`
+puts it on the Package only. This is consumer-critical signal:
+vulnerability scanners, license auditors, and deployment-policy tools
+need it to distinguish a CVE on a shipped component from one against
+a test-only dep like `testify` or `junit`.
+
+```bash
+# Default — full SPDX 2.3 relationship vocabulary (typed scoped variants).
+mikebom sbom scan --path . --format spdx-2.3-json --output project.spdx.json
+
+# Basic vocabulary only — every dep emits as natural-direction DEPENDS_ON.
+mikebom sbom scan --path . \
+  --spdx2-relationship-compat basic \
+  --format spdx-2.3-json \
+  --output project.spdx.json
+```
+
+See also: [SBOM format mapping](../reference/sbom-format-mapping.md)
+rows B2 + C42 for the full cross-format consumer story.
 
 ---
 

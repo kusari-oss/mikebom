@@ -624,6 +624,7 @@ mod tests {
             root_override: crate::generate::RootComponentOverride::default(),
             user_metadata: mikebom::binding::user_metadata::UserMetadata::default(),
             sbom_type_override: None,
+            spdx2_relationship_compat: crate::generate::Spdx2RelationshipCompat::Full,
         }
     }
 

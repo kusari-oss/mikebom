@@ -141,16 +141,52 @@ pub fn annotate_component(
     if let Some(ref v) = c.sbom_tier {
         push(&mut out, "mikebom:sbom-tier", json!(v));
     }
-    // C6 (milestone 052/part-2): the legacy `mikebom:dev-dependency`
-    // annotation is REMOVED. Per Constitution Principle V (v1.4.0),
-    // SPDX 2.3 has dedicated native relationship types
-    // (`DEV_DEPENDENCY_OF` / `BUILD_DEPENDENCY_OF` /
-    // `TEST_DEPENDENCY_OF`) that carry the lifecycle-scope signal
-    // directly. The signal travels via
-    // `mikebom_common::resolution::RelationshipType::{Dev,Build,Test}DependsOn`
-    // edges set by `apply_lifecycle_scope_to_edges` in
-    // `scan_fs/mod.rs`, then mapped to native SPDX relationship
-    // types by `spdx/relationships.rs`. No annotation needed.
+    // C42 `mikebom:lifecycle-scope` — parity-bridging annotation per
+    // Constitution Principle V's "format-asymmetry" carve-out, added
+    // for issue #228.
+    //
+    // Background: milestone 052/part-2 removed the legacy
+    // `mikebom:dev-dependency` annotation because SPDX 2.3 already
+    // carries the same signal natively via the typed scoped
+    // relationship variants (`DEV_DEPENDENCY_OF` / `BUILD_DEPENDENCY_OF`
+    // / `TEST_DEPENDENCY_OF`). That removal was correct given those
+    // edges were the sole consumer signal. Issue #228 surfaced a
+    // separate problem: scope information that lives ONLY on the
+    // relationship type is invisible to any consumer walking the
+    // dependency graph by `DEPENDS_ON` alone — which, per the Trivy +
+    // Syft survey, covers most of the deployed SBOM-consumer
+    // ecosystem. CDX bridges this with a Package-level
+    // `mikebom:lifecycle-scope` property (the C42 slot, also set on
+    // CDX components per `cdx/builder.rs`). Without an equivalent on
+    // the SPDX 2.3 Package, a consumer reading the SPDX 2.3 document
+    // (without scope-aware edge walking) cannot tell that
+    // `testify` / `junit` / `criterion` are dev-tier rather than
+    // deployed-runtime — a material distinction for vulnerability
+    // triage, license risk, and deployment auditing.
+    //
+    // The annotation is additive — the typed relationship variants
+    // remain the primary spec-native signal, and the
+    // `--spdx2-relationship-compat` flag controls whether they're
+    // emitted (`full`, default) or collapsed to flat `DEPENDS_ON`
+    // for downstream consumers that only implement the basic
+    // vocabulary (`basic`). The Package annotation is the same in
+    // both modes; consumers can rely on it regardless of compat
+    // mode.
+    //
+    // Per Principle V documentation requirement, this is documented
+    // in `docs/reference/sbom-format-mapping.md` under C42.
+    if let Some(ref scope) = c.lifecycle_scope {
+        use mikebom_common::resolution::LifecycleScope;
+        let scope_str = match scope {
+            LifecycleScope::Development => Some("development"),
+            LifecycleScope::Build => Some("build"),
+            LifecycleScope::Test => Some("test"),
+            LifecycleScope::Runtime => None, // runtime is the default; no annotation
+        };
+        if let Some(s) = scope_str {
+            push(&mut out, "mikebom:lifecycle-scope", json!(s));
+        }
+    }
     // C7 co-owned-by
     if let Some(ref v) = c.co_owned_by {
         push(&mut out, "mikebom:co-owned-by", json!(v));
@@ -547,5 +583,117 @@ mod tests {
             "schema must forbid additional properties so consumers can \
              duck-type on the three known fields"
         );
+    }
+
+    // -----------------------------------------------------------
+    // Issue #228 — `mikebom:lifecycle-scope` annotation emission
+    // -----------------------------------------------------------
+
+    fn mk_minimal_component(
+        purl: &str,
+        scope: Option<mikebom_common::resolution::LifecycleScope>,
+    ) -> ResolvedComponent {
+        use mikebom_common::resolution::{ResolutionEvidence, ResolutionTechnique};
+        use mikebom_common::types::purl::Purl;
+        ResolvedComponent {
+            purl: Purl::new(purl).unwrap(),
+            name: "demo".to_string(),
+            version: "1".to_string(),
+            evidence: ResolutionEvidence {
+                technique: ResolutionTechnique::UrlPattern,
+                confidence: 0.9,
+                source_connection_ids: vec![],
+                source_file_paths: vec![],
+                deps_dev_match: None,
+            },
+            licenses: vec![],
+            concluded_licenses: vec![],
+            hashes: vec![],
+            supplier: None,
+            cpes: vec![],
+            advisories: vec![],
+            occurrences: vec![],
+            lifecycle_scope: scope,
+            requirement_range: None,
+            source_type: None,
+            sbom_tier: None,
+            buildinfo_status: None,
+            evidence_kind: None,
+            binary_class: None,
+            binary_stripped: None,
+            linkage_kind: None,
+            detected_go: None,
+            confidence: None,
+            binary_packed: None,
+            npm_role: None,
+            raw_version: None,
+            parent_purl: None,
+            co_owned_by: None,
+            shade_relocation: None,
+            external_references: Vec::new(),
+            extra_annotations: Default::default(),
+        }
+    }
+
+    fn parse_envelope(a: &SpdxAnnotation) -> MikebomAnnotationCommentV1 {
+        serde_json::from_str(&a.comment).expect("annotation comment is valid v1 envelope")
+    }
+
+    #[test]
+    fn lifecycle_scope_annotation_emitted_for_test_scope() {
+        // Issue #228 — a Test-scoped Package must carry a
+        // `mikebom:lifecycle-scope: "test"` annotation regardless of
+        // edge-style. This is the parity-bridging signal CDX
+        // consumers expect on the target component, and the only
+        // way a flat-DEPENDS_ON SPDX 2.3 consumer can distinguish
+        // dev / build / test deps from deployed-runtime deps.
+        let c = mk_minimal_component(
+            "pkg:golang/example.com/testify@v1",
+            Some(mikebom_common::resolution::LifecycleScope::Test),
+        );
+        let annos = annotate_component("Tool: mikebom-test", "2026-05-23T00:00:00Z", &c, false, false);
+        let scope_annos: Vec<_> = annos
+            .iter()
+            .filter(|a| parse_envelope(a).field == "mikebom:lifecycle-scope")
+            .collect();
+        assert_eq!(scope_annos.len(), 1, "exactly one lifecycle-scope annotation");
+        assert_eq!(parse_envelope(scope_annos[0]).value, serde_json::json!("test"));
+    }
+
+    #[test]
+    fn lifecycle_scope_annotation_emitted_for_dev_and_build() {
+        // Coverage for the other two non-runtime variants.
+        for (scope, expected) in [
+            (mikebom_common::resolution::LifecycleScope::Development, "development"),
+            (mikebom_common::resolution::LifecycleScope::Build, "build"),
+        ] {
+            let c = mk_minimal_component("pkg:cargo/x@1", Some(scope));
+            let annos = annotate_component("Tool: mikebom-test", "2026-05-23T00:00:00Z", &c, false, false);
+            let found = annos
+                .iter()
+                .any(|a| {
+                    let env = parse_envelope(a);
+                    env.field == "mikebom:lifecycle-scope" && env.value == serde_json::json!(expected)
+                });
+            assert!(found, "expected lifecycle-scope={expected} annotation for scope={scope:?}");
+        }
+    }
+
+    #[test]
+    fn lifecycle_scope_annotation_omitted_for_runtime_and_none() {
+        // Runtime is the default; emitting an annotation would be
+        // noise. Same for components that never had scope assigned
+        // (e.g., OS package readers).
+        for scope in [
+            Some(mikebom_common::resolution::LifecycleScope::Runtime),
+            None,
+        ] {
+            let c = mk_minimal_component("pkg:deb/debian/libc6@2.36", scope);
+            let annos = annotate_component("Tool: mikebom-test", "2026-05-23T00:00:00Z", &c, false, false);
+            let leaked = annos
+                .iter()
+                .any(|a| parse_envelope(a).field == "mikebom:lifecycle-scope");
+            assert!(!leaked, "no lifecycle-scope annotation for scope={scope:?}; got {annos:#?}");
+        }
     }
 }

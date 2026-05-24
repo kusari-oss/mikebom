@@ -158,17 +158,23 @@ pub struct ScanArtifacts<'a> {
     /// struct-literal call sites compiling.
     pub sbom_type_override:
         Option<crate::generate::lifecycle_phases::SbomType>,
-    /// Issue #228 — controls how the SPDX 2.3 emitter expresses
-    /// scoped dependency edges (dev / build / test). `Typed` (default)
-    /// preserves the milestone-052/part-2 behavior of emitting
-    /// `*_DEPENDENCY_OF` reversed-direction edges; `Flat` collapses
-    /// every dep — runtime, dev, build, test — into natural-direction
-    /// `DEPENDS_ON`. Scope info still rides on the target Package's
+    /// Issue #228 — selects the SPDX 2.3 relationship-type vocabulary
+    /// the emitter uses for scoped dependency edges (dev / build /
+    /// test). Both modes are spec-conformant; the flag exists because
+    /// some downstream SBOM consumers only implement the basic
+    /// relationship vocabulary (`DEPENDS_ON` / `CONTAINS` /
+    /// `DESCRIBES`) and ignore the typed scoped variants. `Full`
+    /// (default) emits the spec-native typed reversed-direction
+    /// variants (`DEV_DEPENDENCY_OF` / `BUILD_DEPENDENCY_OF` /
+    /// `TEST_DEPENDENCY_OF`). `Basic` collapses every dep — runtime,
+    /// dev, build, test — into natural-direction `DEPENDS_ON` for
+    /// compatibility with the basic-vocabulary consumer set. Scope
+    /// info still rides on the target Package's
     /// `mikebom:lifecycle-scope` annotation in both modes. CDX and
     /// SPDX 3 are unaffected. See
     /// `docs/reference/sbom-format-mapping.md` C42 + the
-    /// `--spdx2-edge-style` CLI flag.
-    pub spdx2_edge_style: Spdx2EdgeStyle,
+    /// `--spdx2-relationship-compat` CLI flag.
+    pub spdx2_relationship_compat: Spdx2RelationshipCompat,
 }
 
 /// Milestone 077 — operator-supplied overrides for the root component
@@ -237,37 +243,43 @@ pub fn percent_encode_purl_name(s: &str) -> String {
     out
 }
 
-/// Issue #228 — SPDX 2.3 edge-emission style for scoped deps.
+/// Issue #228 — SPDX 2.3 relationship-vocabulary compatibility
+/// selector. Both modes are spec-conformant; the flag exists because
+/// some downstream consumers (Trivy, Syft, and tooling built on top
+/// of them) only implement the basic relationship vocabulary
+/// (`DEPENDS_ON`, `CONTAINS`, `DESCRIBES`) and silently ignore the
+/// typed scoped variants the spec also defines.
 ///
-/// `Typed` (default): each scoped dep emits the spec-native typed
+/// `Full` (default): each scoped dep emits the spec-native typed
 /// reversed-direction variant — `DEV_DEPENDENCY_OF` /
 /// `BUILD_DEPENDENCY_OF` / `TEST_DEPENDENCY_OF`. Runtime deps emit
 /// as natural-direction `DEPENDS_ON`. Information-rich; the SPDX 2.3
-/// spec-native way to encode "is this a deployed-runtime dep, or
-/// dev-only?". Consumers walking the graph need to know about the
-/// reversed-direction typed variants to see the full picture.
+/// spec's full answer for "what scope is this edge?". A consumer
+/// that implements the full SPDX 2.3 relationshipType enum sees the
+/// dev/build/test scope on every edge.
 ///
-/// `Flat`: every dep — runtime, dev, build, test — emits as natural-
+/// `Basic`: every dep — runtime, dev, build, test — emits as natural-
 /// direction `DEPENDS_ON`. The scope distinction lives entirely on
 /// the target Package via the `mikebom:lifecycle-scope` annotation
-/// (which is also emitted under `Typed`, so consumers can rely on it
-/// in either mode). Useful for downstream tooling that only walks
-/// `DEPENDS_ON` (the Trivy / Syft convention).
+/// (which is also emitted under `Full`, so consumers can rely on it
+/// in either mode). Use when emitting for downstream tooling that
+/// only implements the basic vocabulary.
 ///
 /// CDX and SPDX 3 emission are unaffected — CDX always carries scope
 /// on the component (`scope: "excluded"` plus the
 /// `mikebom:lifecycle-scope` property), and SPDX 3 always uses
 /// `LifecycleScopedRelationship` with `relationshipType: "dependsOn"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Spdx2EdgeStyle {
-    /// Spec-native typed reversed-direction edges for scoped deps;
+pub enum Spdx2RelationshipCompat {
+    /// Full SPDX 2.3 relationship vocabulary — typed
+    /// reversed-direction edges for scoped deps;
     /// natural-direction `DEPENDS_ON` for runtime. Default.
     #[default]
-    Typed,
-    /// Natural-direction `DEPENDS_ON` for every dep regardless of
-    /// scope. Scope info lives on the target Package's
-    /// `mikebom:lifecycle-scope` annotation.
-    Flat,
+    Full,
+    /// Basic SPDX 2.3 vocabulary only — every dep emits as natural-
+    /// direction `DEPENDS_ON` regardless of scope. Scope info lives
+    /// on the target Package's `mikebom:lifecycle-scope` annotation.
+    Basic,
 }
 
 /// Document-level scope mode for a single mikebom scan. Surfaced

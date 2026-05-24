@@ -529,44 +529,54 @@ pub struct ScanArgs {
         Option<crate::generate::lifecycle_phases::SbomType>,
 
     // ────────────────────────────────────────────────────────────
-    // Issue #228 — SPDX 2.3 edge-emission style.
+    // Issue #228 — SPDX 2.3 relationship-vocabulary compatibility.
     // ────────────────────────────────────────────────────────────
 
-    /// Controls how the SPDX 2.3 emitter encodes scoped dependency
-    /// edges (dev / build / test). Default `typed` emits the spec-
-    /// native typed reversed-direction variants
-    /// (`DEV_DEPENDENCY_OF` / `BUILD_DEPENDENCY_OF` /
-    /// `TEST_DEPENDENCY_OF`) — the SPDX 2.3 native answer for "what
-    /// scope is this edge?". `flat` emits every dep as natural-
-    /// direction `DEPENDS_ON` regardless of scope, matching the
-    /// Trivy convention and aligning with what consumers walking
-    /// only `DEPENDS_ON` expect to see. In BOTH modes the
-    /// `mikebom:lifecycle-scope` annotation is set on the target
-    /// Package for non-runtime deps, so the scope distinction is
-    /// recoverable from the document regardless of edge style. Only
-    /// affects the `spdx-2.3-json` format; CDX and SPDX 3 emission
-    /// are unaffected. See `docs/reference/sbom-format-mapping.md`
-    /// C42 for the cross-format mapping.
+    /// Selects the SPDX 2.3 relationship-type vocabulary the emitter
+    /// uses for scoped dependency edges (dev / build / test). Both
+    /// modes are spec-conformant; the flag exists because some
+    /// downstream SBOM consumers only implement the basic
+    /// relationship vocabulary (`DEPENDS_ON` / `CONTAINS` /
+    /// `DESCRIBES`) and silently ignore the typed scoped variants
+    /// the spec also defines.
+    ///
+    /// Default `full` emits the spec-native typed reversed-direction
+    /// variants (`DEV_DEPENDENCY_OF` / `BUILD_DEPENDENCY_OF` /
+    /// `TEST_DEPENDENCY_OF`) — the SPDX 2.3 spec's full answer for
+    /// "what scope is this edge?". `basic` emits every dep as
+    /// natural-direction `DEPENDS_ON` regardless of scope, for
+    /// consumers that only implement the basic vocabulary (e.g.,
+    /// Trivy, Syft, and tooling built on top of them).
+    ///
+    /// In BOTH modes the `mikebom:lifecycle-scope` annotation is set
+    /// on the target Package for non-runtime deps, so the scope
+    /// distinction is recoverable from the document regardless of
+    /// which mode is in effect. Only affects the `spdx-2.3-json`
+    /// format; CDX and SPDX 3 emission are unaffected. See
+    /// `docs/reference/sbom-format-mapping.md` C42 for the
+    /// cross-format mapping.
     #[arg(
-        long = "spdx2-edge-style",
-        value_name = "STYLE",
-        value_parser = parse_spdx2_edge_style_flag,
-        default_value = "typed",
+        long = "spdx2-relationship-compat",
+        value_name = "PROFILE",
+        value_parser = parse_spdx2_relationship_compat_flag,
+        default_value = "full",
     )]
-    pub spdx2_edge_style: crate::generate::Spdx2EdgeStyle,
+    pub spdx2_relationship_compat: crate::generate::Spdx2RelationshipCompat,
 }
 
-/// Clap value_parser for `--spdx2-edge-style`. Accepts `typed`
-/// (default) and `flat` (issue #228 alignment with consumer-default
-/// flat-`DEPENDS_ON` graphs).
-pub(crate) fn parse_spdx2_edge_style_flag(
+/// Clap value_parser for `--spdx2-relationship-compat`. Accepts
+/// `full` (default, full SPDX 2.3 relationship vocabulary) and
+/// `basic` (issue #228 — only the basic vocabulary
+/// `DEPENDS_ON`/`CONTAINS`/`DESCRIBES`, scoped deps collapse to
+/// `DEPENDS_ON`).
+pub(crate) fn parse_spdx2_relationship_compat_flag(
     value: &str,
-) -> Result<crate::generate::Spdx2EdgeStyle, String> {
+) -> Result<crate::generate::Spdx2RelationshipCompat, String> {
     match value {
-        "typed" => Ok(crate::generate::Spdx2EdgeStyle::Typed),
-        "flat" => Ok(crate::generate::Spdx2EdgeStyle::Flat),
+        "full" => Ok(crate::generate::Spdx2RelationshipCompat::Full),
+        "basic" => Ok(crate::generate::Spdx2RelationshipCompat::Basic),
         other => Err(format!(
-            "invalid --spdx2-edge-style '{other}'; valid values: typed, flat"
+            "invalid --spdx2-relationship-compat '{other}'; valid values: full, basic"
         )),
     }
 }
@@ -1845,9 +1855,10 @@ pub async fn execute(
         // per-component `mikebom:sbom-tier` annotations preserve
         // auto-detected values.
         sbom_type_override: args.sbom_type,
-        // Issue #228: edge-style flag (default `typed` preserves the
-        // milestone-052/part-2 typed reversed-direction emission).
-        spdx2_edge_style: args.spdx2_edge_style,
+        // Issue #228: relationship-vocabulary compat flag (default
+        // `full` preserves the milestone-052/part-2 typed
+        // reversed-direction emission).
+        spdx2_relationship_compat: args.spdx2_relationship_compat,
     };
     let output_cfg = OutputConfig {
         mikebom_version: env!("CARGO_PKG_VERSION"),
@@ -2465,7 +2476,7 @@ mod tests {
             // Milestone 081 — default the new operator-assert flag to
             // None so the helper's "minimal flags" contract holds.
             sbom_type: None,
-            spdx2_edge_style: crate::generate::Spdx2EdgeStyle::Typed,
+            spdx2_relationship_compat: crate::generate::Spdx2RelationshipCompat::Full,
             // Milestone 102 — default vendored-deps emission OFF.
             include_vendored: false,
         }

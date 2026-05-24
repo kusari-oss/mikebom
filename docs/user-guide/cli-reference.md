@@ -181,7 +181,7 @@ Exactly one of `--path` or `--image` is required.
 | `--scan-target-name <NAME>` | string | auto-derived | Operator override for the document/SBOM name field. |
 | `--metadata-file <PATH>` | path | (none) | JSON sidecar with user-supplied metadata. |
 | `--sbom-type <TYPE>` | enum (`design`/`source`/`build`/`analyzed`/`deployed`/`runtime`) | auto-detect | Operator-asserted CISA SBOM Type. |
-| `--spdx2-edge-style <STYLE>` | enum (`typed`/`flat`) | `typed` | SPDX 2.3 edge emission for scoped deps (issue #228). |
+| `--spdx2-relationship-compat <PROFILE>` | enum (`full`/`basic`) | `full` | SPDX 2.3 relationship-vocabulary compatibility for scoped deps (issue #228). |
 
 ### `--path <PATH>`
 
@@ -665,39 +665,49 @@ mikebom sbom scan --path . --sbom-type build --output build.cdx.json
 See also: [SBOM types](../reference/sbom-types.md) for the four-column
 equivalence reference and per-format field positions.
 
-### `--spdx2-edge-style <STYLE>`
+### `--spdx2-relationship-compat <PROFILE>`
 
-Controls how the SPDX 2.3 emitter encodes scoped dependency edges (dev,
-build, test). Only affects the `spdx-2.3-json` format — CDX and SPDX 3
-emission are unaffected. Valid values:
+Selects the SPDX 2.3 relationship-type vocabulary mikebom uses for
+scoped dependency edges (dev, build, test). **Both modes are
+spec-conformant**; the flag exists because some downstream SBOM
+consumers only implement the basic relationship vocabulary
+(`DEPENDS_ON` / `CONTAINS` / `DESCRIBES`) and silently ignore the
+typed scoped variants the spec also defines. Only affects the
+`spdx-2.3-json` format — CDX and SPDX 3 emission are unaffected.
+Valid values:
 
-- **`typed`** (default): emit the spec-native typed reversed-direction
-  variants `DEV_DEPENDENCY_OF`, `BUILD_DEPENDENCY_OF`, `TEST_DEPENDENCY_OF`.
-  This is the SPDX 2.3 native answer for "what scope is this edge?" and
-  the highest-fidelity emission — every edge carries its scope in the
-  relationship type itself.
-- **`flat`**: emit every dep, regardless of scope, as a natural-direction
-  `DEPENDS_ON` edge. Aligns with what Trivy and Syft produce by default
-  and what most existing SBOM consumers (those walking only
-  `DEPENDS_ON`) are built to read.
+- **`full`** (default): emit the spec-native typed reversed-direction
+  variants `DEV_DEPENDENCY_OF`, `BUILD_DEPENDENCY_OF`,
+  `TEST_DEPENDENCY_OF`. This is the SPDX 2.3 spec's full answer for
+  "what scope is this edge?" and the highest-fidelity emission —
+  every edge carries its scope in the relationship type itself. Use
+  this when emitting SBOMs that will be consumed by tooling that
+  implements the full SPDX 2.3 relationshipType enum.
+- **`basic`**: emit every dep, regardless of scope, as a natural-
+  direction `DEPENDS_ON` edge. Use this when emitting SBOMs for
+  downstream tooling that only implements the basic relationship
+  vocabulary (e.g., Trivy, Syft, and tooling built on top of them).
+  Such consumers would silently drop the typed scoped variants
+  altogether, so collapsing scoped deps to `DEPENDS_ON` makes the
+  graph readable to them.
 
 **Crucially, the scope distinction is preserved in BOTH modes via the
 `mikebom:lifecycle-scope` annotation on the target Package** (values
 `development` / `build` / `test`; absent on runtime deps). This means
 the dev/build/test signal is always recoverable from the document
-itself — `typed` puts it both on the edge and on the Package; `flat`
+itself — `full` puts it both on the edge and on the Package; `basic`
 puts it on the Package only. This is consumer-critical signal:
 vulnerability scanners, license auditors, and deployment-policy tools
 need it to distinguish a CVE on a shipped component from one against
 a test-only dep like `testify` or `junit`.
 
 ```bash
-# Default — typed reversed-direction variants for dev/build/test.
+# Default — full SPDX 2.3 relationship vocabulary (typed scoped variants).
 mikebom sbom scan --path . --format spdx-2.3-json --output project.spdx.json
 
-# Flat — every dep emits as natural-direction DEPENDS_ON.
+# Basic vocabulary only — every dep emits as natural-direction DEPENDS_ON.
 mikebom sbom scan --path . \
-  --spdx2-edge-style flat \
+  --spdx2-relationship-compat basic \
   --format spdx-2.3-json \
   --output project.spdx.json
 ```

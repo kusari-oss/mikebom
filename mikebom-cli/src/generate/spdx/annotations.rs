@@ -166,9 +166,12 @@ pub fn annotate_component(
     //
     // The annotation is additive — the typed relationship variants
     // remain the primary spec-native signal, and the
-    // `--spdx2-edge-style` flag controls whether they're emitted as
-    // typed (default) or flat. The Package annotation is the same in
-    // both modes; consumers can rely on it regardless of edge style.
+    // `--spdx2-relationship-compat` flag controls whether they're
+    // emitted (`full`, default) or collapsed to flat `DEPENDS_ON`
+    // for downstream consumers that only implement the basic
+    // vocabulary (`basic`). The Package annotation is the same in
+    // both modes; consumers can rely on it regardless of compat
+    // mode.
     //
     // Per Principle V documentation requirement, this is documented
     // in `docs/reference/sbom-format-mapping.md` under C42.

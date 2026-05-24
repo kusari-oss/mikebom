@@ -668,28 +668,41 @@ equivalence reference and per-format field positions.
 ### `--spdx2-relationship-compat <PROFILE>`
 
 Selects the SPDX 2.3 relationship-type vocabulary mikebom uses for
-scoped dependency edges (dev, build, test). **Both modes are
-spec-conformant**; the flag exists because some downstream SBOM
-consumers only implement the basic relationship vocabulary
-(`DEPENDS_ON` / `CONTAINS` / `DESCRIBES`) and silently ignore the
-typed scoped variants the spec also defines. Only affects the
+scoped dependency edges (dev, build, test). Only affects the
 `spdx-2.3-json` format — CDX and SPDX 3 emission are unaffected.
+
+**Both modes are spec-conformant, but they are not equivalent.** The
+SPDX 2.3 spec defines `DEV_DEPENDENCY_OF`, `BUILD_DEPENDENCY_OF`,
+and `TEST_DEPENDENCY_OF` for exactly the purpose of expressing
+dev/build/test scope on a dependency edge — the spec's intent is
+clearly that you should use the most specific field that applies.
+Constitution Principle X (Transparency) further requires mikebom to
+default to the spec-native mechanism that preserves the most
+consumer-actionable signal. mikebom defaults to `full` for both
+reasons: we want more transparency in SBOM output, not less.
+
+`basic` is provided as an explicit downshift for compatibility with
+downstream tooling that doesn't implement the typed scoped variants.
+Choose it deliberately, knowing you're trading spec-rich expression
+for tool-compat reach.
+
 Valid values:
 
 - **`full`** (default): emit the spec-native typed reversed-direction
   variants `DEV_DEPENDENCY_OF`, `BUILD_DEPENDENCY_OF`,
-  `TEST_DEPENDENCY_OF`. This is the SPDX 2.3 spec's full answer for
-  "what scope is this edge?" and the highest-fidelity emission —
-  every edge carries its scope in the relationship type itself. Use
-  this when emitting SBOMs that will be consumed by tooling that
-  implements the full SPDX 2.3 relationshipType enum.
+  `TEST_DEPENDENCY_OF`. Every scoped edge carries its scope in the
+  relationship type itself — the SPDX 2.3 spec's purpose-built
+  field. Use this when emitting SBOMs for tooling that implements
+  the full SPDX 2.3 relationshipType enum, and as the standing
+  default for any output you intend to be maximally informative.
 - **`basic`**: emit every dep, regardless of scope, as a natural-
   direction `DEPENDS_ON` edge. Use this when emitting SBOMs for
   downstream tooling that only implements the basic relationship
   vocabulary (e.g., Trivy, Syft, and tooling built on top of them).
   Such consumers would silently drop the typed scoped variants
   altogether, so collapsing scoped deps to `DEPENDS_ON` makes the
-  graph readable to them.
+  graph readable to them — at the cost of moving the dev/build/test
+  signal off the edge and onto the Package annotation.
 
 **Crucially, the scope distinction is preserved in BOTH modes via the
 `mikebom:lifecycle-scope` annotation on the target Package** (values

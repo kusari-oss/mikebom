@@ -534,19 +534,22 @@ pub struct ScanArgs {
 
     /// Selects the SPDX 2.3 relationship-type vocabulary the emitter
     /// uses for scoped dependency edges (dev / build / test). Both
-    /// modes are spec-conformant; the flag exists because some
-    /// downstream SBOM consumers only implement the basic
-    /// relationship vocabulary (`DEPENDS_ON` / `CONTAINS` /
-    /// `DESCRIBES`) and silently ignore the typed scoped variants
-    /// the spec also defines.
+    /// modes are spec-conformant, but they are NOT equivalent: the
+    /// SPDX 2.3 spec defines the typed scoped variants for exactly
+    /// the purpose of expressing dev/build/test scope on a
+    /// dependency edge, and Constitution Principle X (Transparency)
+    /// requires mikebom to default to the spec-native mechanism that
+    /// carries the most consumer-actionable signal. Operators who
+    /// pick `basic` accept information loss in exchange for
+    /// compatibility — choose deliberately.
     ///
     /// Default `full` emits the spec-native typed reversed-direction
     /// variants (`DEV_DEPENDENCY_OF` / `BUILD_DEPENDENCY_OF` /
-    /// `TEST_DEPENDENCY_OF`) — the SPDX 2.3 spec's full answer for
-    /// "what scope is this edge?". `basic` emits every dep as
-    /// natural-direction `DEPENDS_ON` regardless of scope, for
-    /// consumers that only implement the basic vocabulary (e.g.,
-    /// Trivy, Syft, and tooling built on top of them).
+    /// `TEST_DEPENDENCY_OF`) — the SPDX 2.3 spec's purpose-built
+    /// field for the dev/build/test distinction. `basic` emits every
+    /// dep as natural-direction `DEPENDS_ON` regardless of scope,
+    /// for downstream consumers that don't implement the typed
+    /// variants (Trivy, Syft, and tooling built on top of them).
     ///
     /// In BOTH modes the `mikebom:lifecycle-scope` annotation is set
     /// on the target Package for non-runtime deps, so the scope

@@ -244,26 +244,32 @@ pub fn percent_encode_purl_name(s: &str) -> String {
 }
 
 /// Issue #228 — SPDX 2.3 relationship-vocabulary compatibility
-/// selector. Both modes are spec-conformant; the flag exists because
-/// some downstream consumers (Trivy, Syft, and tooling built on top
-/// of them) only implement the basic relationship vocabulary
-/// (`DEPENDS_ON`, `CONTAINS`, `DESCRIBES`) and silently ignore the
-/// typed scoped variants the spec also defines.
+/// selector. Both modes are spec-conformant, but they are not
+/// equivalent: `Full` (default) preserves more information than
+/// `Basic`. Per Constitution Principle X (Transparency), mikebom
+/// defaults to the spec-native mechanism that carries the most
+/// consumer-actionable signal, and the SPDX 2.3 spec defines the
+/// typed scoped relationship variants for exactly the purpose of
+/// expressing dev/build/test scope on a dependency edge. Choosing
+/// `Basic` is a deliberate downshift — accept the information loss
+/// when targeting consumers that don't implement those variants.
 ///
 /// `Full` (default): each scoped dep emits the spec-native typed
 /// reversed-direction variant — `DEV_DEPENDENCY_OF` /
 /// `BUILD_DEPENDENCY_OF` / `TEST_DEPENDENCY_OF`. Runtime deps emit
-/// as natural-direction `DEPENDS_ON`. Information-rich; the SPDX 2.3
-/// spec's full answer for "what scope is this edge?". A consumer
-/// that implements the full SPDX 2.3 relationshipType enum sees the
-/// dev/build/test scope on every edge.
+/// as natural-direction `DEPENDS_ON`. The SPDX 2.3 spec's
+/// purpose-built field for the dev/build/test distinction — a
+/// consumer that implements the full SPDX 2.3 relationshipType enum
+/// sees the scope on every edge directly.
 ///
 /// `Basic`: every dep — runtime, dev, build, test — emits as natural-
 /// direction `DEPENDS_ON`. The scope distinction lives entirely on
 /// the target Package via the `mikebom:lifecycle-scope` annotation
 /// (which is also emitted under `Full`, so consumers can rely on it
-/// in either mode). Use when emitting for downstream tooling that
-/// only implements the basic vocabulary.
+/// in either mode). Use only when emitting for downstream tooling
+/// that doesn't implement the typed scoped variants (Trivy, Syft,
+/// and tooling built on top of them — empirically the dominant
+/// consumer set, but spec-incomplete).
 ///
 /// CDX and SPDX 3 emission are unaffected — CDX always carries scope
 /// on the component (`scope: "excluded"` plus the

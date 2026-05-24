@@ -11,7 +11,12 @@ use transitive_parity_common::*;
 
 const FIXTURE_SUBPATH: &str = "pip_poetry";
 
-const EXPECTED_MIKEBOM_EDGE_COUNT: usize = 62;
+// Issue #236 bumped the baseline from 62 → 88: pip-poetry projects
+// without a top-level main-module annotation fall through to
+// `synthesize_root`, and the issue-#236 fix adds synth-root →
+// graph-root `DEPENDS_ON` edges (mirrors CDX's primary-dependency
+// fallback). 26 graph-root packages → 26 new edges; 62 + 26 = 88.
+const EXPECTED_MIKEBOM_EDGE_COUNT: usize = 88;
 
 const EXPECTED_REPRESENTATIVE_EDGES: &[(&str, &str)] = &[
     // build → packaging.

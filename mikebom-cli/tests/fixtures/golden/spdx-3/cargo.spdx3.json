@@ -356,6 +356,16 @@
     },
     {
       "creationInfo": "_:creation-info",
+      "from": "https://mikebom.kusari.dev/spdx3/doc-B4AP7ZTSYUUCESRAYD5WGSYJ/pkg-root-H5VPHAIRCLACRQYQ",
+      "relationshipType": "dependsOn",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-B4AP7ZTSYUUCESRAYD5WGSYJ/rel-FWUT5RFMSPOMKGHE",
+      "to": [
+        "https://mikebom.kusari.dev/spdx3/doc-B4AP7ZTSYUUCESRAYD5WGSYJ/pkg-7I3OEASNAR5ZCRZY"
+      ],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:creation-info",
       "from": "https://mikebom.kusari.dev/spdx3/doc-B4AP7ZTSYUUCESRAYD5WGSYJ/pkg-CDE3XEXSDOGUXIZT",
       "relationshipType": "dependsOn",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-B4AP7ZTSYUUCESRAYD5WGSYJ/rel-IVRQJ4KESSQYNAGC",

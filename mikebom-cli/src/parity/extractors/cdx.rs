@@ -16,7 +16,7 @@ use serde_json::Value;
 
 use super::common::{
     canonicalize_atomic_values, walk_cdx_components,
-    walk_cdx_components_and_main_module,
+    walk_cdx_components_and_main_module, walk_cdx_components_main_module_and_synth_subject,
 };
 
 // ============================================================
@@ -254,9 +254,19 @@ fn cdx_dependency_edges(doc: &Value, dev_only: bool) -> BTreeSet<String> {
     // Build bom-ref → component lookup. Milestone 053: include
     // metadata.component-when-main-module so its outgoing
     // `dependencies[].ref` lookups resolve.
+    //
+    // Issue #236: also include `metadata.component` when it's a
+    // synthetic scan-subject placeholder (no main-module tag) — the
+    // primary-dep fallback at `cyclonedx/dependencies.rs:74-99`
+    // synthesizes edges sourced at the placeholder's bom-ref, and
+    // those edges now have a matching synth-root → top-level edge
+    // in SPDX 2.3 + SPDX 3 (issue-#236 fix). Without the synth
+    // subject in this lookup the CDX bucket would silently drop
+    // those edges and parity tests would see a false-positive
+    // SPDX-vs-CDX divergence.
     let mut comp_by_bomref: std::collections::BTreeMap<String, &Value> =
         std::collections::BTreeMap::new();
-    for c in walk_cdx_components_and_main_module(doc) {
+    for c in walk_cdx_components_main_module_and_synth_subject(doc) {
         if let Some(bref) = c.get("bom-ref").and_then(|v| v.as_str()) {
             comp_by_bomref.insert(bref.to_string(), c);
         }

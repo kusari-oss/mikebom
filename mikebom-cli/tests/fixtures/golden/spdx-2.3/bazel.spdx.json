@@ -255,6 +255,26 @@
       "relatedSpdxElement": "SPDXRef-DocumentRoot-HBC6GHWSJM6Q3Q7M",
       "relationshipType": "DESCRIBES",
       "spdxElementId": "SPDXRef-DOCUMENT"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-SFZ6ZH3BHKUFYZNC",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-DocumentRoot-HBC6GHWSJM6Q3Q7M"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-LM6FBYXSKLDBXQVU",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-DocumentRoot-HBC6GHWSJM6Q3Q7M"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-NDJKRQLKYSDRTD3Q",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-DocumentRoot-HBC6GHWSJM6Q3Q7M"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-QUIZBKSWTOAVWLHQ",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-DocumentRoot-HBC6GHWSJM6Q3Q7M"
     }
   ],
   "spdxVersion": "SPDX-2.3"

@@ -177,6 +177,16 @@
       "relatedSpdxElement": "SPDXRef-DocumentRoot-GCMDS7Q5JSXR7KMT",
       "relationshipType": "DESCRIBES",
       "spdxElementId": "SPDXRef-DOCUMENT"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-ZKB4GX3JBL66K2UG",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-DocumentRoot-GCMDS7Q5JSXR7KMT"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-FBZUYFQKGJMH6COB",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-DocumentRoot-GCMDS7Q5JSXR7KMT"
     }
   ],
   "spdxVersion": "SPDX-2.3"

@@ -606,6 +606,45 @@ pub fn build_document(
         &doc_iri,
         CREATION_INFO_ID,
     ));
+
+    // Issue #236: when `pick_root_iri` synthesized a root (multi-
+    // top-level scans with no main-module and no name match — the
+    // dominant case for image scans and OS-package scans), the
+    // synthetic root has no outgoing edges in `scan.relationships`.
+    // CDX covers this with the primary-dependency fallback in
+    // `cyclonedx/dependencies.rs:74-99`; we mirror it here for SPDX
+    // 3 so the emitted graph is rooted at the same synthetic
+    // identity. Without this fix the SpdxDocument's `rootElement`
+    // points at a Package no Relationship targets as a source —
+    // the SBOM is structurally valid but the dep graph has N
+    // disconnected graph-tops where CDX has a single root.
+    if synthetic_root_added {
+        if let Some(synth_iri) = root_iris.first() {
+            let depended_on: std::collections::BTreeSet<&str> = scan
+                .relationships
+                .iter()
+                .map(|r| r.to.as_str())
+                .collect();
+            let mut graph_root_iris: Vec<&str> = scan
+                .components
+                .iter()
+                .filter(|c| c.parent_purl.is_none() && !depended_on.contains(c.purl.as_str()))
+                .filter_map(|c| package_iri_by_purl.get(c.purl.as_str()).map(String::as_str))
+                .collect();
+            // Deterministic emission order: lex by IRI.
+            graph_root_iris.sort();
+            for to_iri in graph_root_iris {
+                all_relationships.push(super::v3_relationships::build_relationship(
+                    synth_iri.as_str(),
+                    "dependsOn",
+                    to_iri,
+                    &doc_iri,
+                    CREATION_INFO_ID,
+                ));
+            }
+        }
+    }
+
     all_relationships.extend(license_relationships);
     if !synthetic_root_added {
         let describes_rels = super::v3_relationships::build_describes_relationships(
@@ -807,7 +846,22 @@ fn pick_root_iri(
     // Synthesize a root Package. Mirrors the SPDX 2.3 emitter's
     // synthesize_root behavior — preserves sbomqs scoring parity
     // (a document with no rootElement scores worse).
-    let synth_purl = format!("pkg:generic/{}@0.0.0", url_friendly(scan.target_name));
+    //
+    // Issue #236: PURL and CPE have different escape rules, so they
+    // are sanitized separately. The PURL uses
+    // `encode_purl_segment` (the same helper CDX uses for its
+    // `metadata.component.purl`), which preserves colon literals
+    // (so `postgres:16` → `postgres:16`, matching CDX). Pre-fix
+    // this path used `url_friendly` for both, producing
+    // `postgres-16` for the SPDX 3 PURL — yet a third per-format
+    // root-identity variant alongside CDX's `postgres:16` and the
+    // SPDX 2.3 path's `postgres_16` (also fixed in this milestone).
+    // The CPE keeps `url_friendly` because the CPE 2.3 grammar
+    // uses `-` as the conventional component separator-safe filler.
+    let synth_purl = format!(
+        "pkg:generic/{}@0.0.0",
+        mikebom_common::types::purl::encode_purl_segment(scan.target_name),
+    );
     let synth_iri = format!(
         "{doc_iri}/pkg-root-{}",
         hash_prefix(synth_purl.as_bytes(), 16)

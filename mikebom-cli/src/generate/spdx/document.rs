@@ -445,6 +445,7 @@ pub fn build_document(
     // Prepend the synthetic-root package (if any) so it precedes
     // every component-derived package in the output.
     let mut packages = packages;
+    let synthetic_root_added = synthetic_root.is_some();
     if let Some(root_pkg) = synthetic_root {
         packages.insert(0, root_pkg);
     }
@@ -462,8 +463,55 @@ pub fn build_document(
                 .collect(),
             _ => Vec::new(),
         };
-    let relationships =
+    let mut relationships =
         super::relationships::build_relationships(artifacts, &root_ids, &purl_aliases);
+
+    // Issue #236: when `synthesize_root` fires (multi-top-level
+    // scans with no main-module and no name match — the dominant
+    // case for image scans and OS-package scans), the synthetic
+    // root has no outgoing edges in `artifacts.relationships`. CDX
+    // covers this with the primary-dependency fallback in
+    // `cyclonedx/dependencies.rs:74-99` (synthesize edges from
+    // `metadata.component.bom-ref` to every graph-root component).
+    // We mirror that here so SPDX 2.3 emits a connected graph
+    // rooted at the same synthetic identity. Without this, the
+    // synthetic root is orphaned in `relationships[]` — only the
+    // `DESCRIBES` edge from `SPDXRef-DOCUMENT` reaches it and the
+    // 31 (in the postgres:16 case) top-level Packages have no
+    // incoming edges, producing N disconnected graph-tops where
+    // CDX has a single root.
+    if synthetic_root_added {
+        if let Some(synth_id) = root_ids.first() {
+            // Mirror CDX's "graph roots" definition: components no
+            // other component or relationship points to as a `to`
+            // target. For a flat OS-package scan that's every
+            // component; for a transitive scan it's just the top-
+            // level deps.
+            let depended_on: std::collections::BTreeSet<&str> = artifacts
+                .relationships
+                .iter()
+                .map(|r| r.to.as_str())
+                .collect();
+            let mut graph_roots: Vec<&mikebom_common::resolution::ResolvedComponent> =
+                artifacts
+                    .components
+                    .iter()
+                    .filter(|c| {
+                        c.parent_purl.is_none() && !depended_on.contains(c.purl.as_str())
+                    })
+                    .collect();
+            // Deterministic emission order: lex by PURL.
+            graph_roots.sort_by(|a, b| a.purl.as_str().cmp(b.purl.as_str()));
+            for c in graph_roots {
+                relationships.push(super::relationships::SpdxRelationship {
+                    source: synth_id.clone(),
+                    target: SpdxId::for_purl(&c.purl),
+                    kind: super::relationships::SpdxRelationshipType::DependsOn,
+                    comment: None,
+                });
+            }
+        }
+    }
 
     // Two creator entries: a `Tool:` identifying mikebom (used
     // throughout the document as the `annotator` field on every
@@ -637,11 +685,24 @@ fn synthesize_root(
     // mirrors `metadata.component.cpe` in CDX. Both are synthetic
     // but spec-valid; consumers that want a real PURL/CPE look at
     // the component-level Packages, not the root.
-    let sanitized = sanitize_for_coord(target_name);
+    //
+    // Issue #236: PURL and CPE have different escape rules, so they
+    // are sanitized separately. The PURL uses
+    // `encode_purl_segment` (the same helper CDX uses for its
+    // `metadata.component.purl`), which preserves colon literals
+    // (so `postgres:16` → `postgres:16`, matching CDX). Pre-fix this
+    // path used `sanitize_for_coord` for both, producing
+    // `postgres_16` for the SPDX PURL — a per-format root-identity
+    // divergence the reporter flagged alongside the missing-edges
+    // bug. The CPE keeps `sanitize_for_coord` because the
+    // CPE 2.3 grammar uses `_` as the conventional component
+    // separator-safe filler.
     let version = "0.0.0";
-    let synth_purl = format!("pkg:generic/{sanitized}@{version}");
+    let purl_name = mikebom_common::types::purl::encode_purl_segment(target_name);
+    let synth_purl = format!("pkg:generic/{purl_name}@{version}");
+    let cpe_name = sanitize_for_coord(target_name);
     let synth_cpe =
-        format!("cpe:2.3:a:mikebom:{sanitized}:{version}:*:*:*:*:*:*:*");
+        format!("cpe:2.3:a:mikebom:{cpe_name}:{version}:*:*:*:*:*:*:*");
 
     let root = SpdxPackage {
         spdx_id: id.clone(),
@@ -1010,6 +1071,144 @@ mod tests {
         assert!(
             comment.contains("no lifecycle phases observed"),
             "expected empty-phases degradation; got: {comment}"
+        );
+    }
+
+    // -----------------------------------------------------------
+    // Issue #236 — synthesized-root behavior
+    // -----------------------------------------------------------
+
+    fn build_doc_value(arts: &ScanArtifacts<'_>) -> serde_json::Value {
+        let cfg = crate::generate::OutputConfig {
+            mikebom_version: "0.0.0-test",
+            created: chrono::DateTime::parse_from_rfc3339("2026-05-24T00:00:00Z")
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+            overrides: Default::default(),
+        };
+        let doc = build_document(arts, &cfg);
+        serde_json::to_value(&doc).expect("SpdxDocument serializes to JSON")
+    }
+
+    #[test]
+    fn synthesized_root_purl_preserves_colon_like_cdx() {
+        // Issue #236 secondary observation: pre-fix the SPDX
+        // synthesized-root PURL collapsed `:` to `_` via
+        // sanitize_for_coord, producing `pkg:generic/postgres_16@0.0.0`
+        // while CDX emitted `pkg:generic/postgres:16@0.0.0` for the
+        // same image. Post-fix the SPDX PURL uses encode_purl_segment
+        // (the same helper CDX uses) so colon is preserved literal.
+        //
+        // Two components so multi-top-level triggers synthesize_root
+        // (single-top-level uses the lone component as root instead).
+        let integ = empty_integrity();
+        let comps = vec![
+            mk_component("pkg:apk/alpine/busybox@1.36", "busybox", "1.36"),
+            mk_component("pkg:apk/alpine/musl@1.2", "musl", "1.2"),
+        ];
+        let arts = mk_artifacts("postgres:16", &comps, &[], &integ);
+        let doc = build_doc_value(&arts);
+        let packages = doc["packages"].as_array().expect("packages[]");
+        let synth = packages
+            .iter()
+            .find(|p| {
+                p["SPDXID"]
+                    .as_str()
+                    .map(|s| s.starts_with("SPDXRef-DocumentRoot-"))
+                    .unwrap_or(false)
+            })
+            .expect("synthetic root present");
+        let purl = synth["externalRefs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["referenceType"].as_str() == Some("purl"))
+            .and_then(|r| r["referenceLocator"].as_str())
+            .expect("purl externalRef");
+        assert_eq!(
+            purl, "pkg:generic/postgres:16@0.0.0",
+            "synthesized-root PURL must match CDX shape (colon preserved literal)"
+        );
+    }
+
+    #[test]
+    fn synthesized_root_has_outgoing_depends_on_to_graph_roots() {
+        // Issue #236 primary bug: pre-fix the synthesized root had
+        // only the incoming `DESCRIBES` edge — every top-level
+        // component was an orphan graph-top with no incoming
+        // `DEPENDS_ON`. Post-fix the synthesized root has outgoing
+        // `DEPENDS_ON` to every component that nothing else depends
+        // on (CDX's primary-dependency fallback mirrored into SPDX
+        // 2.3).
+        let integ = empty_integrity();
+        // Three top-level components (image-scan-shape: no main
+        // module, no name match, no inter-component edges).
+        let comps = vec![
+            mk_component("pkg:apk/alpine/busybox@1.36", "busybox", "1.36"),
+            mk_component("pkg:apk/alpine/musl@1.2", "musl", "1.2"),
+            mk_component("pkg:apk/alpine/ssl-client@3.18", "ssl-client", "3.18"),
+        ];
+        let arts = mk_artifacts("alpine:3", &comps, &[], &integ);
+        let doc = build_doc_value(&arts);
+        let rels = doc["relationships"].as_array().expect("relationships[]");
+        let root_id = rels
+            .iter()
+            .find(|r| r["relationshipType"].as_str() == Some("DESCRIBES"))
+            .and_then(|r| r["relatedSpdxElement"].as_str())
+            .expect("DESCRIBES edge present");
+        let outgoing: Vec<&str> = rels
+            .iter()
+            .filter(|r| {
+                r["spdxElementId"].as_str() == Some(root_id)
+                    && r["relationshipType"].as_str() == Some("DEPENDS_ON")
+            })
+            .filter_map(|r| r["relatedSpdxElement"].as_str())
+            .collect();
+        assert_eq!(
+            outgoing.len(),
+            3,
+            "expected 3 outgoing DEPENDS_ON edges to the 3 graph-root components, got {outgoing:#?}"
+        );
+    }
+
+    #[test]
+    fn synthesized_root_excludes_already_depended_on_components_from_fallback() {
+        // Mirrors CDX's "components nothing else depends on"
+        // filter. Given a transitive relationship `A → B`, the
+        // synthesized root should only get an edge to A (the graph
+        // root), NOT to B (which is already pointed at by A).
+        let integ = empty_integrity();
+        let comps = vec![
+            mk_component("pkg:apk/alpine/a@1", "a", "1"),
+            mk_component("pkg:apk/alpine/b@1", "b", "1"),
+        ];
+        let rels = vec![mikebom_common::resolution::Relationship {
+            from: "pkg:apk/alpine/a@1".to_string(),
+            to: "pkg:apk/alpine/b@1".to_string(),
+            relationship_type: mikebom_common::resolution::RelationshipType::DependsOn,
+            provenance: mikebom_common::resolution::EnrichmentProvenance {
+                source: "test".to_string(),
+                data_type: "runtime".to_string(),
+            },
+        }];
+        let arts = mk_artifacts("alpine:3", &comps, &rels, &integ);
+        let doc = build_doc_value(&arts);
+        let rels = doc["relationships"].as_array().expect("relationships[]");
+        let root_id = rels
+            .iter()
+            .find(|r| r["relationshipType"].as_str() == Some("DESCRIBES"))
+            .and_then(|r| r["relatedSpdxElement"].as_str())
+            .expect("DESCRIBES edge present");
+        let outgoing_count = rels
+            .iter()
+            .filter(|r| {
+                r["spdxElementId"].as_str() == Some(root_id)
+                    && r["relationshipType"].as_str() == Some("DEPENDS_ON")
+            })
+            .count();
+        assert_eq!(
+            outgoing_count, 1,
+            "synthetic root should get exactly 1 outgoing edge (to graph-root A); B is already depended on by A"
         );
     }
 }

@@ -585,6 +585,11 @@
       "relatedSpdxElement": "SPDXRef-Package-E3KDPHV32PPHGGT4",
       "relationshipType": "DEPENDS_ON",
       "spdxElementId": "SPDXRef-Package-BKMD7Y4M3VJPWGQM"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-7I3OEASNAR5ZCRZY",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-DocumentRoot-5ASQV7Q5UGLJI5SG"
     }
   ],
   "spdxVersion": "SPDX-2.3"

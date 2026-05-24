@@ -287,6 +287,26 @@ pub fn walk_cdx_components_and_main_module(doc: &Value) -> Vec<&Value> {
     out
 }
 
+/// Like [`walk_cdx_components_and_main_module`] but also includes
+/// `metadata.component` when it lacks the `mikebom:component-role:
+/// main-module` tag (i.e., it's a synthetic scan-subject
+/// placeholder). Used by dep-edge extractors so the primary-dep
+/// fallback's `target_ref → top-level` edges resolve through the
+/// `bom-ref` lookup (issue #236).
+///
+/// Component-count extractors (A1–A12) must NOT use this — synthetic
+/// placeholders are not real components and shouldn't inflate the
+/// component-count parity. The dep-edge bucket is different: those
+/// edges are now load-bearing in all three formats post-issue-#236
+/// fix, so the synth subject must appear in the lookup.
+pub fn walk_cdx_components_main_module_and_synth_subject(doc: &Value) -> Vec<&Value> {
+    let mut out = walk_cdx_components(doc);
+    if let Some(metadata_component) = doc.get("metadata").and_then(|m| m.get("component")) {
+        out.push(metadata_component);
+    }
+    out
+}
+
 /// Iterate SPDX 2.3 `packages[]`, skipping the synthetic root
 /// (SPDXID begins with `SPDXRef-DocumentRoot-`).
 pub fn walk_spdx23_packages(doc: &Value) -> Vec<&Value> {
@@ -390,7 +410,26 @@ pub(super) fn spdx_relationship_edges(
         let mut out = BTreeSet::new();
         let mut purl_by_spdxid: std::collections::BTreeMap<String, String> =
             std::collections::BTreeMap::new();
-        for p in walk_spdx23_packages(doc) {
+        // Issue #236: include the synthetic root Package in the
+        // SPDXID → PURL lookup so the synth-root → top-level
+        // DEPENDS_ON edges the SPDX 2.3 emitter now produces
+        // resolve and contribute to the dep-edge parity bucket.
+        // Pre-fix `walk_spdx23_packages` skipped the synthetic
+        // root (correct for A-row component-count parity, since
+        // the synth root isn't a real component); the dep-edge
+        // walkers need to see it because it's now a legitimate
+        // edge source.
+        let synth_root_iter = doc
+            .get("packages")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+            .filter(|p| {
+                p.get("SPDXID")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|s| s.starts_with("SPDXRef-DocumentRoot-"))
+            });
+        for p in walk_spdx23_packages(doc).into_iter().chain(synth_root_iter) {
             let id = match p.get("SPDXID").and_then(|v| v.as_str()) {
                 Some(s) => s,
                 None => continue,

@@ -133,6 +133,26 @@
       "type": "Organization"
     },
     {
+      "creationInfo": "_:creation-info",
+      "from": "https://mikebom.kusari.dev/spdx3/doc-HP4Y3D3UKXGFAMJEEQWTP4A6/pkg-root-PEPQMV5CGEDHQJI2",
+      "relationshipType": "dependsOn",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-HP4Y3D3UKXGFAMJEEQWTP4A6/rel-HYI4U3KIGYBHKNF5",
+      "to": [
+        "https://mikebom.kusari.dev/spdx3/doc-HP4Y3D3UKXGFAMJEEQWTP4A6/pkg-FBZUYFQKGJMH6COB"
+      ],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:creation-info",
+      "from": "https://mikebom.kusari.dev/spdx3/doc-HP4Y3D3UKXGFAMJEEQWTP4A6/pkg-root-PEPQMV5CGEDHQJI2",
+      "relationshipType": "dependsOn",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-HP4Y3D3UKXGFAMJEEQWTP4A6/rel-YGGQAQH6GHGFSMQJ",
+      "to": [
+        "https://mikebom.kusari.dev/spdx3/doc-HP4Y3D3UKXGFAMJEEQWTP4A6/pkg-ZKB4GX3JBL66K2UG"
+      ],
+      "type": "Relationship"
+    },
+    {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-HP4Y3D3UKXGFAMJEEQWTP4A6/anno-6CAT6LHKOHL5LKHS",

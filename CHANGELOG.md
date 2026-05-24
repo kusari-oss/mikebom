@@ -7,6 +7,32 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### Issue #236 — image-scan SPDX root no longer orphaned + cross-format root PURL parity
+
+Fixes two related defects in mikebom's emission of a *synthesized* root for scans that have no natural single root (container images, OS-package-only scans, `requirements.txt`- / `Gemfile`-only Python and Ruby projects, and any other case where milestone-053-style main-module annotation isn't set).
+
+**The orphaned-root bug.** Before the fix, when the SPDX 2.3 / SPDX 3 emitters synthesized a placeholder root Package for the scan subject (via `synthesize_root` / `pick_root_iri`), the placeholder had no outgoing `DEPENDS_ON` / `dependsOn` edges. The synthetic root was only the target of the document-level `DESCRIBES` relationship; every top-level package the scan discovered was a graph-top with no incoming dependency edge. A consumer walking the dependency graph from the declared root saw zero direct deps. CDX has not had this problem since milestone 084 (closed via the primary-dependency fallback in `cyclonedx/dependencies.rs:74-99`, which synthesizes `metadata.component.bom-ref → <every component that nothing else depends on>` when the bom-ref has no outgoing edges). This fix mirrors that fallback into both SPDX emitters: when a root is synthesized, mikebom now emits one `DEPENDS_ON` / `dependsOn` edge from the synthesized root SPDXID/IRI to every graph-root component, preserving cross-format parity.
+
+**The root-PURL divergence.** Before the fix, the synthesized-root PURL differed across the three formats for the same scan target. For `postgres:16`, CDX produced `pkg:generic/postgres:16@0.0.0` (via `encode_purl_segment`, which preserves the colon literal — matching the Debian / dpkg convention), SPDX 2.3 produced `pkg:generic/postgres_16@0.0.0` (via `sanitize_for_coord`, which collapses non-alphanumeric to `_`), and SPDX 3 produced `pkg:generic/postgres-16@0.0.0` (via `url_friendly`, which collapses non-alphanumeric to `-`). Three different root identities for the same image. This fix switches both SPDX synthesize-root paths to use `encode_purl_segment` for the PURL (matching CDX), while keeping the format-specific sanitizers for the CPE field (CPE has its own grammar rules). Post-fix, all three formats emit the identical root PURL `pkg:generic/postgres:16@0.0.0`.
+
+**Verified.** Reconfirmed on `alpine:3`: CDX, SPDX 2.3, and SPDX 3 now all show `pkg:generic/alpine:3@0.0.0` as the root identity with 8 outgoing edges each (one per top-level apk package). Both bugs gone.
+
+#### Added
+
+- **Synthetic-root → graph-root `DEPENDS_ON` edges in SPDX 2.3** (`generate/spdx/document.rs:465-507` post `build_relationships` call). Fires only when `synthesize_root` runs; emits edges in deterministic PURL-lex order. Graph roots are defined as the same set CDX uses: components with `parent_purl: None` that aren't the target of any other dep edge.
+- **Synthetic-root → graph-root `dependsOn` `Relationship` elements in SPDX 3** (`generate/spdx/v3_document.rs:609-647`, between containment and license relationships, before the final sort). Same graph-root definition as SPDX 2.3.
+- **Three new unit tests in `generate/spdx/document.rs`** covering the synthesized-root PURL form (colon literal preserved), the synth-root-has-outgoing-edges invariant, and the "already-depended-on components are excluded from the fallback" subtlety that mirrors CDX's `cyclonedx/dependencies.rs:91-95` filter.
+
+#### Changed
+
+- **SPDX 2.3 synthesized-root PURL** switched from `sanitize_for_coord` (collapses `:` → `_`, lowercases) to `encode_purl_segment` (preserves the colon literal). CPE field keeps `sanitize_for_coord` — different grammar rules.
+- **SPDX 3 synthesized-root PURL** switched from `url_friendly` (collapses `:` → `-`) to `encode_purl_segment`. CPE field keeps `url_friendly`.
+- **SPDX 2.3 + SPDX 3 byte-identity goldens regenerated for `apk`, `bazel`, `cargo`, `cmake`, `deb`, `gem`, `pip`** (14 files, +270 lines, -0 lines — purely additive). Each diff is a constant set of synthetic-root → graph-root `DEPENDS_ON` edges. The other 8 SPDX 2.3 / SPDX 3 goldens (`golang`, `maven`, `npm`, `rpm`) are byte-identical to alpha.34 because their fixtures all have a main-module annotation and never hit the `synthesize_root` branch.
+- **Parity-extractor coverage extended** (`parity/extractors/common.rs` + `parity/extractors/cdx.rs`). The pre-fix extractors deliberately skipped synthetic roots from the dep-edge buckets because those roots had no edges to walk; post-fix they're load-bearing edge sources, so the new helper `walk_cdx_components_main_module_and_synth_subject` (used by `cdx_dependency_edges`) and a synth-root inclusion in `spdx_relationship_edges` close that gap. The component-count extractors (A1–A12) still exclude synthetic roots — those rows count real components, not placeholders.
+- **`transitive_parity_gem` baseline bumped 196 → 217** (fastlane has no top-level `.gemspec`, so synthesize_root fires).
+- **`transitive_parity_pip_plain` baseline bumped 0 → 13** (the synthetic 13-pkg requirements.txt fixture). FR-008's "all 3 tools agree on zero" invariant moves to a soft warning — mikebom's CDX has been emitting these edges since milestone 084, and post-fix SPDX agrees with mikebom's own CDX. The `cross_tool_parity_check` continues to surface the divergence-from-Trivy/Syft as informational output.
+- **`transitive_parity_pip_poetry` baseline bumped 62 → 88** (same root cause: poetry fixture lacks the main-module annotation, so synthesize_root fires).
+
 ### Issue #228 — SPDX 2.3 cross-format parity for scoped deps
 
 Adds a `mikebom:lifecycle-scope` annotation to every scoped Package in SPDX 2.3 output and introduces a new `--spdx2-relationship-compat {full|basic}` CLI flag that selects the SPDX 2.3 relationship-type vocabulary the emitter uses for scoped dependency edges (dev / build / test).

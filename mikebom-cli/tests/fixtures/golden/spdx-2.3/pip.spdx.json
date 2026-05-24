@@ -436,6 +436,21 @@
       "relatedSpdxElement": "SPDXRef-Package-IGBIL3UCACAQFOM3",
       "relationshipType": "DEPENDS_ON",
       "spdxElementId": "SPDXRef-Package-6PK6TYQPA2QWXM26"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-ND26YIDZX2IHEVKH",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-DocumentRoot-SPMV4V3BF7FUEPKR"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-E7GW44NAPCTLSLSL",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-DocumentRoot-SPMV4V3BF7FUEPKR"
+    },
+    {
+      "relatedSpdxElement": "SPDXRef-Package-6PK6TYQPA2QWXM26",
+      "relationshipType": "DEPENDS_ON",
+      "spdxElementId": "SPDXRef-DocumentRoot-SPMV4V3BF7FUEPKR"
     }
   ],
   "spdxVersion": "SPDX-2.3"

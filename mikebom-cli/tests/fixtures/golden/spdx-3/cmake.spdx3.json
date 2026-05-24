@@ -125,6 +125,36 @@
       "type": "software_Package"
     },
     {
+      "creationInfo": "_:creation-info",
+      "from": "https://mikebom.kusari.dev/spdx3/doc-M5XA6DSIEFJPBKA56QZCIS2T/pkg-root-JTCRM6TWPTUATH5X",
+      "relationshipType": "dependsOn",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-M5XA6DSIEFJPBKA56QZCIS2T/rel-DLHJQO5VOQJ3ILPS",
+      "to": [
+        "https://mikebom.kusari.dev/spdx3/doc-M5XA6DSIEFJPBKA56QZCIS2T/pkg-6JWGJCRVPGZ5RSBG"
+      ],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:creation-info",
+      "from": "https://mikebom.kusari.dev/spdx3/doc-M5XA6DSIEFJPBKA56QZCIS2T/pkg-root-JTCRM6TWPTUATH5X",
+      "relationshipType": "dependsOn",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-M5XA6DSIEFJPBKA56QZCIS2T/rel-SYFGUE3WT3YKDNPS",
+      "to": [
+        "https://mikebom.kusari.dev/spdx3/doc-M5XA6DSIEFJPBKA56QZCIS2T/pkg-3ECZZDDDHD3O6FKS"
+      ],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:creation-info",
+      "from": "https://mikebom.kusari.dev/spdx3/doc-M5XA6DSIEFJPBKA56QZCIS2T/pkg-root-JTCRM6TWPTUATH5X",
+      "relationshipType": "dependsOn",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-M5XA6DSIEFJPBKA56QZCIS2T/rel-ZWNS6MZBK4VQW4UH",
+      "to": [
+        "https://mikebom.kusari.dev/spdx3/doc-M5XA6DSIEFJPBKA56QZCIS2T/pkg-LXTPKDHC3UVRRT5J"
+      ],
+      "type": "Relationship"
+    },
+    {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-M5XA6DSIEFJPBKA56QZCIS2T/anno-2ECXIVPGKEI7GLOW",

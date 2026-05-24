@@ -12,7 +12,15 @@ use transitive_parity_common::*;
 
 const FIXTURE_SUBPATH: &str = "gem";
 
-const EXPECTED_MIKEBOM_EDGE_COUNT: usize = 196;
+// Issue #236 bumped the baseline from 196 → 217: fastlane's fixture
+// has only Gemfile + Gemfile.lock (no top-level `.gemspec`), so per
+// milestone 069's FR-002 it doesn't get a main-module annotation,
+// and the SPDX 2.3 emitter falls through to `synthesize_root`. The
+// issue-#236 fix adds `synth-root → graph-root` DEPENDS_ON edges
+// from the synthesized root to every component nothing else depends
+// on (mirrors CDX's primary-dependency fallback). 21 graph-root
+// gems × 1 edge each = 21 new edges; 196 + 21 = 217.
+const EXPECTED_MIKEBOM_EDGE_COUNT: usize = 217;
 
 const EXPECTED_REPRESENTATIVE_EDGES: &[(&str, &str)] = &[
     // Confirmed in mikebom output — fastlane's main module pulls in CFPropertyList.

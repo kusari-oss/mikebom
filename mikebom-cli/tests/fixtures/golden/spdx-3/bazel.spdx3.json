@@ -135,6 +135,46 @@
       "type": "software_Package"
     },
     {
+      "creationInfo": "_:creation-info",
+      "from": "https://mikebom.kusari.dev/spdx3/doc-MIFUEDCNMDTQCVUO4CTBHERO/pkg-root-JRDK72P47VQ5ATJ4",
+      "relationshipType": "dependsOn",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-MIFUEDCNMDTQCVUO4CTBHERO/rel-EQHKUCMOOWIXEMAR",
+      "to": [
+        "https://mikebom.kusari.dev/spdx3/doc-MIFUEDCNMDTQCVUO4CTBHERO/pkg-LM6FBYXSKLDBXQVU"
+      ],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:creation-info",
+      "from": "https://mikebom.kusari.dev/spdx3/doc-MIFUEDCNMDTQCVUO4CTBHERO/pkg-root-JRDK72P47VQ5ATJ4",
+      "relationshipType": "dependsOn",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-MIFUEDCNMDTQCVUO4CTBHERO/rel-NNFCLU7O6IEFMZ65",
+      "to": [
+        "https://mikebom.kusari.dev/spdx3/doc-MIFUEDCNMDTQCVUO4CTBHERO/pkg-QUIZBKSWTOAVWLHQ"
+      ],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:creation-info",
+      "from": "https://mikebom.kusari.dev/spdx3/doc-MIFUEDCNMDTQCVUO4CTBHERO/pkg-root-JRDK72P47VQ5ATJ4",
+      "relationshipType": "dependsOn",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-MIFUEDCNMDTQCVUO4CTBHERO/rel-SWIMYCF25JI2432D",
+      "to": [
+        "https://mikebom.kusari.dev/spdx3/doc-MIFUEDCNMDTQCVUO4CTBHERO/pkg-SFZ6ZH3BHKUFYZNC"
+      ],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:creation-info",
+      "from": "https://mikebom.kusari.dev/spdx3/doc-MIFUEDCNMDTQCVUO4CTBHERO/pkg-root-JRDK72P47VQ5ATJ4",
+      "relationshipType": "dependsOn",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-MIFUEDCNMDTQCVUO4CTBHERO/rel-XRDCKB4LIVFLLIAF",
+      "to": [
+        "https://mikebom.kusari.dev/spdx3/doc-MIFUEDCNMDTQCVUO4CTBHERO/pkg-NDJKRQLKYSDRTD3Q"
+      ],
+      "type": "Relationship"
+    },
+    {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-MIFUEDCNMDTQCVUO4CTBHERO/anno-24JI7HUJKG6CVJHV",

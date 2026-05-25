@@ -194,6 +194,7 @@ mod tests {
             shade_relocation: None,
             external_references: Vec::new(),
             extra_annotations: Default::default(),
+            binary_role: None,
         }
     }
 

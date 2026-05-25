@@ -131,6 +131,7 @@ pub(crate) fn parse_poetry_lock(
             sbom_tier: Some("source".to_string()),
             shade_relocation: None,
             extra_annotations: Default::default(),
+            binary_role: None,
         });
         // `hashes` currently collected but not wired into ContentHash;
         // hash propagation from lockfiles is a follow-up (would need

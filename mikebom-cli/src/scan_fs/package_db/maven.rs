@@ -1662,6 +1662,7 @@ pub(crate) fn emit_shade_relocation_entries(
             sbom_tier: Some("analyzed".to_string()),
             shade_relocation: Some(true),
             extra_annotations: Default::default(),
+            binary_role: None,
         });
     }
 }
@@ -1924,6 +1925,7 @@ fn pom_dep_to_entry(
         sbom_tier: Some(tier),
         shade_relocation: None,
         extra_annotations: Default::default(),
+        binary_role: None,
     })
 }
 
@@ -2182,6 +2184,7 @@ fn build_transitive_entry(
         sbom_tier: Some("source".to_string()),
         shade_relocation: None,
         extra_annotations: Default::default(),
+        binary_role: None,
     })
 }
 
@@ -2235,6 +2238,7 @@ fn jar_pom_to_entry(
         sbom_tier: Some("analyzed".to_string()),
         shade_relocation: None,
         extra_annotations: Default::default(),
+        binary_role: None,
     })
 }
 
@@ -3536,6 +3540,7 @@ fn build_maven_main_module_entry(
         sbom_tier: Some("source".to_string()),
         shade_relocation: None,
         extra_annotations,
+        binary_role: None,
     })
 }
 

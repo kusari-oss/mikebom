@@ -24,6 +24,7 @@ pub mod macho;
 pub mod packer; // stub
 pub mod pe;
 pub mod python_collapse;
+pub mod role;
 pub mod symbol_fingerprint;
 pub mod version_strings;
 

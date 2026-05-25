@@ -202,6 +202,13 @@ pub struct PackageDbEntry {
     /// order — byte-identity goldens depend on stable output.
     /// Default empty.
     pub extra_annotations: std::collections::BTreeMap<String, serde_json::Value>,
+    /// Milestone 104 — role classification for binary-reader-discovered
+    /// components (Application / SharedLibrary / Object / Other).
+    /// `Some(_)` for components from `scan_fs/binary/`; `None` for
+    /// every manifest- and lockfile-driven reader. Propagates verbatim
+    /// to `ResolvedComponent.binary_role` and drives the format-native
+    /// component-type field at emission time.
+    pub binary_role: Option<mikebom_common::resolution::BinaryRole>,
 }
 
 /// Hard failures a database reader can raise that MUST abort the scan
@@ -1082,6 +1089,7 @@ Architecture: arm64
             sbom_tier: sbom_tier.map(String::from),
             shade_relocation: None,
             extra_annotations: Default::default(),
+            binary_role: None,
         }
     }
 

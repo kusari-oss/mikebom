@@ -158,6 +158,7 @@ fn build_entry(name: &str, version: &str, source_path: &str) -> Option<PackageDb
         sbom_tier: Some("source".to_string()),
         shade_relocation: None,
         extra_annotations: Default::default(),
+        binary_role: None,
     })
 }
 

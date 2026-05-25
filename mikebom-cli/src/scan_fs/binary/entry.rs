@@ -72,6 +72,7 @@ pub(super) fn symbol_match_to_entry(
         co_owned_by: None,
         hashes: Vec::new(),
         extra_annotations: extra,
+        binary_role: None,
     })
 }
 
@@ -114,6 +115,7 @@ pub(super) fn version_match_to_entry(
         co_owned_by: None,
         hashes: Vec::new(),
         extra_annotations: Default::default(),
+        binary_role: None,
     })
 }
 
@@ -231,6 +233,7 @@ pub(super) fn cargo_auditable_packages_to_entries(
                 co_owned_by: None,
                 hashes: Vec::new(),
                 extra_annotations: extra,
+                binary_role: None,
             })
         })
         .collect();
@@ -362,6 +365,11 @@ pub(crate) struct BinaryScan {
     /// with zeroed optional-header bytes emit `"0.0"` (informative,
     /// correlates with `mikebom:binary-packed`). `None` for non-PE.
     pub pe_linker_version: Option<String>,
+    /// Milestone 104 — role classification (Application /
+    /// SharedLibrary / Object / Other) derived from the format
+    /// header. Drives the format-native component-type field at
+    /// emission time.
+    pub binary_role: mikebom_common::resolution::BinaryRole,
 }
 
 pub(super) fn make_file_level_component(
@@ -450,6 +458,9 @@ pub(super) fn make_file_level_component(
         co_owned_by: None,
         hashes: Vec::new(),
         extra_annotations: build_binary_identity_annotations(scan),
+        // Milestone 104 — every file-level binary component carries
+        // the role classified from the format header.
+        binary_role: Some(scan.binary_role),
     }
     .with_sha256_placeholder(hash)
 }
@@ -795,6 +806,7 @@ pub(super) fn note_package_to_entry(
         co_owned_by: None,
         hashes: Vec::new(),
         extra_annotations: Default::default(),
+        binary_role: None,
     })
 }
 
@@ -1059,6 +1071,7 @@ mod tests {
             comment_stamps: Vec::new(),
             macho_build_version: None,
             pe_linker_version: None,
+            binary_role: mikebom_common::resolution::BinaryRole::Application,
         }
     }
 

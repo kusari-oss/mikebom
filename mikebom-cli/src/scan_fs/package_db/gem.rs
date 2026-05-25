@@ -287,6 +287,7 @@ fn spec_to_entry(
         sbom_tier: Some("source".to_string()),
         shade_relocation: None,
         extra_annotations: Default::default(),
+        binary_role: None,
     })
 }
 
@@ -329,6 +330,7 @@ fn gemspec_to_entry(
         sbom_tier: Some("analyzed".to_string()),
         shade_relocation: None,
         extra_annotations: Default::default(),
+        binary_role: None,
     })
 }
 
@@ -947,6 +949,7 @@ fn build_gem_main_module_entry(gemspec_path: &Path) -> Option<PackageDbEntry> {
         sbom_tier: Some("source".to_string()),
         shade_relocation: None,
         extra_annotations,
+        binary_role: None,
     })
 }
 
@@ -2015,6 +2018,7 @@ end
             sbom_tier: Some("source".to_string()),
             shade_relocation: None,
             extra_annotations: extra,
+            binary_role: None,
         }
     }
 

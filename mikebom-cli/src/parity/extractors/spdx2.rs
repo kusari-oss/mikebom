@@ -132,6 +132,60 @@ pub(super) fn spdx23_distribution(doc: &Value) -> BTreeSet<String> {
     out
 }
 
+/// Milestone 104 — per-component role from SPDX 2.3
+/// `Package.primaryPackagePurpose`. Returns `<purl>=<role>` strings
+/// using the lowercase role form so the comparison with CDX (which
+/// uses lowercase `application`/`library`/`file` literals) succeeds
+/// byte-equally.
+///
+/// Scoped to binary-reader-emitted Packages only — detected via the
+/// `mikebom:binary-class` annotation (set by the binary reader on
+/// every emitted Package, never by other readers). Mirrors the
+/// scoping in `cdx_binary_role`; see that function for rationale.
+pub(super) fn spdx23_binary_role(doc: &Value) -> BTreeSet<String> {
+    walk_spdx23_packages(doc)
+        .iter()
+        .filter_map(|p| {
+            let purl = p
+                .get("externalRefs")
+                .and_then(|v| v.as_array())?
+                .iter()
+                .find_map(|r| {
+                    if r.get("referenceType").and_then(|v| v.as_str()) == Some("purl") {
+                        r.get("referenceLocator").and_then(|v| v.as_str())
+                    } else {
+                        None
+                    }
+                })?;
+            // Restrict to binary-reader Packages — those carry a
+            // `mikebom:binary-class` annotation in their
+            // `annotations[].comment` envelope.
+            let from_binary_reader = p
+                .get("annotations")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter().any(|a| {
+                        a.get("comment")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.contains("\"field\":\"mikebom:binary-class\""))
+                            .unwrap_or(false)
+                    })
+                })
+                .unwrap_or(false);
+            if !from_binary_reader {
+                return None;
+            }
+            let purpose = p.get("primaryPackagePurpose").and_then(|v| v.as_str())?;
+            match purpose {
+                "APPLICATION" => Some(format!("{purl}=application")),
+                "LIBRARY" => Some(format!("{purl}=library")),
+                "FILE" => Some(format!("{purl}=file")),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
 pub(super) fn spdx23_cpe(doc: &Value) -> BTreeSet<String> {
     walk_spdx23_packages(doc)
         .iter()

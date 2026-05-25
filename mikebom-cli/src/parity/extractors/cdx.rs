@@ -172,6 +172,51 @@ pub(super) fn cdx_cpe(doc: &Value) -> BTreeSet<String> {
         .collect()
 }
 
+/// Milestone 104 — per-component role from CDX `Component.type`.
+/// Returns `<purl>=<role>` strings keyed by PURL so the parity
+/// comparison is component-wise.
+///
+/// Scoped to binary-reader-emitted components only — detected via
+/// presence of the `mikebom:binary-class` property (set by the
+/// binary reader on every emitted component, never by other
+/// readers). Non-binary-reader components emit CDX `type: library`
+/// by the per-ecosystem default while SPDX 2.3 / SPDX 3 omit the
+/// `primaryPackagePurpose` / `software_primaryPurpose` field for
+/// them. Including them would create a false-positive
+/// SymmetricEqual failure since the formats genuinely diverge for
+/// non-binary components by design.
+pub(super) fn cdx_binary_role(doc: &Value) -> BTreeSet<String> {
+    walk_cdx_components(doc)
+        .iter()
+        .filter_map(|c| {
+            let purl = c.get("purl").and_then(|v| v.as_str())?;
+            let ty = c.get("type").and_then(|v| v.as_str())?;
+            // Only binary-reader-emitted components carry
+            // `mikebom:binary-class` — restrict the parity check to
+            // them.
+            let from_binary_reader = c
+                .get("properties")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter().any(|p| {
+                        p.get("name").and_then(|v| v.as_str())
+                            == Some("mikebom:binary-class")
+                    })
+                })
+                .unwrap_or(false);
+            if !from_binary_reader {
+                return None;
+            }
+            match ty {
+                "application" | "library" | "file" => {
+                    Some(format!("{purl}={ty}"))
+                }
+                _ => None,
+            }
+        })
+        .collect()
+}
+
 fn cdx_licenses_typed(doc: &Value, ack: &str) -> BTreeSet<String> {
     walk_cdx_components(doc)
         .iter()

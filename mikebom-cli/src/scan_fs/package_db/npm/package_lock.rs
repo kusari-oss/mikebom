@@ -134,6 +134,7 @@ pub(crate) fn parse_package_lock(
             sbom_tier: Some("source".to_string()),
             shade_relocation: None,
             extra_annotations: Default::default(),
+            binary_role: None,
         });
     }
 

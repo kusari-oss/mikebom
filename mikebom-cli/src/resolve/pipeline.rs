@@ -181,6 +181,7 @@ impl ResolutionPipeline {
             shade_relocation: None,
             external_references: Vec::new(),
                         extra_annotations: Default::default(),
+                        binary_role: None,
                     };
                     components.push(component);
                     continue; // URL match found; skip lower-priority resolvers for this connection.
@@ -240,6 +241,7 @@ impl ResolutionPipeline {
             shade_relocation: None,
             external_references: Vec::new(),
                                     extra_annotations: Default::default(),
+                                    binary_role: None,
                                 };
                                 components.push(component);
                             }
@@ -313,6 +315,7 @@ impl ResolutionPipeline {
             shade_relocation: None,
             external_references: Vec::new(),
                     extra_annotations: Default::default(),
+                    binary_role: None,
                 };
                 components.push(component);
             }

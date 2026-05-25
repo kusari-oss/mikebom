@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use mikebom_common::attestation::integrity::TraceIntegrity;
 use mikebom_common::attestation::metadata::GenerationContext;
-use mikebom_common::resolution::{Relationship, ResolvedComponent};
+use mikebom_common::resolution::{BinaryRole, Relationship, ResolvedComponent};
 use mikebom_common::types::license::SpdxExpression;
 
 use super::compositions::build_compositions;
@@ -574,7 +574,7 @@ impl CycloneDxBuilder {
                 None => component.purl.as_str().to_string(),
             };
             let mut entry = json!({
-                "type": "library",
+                "type": binary_role_to_cdx_type(component.binary_role),
                 "name": component.name,
                 "version": component.version,
                 "purl": component.purl.as_str(),
@@ -1035,6 +1035,24 @@ impl CycloneDxBuilder {
 /// For AND the split is semantically faithful (both licenses apply →
 /// list both). For OR it's a compromise (the disjunction relation is
 /// lost) but downstream readers still see every candidate ID.
+/// Milestone 104 — map a `BinaryRole` to the CycloneDX 1.6
+/// `Component.type` enum value. See
+/// `specs/104-binary-role-classification/contracts/binary-role-cross-format-mapping.md`.
+///
+/// `None` (component did not come from the binary reader) and the
+/// `Other` bucket both fall back to `"library"` — the historic
+/// default that every binary-reader component used pre-milestone-104.
+/// This preserves backward compatibility for consumers reading the
+/// `type` field on components mikebom can't classify further.
+pub(super) fn binary_role_to_cdx_type(role: Option<BinaryRole>) -> &'static str {
+    match role {
+        Some(BinaryRole::Application) => "application",
+        Some(BinaryRole::SharedLibrary) => "library",
+        Some(BinaryRole::Object) => "file",
+        Some(BinaryRole::Other) | None => "library",
+    }
+}
+
 fn try_split_or_compound(expr: &str) -> Option<Vec<String>> {
     let trimmed = expr.trim();
     if trimmed.is_empty() {
@@ -1156,6 +1174,7 @@ mod tests {
             shade_relocation: None,
             external_references: Vec::new(),
             extra_annotations: Default::default(),
+            binary_role: None,
         }
     }
 

@@ -81,17 +81,33 @@ pub fn build_packages(
         // the workspace's main-module — set the native SPDX 3.0.1
         // `software_primaryPurpose: "application"` field per the
         // schema's `prop_software_SoftwareArtifact_software_primaryPurpose`
-        // definition. All other components leave it absent so existing
-        // goldens stay byte-identical.
-        if c.extra_annotations
-            .get("mikebom:component-role")
-            .and_then(|v| v.as_str())
-            == Some("main-module")
-        {
-            pkg.insert(
-                "software_primaryPurpose".to_string(),
-                json!("application"),
-            );
+        // definition.
+        //
+        // Milestone 104 — binary-reader-discovered components also
+        // populate `software_primaryPurpose` from their `BinaryRole`
+        // classification. Mapping per
+        // `specs/104-binary-role-classification/contracts/binary-role-cross-format-mapping.md`:
+        // Application→"application", SharedLibrary→"library",
+        // Object→"file", Other→omitted.
+        let primary_purpose = match c.binary_role {
+            Some(mikebom_common::resolution::BinaryRole::Application) => Some("application"),
+            Some(mikebom_common::resolution::BinaryRole::SharedLibrary) => Some("library"),
+            Some(mikebom_common::resolution::BinaryRole::Object) => Some("file"),
+            Some(mikebom_common::resolution::BinaryRole::Other) => None,
+            None => {
+                if c.extra_annotations
+                    .get("mikebom:component-role")
+                    .and_then(|v| v.as_str())
+                    == Some("main-module")
+                {
+                    Some("application")
+                } else {
+                    None
+                }
+            }
+        };
+        if let Some(p) = primary_purpose {
+            pkg.insert("software_primaryPurpose".to_string(), json!(p));
         }
 
         // verifiedUsing[] — Hash value-objects, one per integrity

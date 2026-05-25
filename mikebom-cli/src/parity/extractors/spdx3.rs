@@ -111,6 +111,54 @@ pub(super) fn spdx3_distribution(doc: &Value) -> BTreeSet<String> {
         .collect()
 }
 
+/// Milestone 104 — per-component role from SPDX 3
+/// `software_Package.software_primaryPurpose`. Returns
+/// `<purl>=<role>` strings. The SPDX 3 values are already lowercase
+/// (`application`/`library`/`file`) so the cross-format byte
+/// comparison with CDX succeeds directly.
+///
+/// Scoped to binary-reader-emitted Packages only — detected via the
+/// `mikebom:binary-class` Annotation element pointing at the
+/// package's IRI. Mirrors the scoping in `cdx_binary_role`; see
+/// that function for rationale.
+pub(super) fn spdx3_binary_role(doc: &Value) -> BTreeSet<String> {
+    let Some(graph) = doc.get("@graph").and_then(|v| v.as_array()) else {
+        return BTreeSet::new();
+    };
+    // Build the set of package IRIs that have a `mikebom:binary-class`
+    // Annotation pointing at them (`subject` field).
+    let binary_reader_iris: std::collections::BTreeSet<&str> = graph
+        .iter()
+        .filter(|el| el.get("type").and_then(|v| v.as_str()) == Some("Annotation"))
+        .filter(|el| {
+            el.get("statement")
+                .and_then(|v| v.as_str())
+                .map(|s| s.contains("\"field\":\"mikebom:binary-class\""))
+                .unwrap_or(false)
+        })
+        .filter_map(|el| el.get("subject").and_then(|v| v.as_str()))
+        .collect();
+    walk_spdx3_packages(doc)
+        .iter()
+        .filter_map(|p| {
+            let iri = p.get("spdxId").and_then(|v| v.as_str())?;
+            if !binary_reader_iris.contains(iri) {
+                return None;
+            }
+            let purl = p
+                .get("software_packageUrl")
+                .and_then(|v| v.as_str())?;
+            let purpose = p.get("software_primaryPurpose").and_then(|v| v.as_str())?;
+            match purpose {
+                "application" | "library" | "file" => {
+                    Some(format!("{purl}={purpose}"))
+                }
+                _ => None,
+            }
+        })
+        .collect()
+}
+
 pub(super) fn spdx3_cpe(doc: &Value) -> BTreeSet<String> {
     walk_spdx3_packages(doc)
         .iter()

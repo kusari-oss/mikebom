@@ -615,6 +615,7 @@ where
             sbom_tier: Some("source".to_string()),
             shade_relocation: None,
             extra_annotations,
+            binary_role: None,
         });
     }
 
@@ -883,6 +884,7 @@ pub(crate) fn build_main_module_entry(
         sbom_tier: Some("source".to_string()),
         shade_relocation: None,
         extra_annotations,
+        binary_role: None,
     })
 }
 

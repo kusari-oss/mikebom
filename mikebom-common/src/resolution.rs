@@ -205,6 +205,16 @@ pub struct ResolvedComponent {
     /// schema migration. `BTreeMap` for deterministic emission order.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub extra_annotations: std::collections::BTreeMap<String, serde_json::Value>,
+    /// Milestone 104 — role classification for binary-reader-discovered
+    /// components. `Some(role)` when this component came from
+    /// `mikebom-cli/src/scan_fs/binary/`; `None` for manifest- and
+    /// lockfile-driven readers. Emitters map this to the format-native
+    /// component-type field (CDX `Component.type`, SPDX 2.3
+    /// `Package.primaryPackagePurpose`, SPDX 3
+    /// SPDX 3 primary-purpose equivalent). See `BinaryRole`
+    /// for the format-to-role table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binary_role: Option<BinaryRole>,
 }
 
 /// A single external reference on a `ResolvedComponent`. The
@@ -375,6 +385,46 @@ impl LifecycleScope {
     }
 }
 
+/// Milestone 104 — role classification for binary-reader-discovered
+/// components. Derived from the source file's format header
+/// (Mach-O `MH_*` filetype, ELF `e_type` + program-header inspection,
+/// PE `IMAGE_FILE_HEADER.Characteristics`). Maps at emission time to
+/// the format-native component-type slot in each of CycloneDX,
+/// SPDX 2.3, and SPDX 3.
+///
+/// Per `specs/104-binary-role-classification/contracts/binary-role-cross-format-mapping.md`:
+///
+/// | Role          | CDX type      | SPDX 2.3 primary purpose | SPDX 3 primary purpose |
+/// |---------------|---------------|--------------------------|------------------------|
+/// | Application   | `application` | `APPLICATION`            | `application`          |
+/// | SharedLibrary | `library`     | `LIBRARY`                | `library`              |
+/// | Object        | `file`        | `FILE`                   | `file`                 |
+/// | Other         | `library`     | _omitted_                | _omitted_              |
+///
+/// `None` on `ResolvedComponent.binary_role` means the component did
+/// NOT come from the binary reader (manifest- and lockfile-driven
+/// readers leave the field unset) — emitters fall back to the
+/// per-ecosystem default (today: CDX `library`, SPDX 2.3 omitted,
+/// SPDX 3 omitted).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BinaryRole {
+    /// Executable program — Mach-O `MH_EXECUTE`, ELF `ET_EXEC`, ELF
+    /// `ET_DYN` with `PT_INTERP` (PIE executables), PE without
+    /// `IMAGE_FILE_DLL`.
+    Application,
+    /// Dynamically loadable code unit — Mach-O `MH_DYLIB`, ELF
+    /// `ET_DYN` without `PT_INTERP`, PE with `IMAGE_FILE_DLL`.
+    SharedLibrary,
+    /// Relocatable object file (intermediate build artifact) —
+    /// Mach-O `MH_OBJECT`, ELF `ET_REL`.
+    Object,
+    /// Format-specific bucket that doesn't map cleanly to the above:
+    /// Mach-O `MH_BUNDLE` / `MH_KEXT_BUNDLE` / `MH_CORE`; ELF
+    /// `ET_CORE`; PE with `IMAGE_FILE_SYSTEM`; unparseable headers.
+    Other,
+}
+
 /// Backward-compat helper bridging the milestone-052 lifecycle_scope
 /// field to the pre-052 `is_dev: Option<bool>` semantic. Returns true
 /// when the component is `Development`, `Build`, or `Test` scoped —
@@ -462,6 +512,7 @@ mod tests {
             shade_relocation: None,
             external_references: Vec::new(),
             extra_annotations: Default::default(),
+            binary_role: None,
         };
 
         let json = serde_json::to_string(&component).expect("serialize component");
@@ -517,6 +568,7 @@ mod tests {
             shade_relocation: None,
             external_references: Vec::new(),
             extra_annotations: Default::default(),
+            binary_role: None,
         };
 
         let json = serde_json::to_string(&component).expect("serialize component");

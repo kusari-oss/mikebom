@@ -498,6 +498,7 @@ pub(crate) fn build_pip_main_module_entry(
         sbom_tier: Some("source".to_string()),
         shade_relocation: None,
         extra_annotations,
+        binary_role: None,
     };
     (Some(entry), false)
 }
@@ -981,6 +982,7 @@ dependencies = [
             sbom_tier: Some("source".to_string()),
             shade_relocation: None,
             extra_annotations: extra,
+            binary_role: None,
         }
     }
 

@@ -181,6 +181,7 @@ fn package_to_entry(pkg: &CargoPackage, source_path: &str) -> Option<PackageDbEn
         sbom_tier: Some("source".to_string()),
         shade_relocation: None,
         extra_annotations: Default::default(),
+        binary_role: None,
     })
 }
 
@@ -393,6 +394,7 @@ fn build_cargo_main_module_entry(
         sbom_tier: Some("source".to_string()),
         shade_relocation: None,
         extra_annotations,
+        binary_role: None,
     })
 }
 
@@ -1989,6 +1991,7 @@ version = "0.1.0-alpha.11"
             sbom_tier: Some("source".to_string()),
             shade_relocation: None,
             extra_annotations: extra,
+            binary_role: None,
         }
     }
 
@@ -2022,6 +2025,7 @@ version = "0.1.0-alpha.11"
             sbom_tier: None,
             shade_relocation: None,
             extra_annotations: Default::default(),
+            binary_role: None,
         }
     }
 

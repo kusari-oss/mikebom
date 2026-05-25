@@ -157,6 +157,7 @@ fn walk_node_modules(
             sbom_tier: Some("deployed".to_string()),
             shade_relocation: None,
             extra_annotations: Default::default(),
+            binary_role: None,
         });
 
         // Feature 005 US1: in --image mode, after emitting the `npm`
@@ -241,6 +242,7 @@ pub(crate) fn parse_root_package_json(
                 sbom_tier: Some("design".to_string()),
                 shade_relocation: None,
                 extra_annotations: Default::default(),
+                binary_role: None,
             });
         }
     }
@@ -362,6 +364,7 @@ pub(crate) fn build_npm_main_module_entry(
         sbom_tier: Some("source".to_string()),
         shade_relocation: None,
         extra_annotations,
+        binary_role: None,
     })
 }
 

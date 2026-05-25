@@ -76,6 +76,9 @@ pub(super) fn scan_binary(path: &Path, bytes: &[u8]) -> Option<BinaryScan> {
         object::BinaryFormat::Pe => "pe",
         _ => return None,
     };
+    // Milestone 104 — role classification (Application / SharedLibrary
+    // / Object / Other) derived from the format header.
+    let binary_role = super::role::classify(&file);
 
     // Linkage: object's high-level imports() returns `Vec<Import>`
     // where `library()` is the DT_NEEDED soname (ELF), LC_LOAD_DYLIB
@@ -286,6 +289,7 @@ pub(super) fn scan_binary(path: &Path, bytes: &[u8]) -> Option<BinaryScan> {
         comment_stamps,
         macho_build_version,
         pe_linker_version,
+        binary_role,
     })
 }
 
@@ -422,6 +426,15 @@ fn scan_fat_macho(path: &Path, bytes: &[u8]) -> Option<BinaryScan> {
             .and_then(super::cargo_auditable::parse_dep_v0)
     };
 
+    // Milestone 104 — role classification from the first slice
+    // (matches FR-006: fat-binary classification is taken from the
+    // first slice's filetype). Falls back to `Other` if the slice
+    // doesn't parse — shouldn't happen here since we already
+    // succeeded reading the fat header, but defense-in-depth.
+    let binary_role = object::read::File::parse(first_slice)
+        .map(|f| super::role::classify(&f))
+        .unwrap_or(mikebom_common::resolution::BinaryRole::Other);
+
     Some(BinaryScan {
         binary_class: "macho",
         imports,
@@ -453,6 +466,7 @@ fn scan_fat_macho(path: &Path, bytes: &[u8]) -> Option<BinaryScan> {
         macho_build_version: super::macho::parse_build_version_full(first_slice),
         // Milestone 098: PE linker-version is PE-only.
         pe_linker_version: None,
+        binary_role,
     })
 }
 

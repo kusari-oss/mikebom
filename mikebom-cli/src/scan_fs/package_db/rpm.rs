@@ -644,6 +644,7 @@ fn assemble_entry(
         co_owned_by: None,
         hashes: Vec::new(),
         extra_annotations: Default::default(),
+        binary_role: None,
     }
 }
 

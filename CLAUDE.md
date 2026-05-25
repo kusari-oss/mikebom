@@ -1,6 +1,6 @@
 # mikebom Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-05-14
+Auto-generated from all feature plans. Last updated: 2026-05-24
 
 ## Active Technologies
 - Rust stable (user-space only; no eBPF touched in this milestone) (002-python-npm-ecosystem)
@@ -102,6 +102,8 @@ Auto-generated from all feature plans. Last updated: 2026-05-14
 - N/A — all parsing is in-process per scan; results flow through the existing `PackageDbEntry` → `ResolvedComponent` pipeline. (102-cpp-bazel-cmake-readers)
 - Rust stable (workspace toolchain inherited from milestones 001–102; no nightly required). + Existing only — `regex = "1"` (workspace; already used by vcpkg/conan in PR-A), `tracing`, `anyhow`, std. **Zero new Cargo dependencies.** (103-bazel-cmake-impl)
 - N/A — all parsing is in-process; reader returns `Vec<PackageDbEntry>` to the existing `read_all` dispatcher. (103-bazel-cmake-impl)
+- Rust stable (workspace toolchain inherited from milestones 001–103; no nightly required). + Existing only — `object = "0.36"` (workspace; already used pervasively by `scan_fs/binary/`), `serde`/`serde_json`, `tracing`, `anyhow`. **Zero new Cargo dependencies.** (104-binary-role-classification)
+- N/A — classification is a pure function of the binary's first 1KB of header bytes; no persistence, no cache. (104-binary-role-classification)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -164,9 +166,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 104-binary-role-classification: Added Rust stable (workspace toolchain inherited from milestones 001–103; no nightly required). + Existing only — `object = "0.36"` (workspace; already used pervasively by `scan_fs/binary/`), `serde`/`serde_json`, `tracing`, `anyhow`. **Zero new Cargo dependencies.**
 - 103-bazel-cmake-impl: Added Rust stable (workspace toolchain inherited from milestones 001–102; no nightly required). + Existing only — `regex = "1"` (workspace; already used by vcpkg/conan in PR-A), `tracing`, `anyhow`, std. **Zero new Cargo dependencies.**
 - 102-cpp-bazel-cmake-readers: Added Rust stable (workspace toolchain inherited from milestones 001–101; no nightly required). + Existing only — `regex = "1"` (CMakeLists.txt pattern extraction; already a direct dep per milestone 013), `toml = "0.8"` (conanfile.txt INI-shaped parsing; already direct dep), `serde_json` (vcpkg.json parsing; workspace), `tracing` (parse-error warnings per FR-015), `anyhow`/`thiserror` (error propagation). **No new crates.** No subprocess calls. No network access.
-- 101-windows-smoke-experimental: Added Rust stable (workspace toolchain inherited from milestones 001–100; no nightly required for this user-space test-and-docs work). + Existing only — `std::process::Command` (binary invocation), `std::time::Instant` + `std::thread` (60-second timeout via spawn-and-kill), `tempfile` (already in dev-deps), `serde_json::Value` (JSON parsing), `env!("CARGO_BIN_EXE_mikebom")` (cargo's integration-test binary-path mechanism), `env!("MIKEBOM_FIXTURES_DIR")` (milestone-090's fixture cache). **No new crates.**
 
 
 <!-- MANUAL ADDITIONS START -->

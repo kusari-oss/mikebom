@@ -111,6 +111,7 @@ impl RequirementsTxtEntry {
             sbom_tier: Some(tier.to_string()),
             shade_relocation: None,
             extra_annotations: Default::default(),
+            binary_role: None,
         })
     }
 }

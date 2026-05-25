@@ -140,7 +140,6 @@ pub enum SpdxPrimaryPackagePurpose {
     #[allow(dead_code)]
     Framework,
     #[serde(rename = "LIBRARY")]
-    #[allow(dead_code)]
     Library,
     #[serde(rename = "CONTAINER")]
     #[allow(dead_code)]
@@ -161,7 +160,6 @@ pub enum SpdxPrimaryPackagePurpose {
     #[allow(dead_code)]
     Archive,
     #[serde(rename = "FILE")]
-    #[allow(dead_code)]
     File,
     #[serde(rename = "INSTALL")]
     #[allow(dead_code)]
@@ -506,12 +504,29 @@ fn component_to_package(
     // slot like CDX `metadata.component`, so multi-main-module
     // workspaces simply emit ALL main-modules with `APPLICATION`
     // purpose and `documentDescribes[]` carries them all.
-    let primary_package_purpose = c
-        .extra_annotations
-        .get("mikebom:component-role")
-        .and_then(|v| v.as_str())
-        .filter(|s| *s == "main-module")
-        .map(|_| SpdxPrimaryPackagePurpose::Application);
+    // Milestone 104 — binary-reader-discovered components map their
+    // role to the SPDX 2.3 §7.24 `primaryPackagePurpose` enum (the
+    // standards-native typing slot). Falls through to the existing
+    // main-module-tagged → APPLICATION derivation when the component
+    // didn't come from the binary reader, preserving milestone 053+
+    // / 064+ behavior byte-identically.
+    let primary_package_purpose = match c.binary_role {
+        Some(mikebom_common::resolution::BinaryRole::Application) => {
+            Some(SpdxPrimaryPackagePurpose::Application)
+        }
+        Some(mikebom_common::resolution::BinaryRole::SharedLibrary) => {
+            Some(SpdxPrimaryPackagePurpose::Library)
+        }
+        Some(mikebom_common::resolution::BinaryRole::Object) => {
+            Some(SpdxPrimaryPackagePurpose::File)
+        }
+        Some(mikebom_common::resolution::BinaryRole::Other) | None => c
+            .extra_annotations
+            .get("mikebom:component-role")
+            .and_then(|v| v.as_str())
+            .filter(|s| *s == "main-module")
+            .map(|_| SpdxPrimaryPackagePurpose::Application),
+    };
 
     let pkg = SpdxPackage {
         spdx_id,
@@ -582,6 +597,7 @@ mod tests {
             shade_relocation: None,
             external_references: Vec::new(),
             extra_annotations: Default::default(),
+            binary_role: None,
         }
     }
 

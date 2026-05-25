@@ -60,7 +60,7 @@ use cdx::{
     c1_cdx, c20_cdx, c21_cdx, c22_cdx, c23_cdx, c24_cdx, c25_cdx, c26_cdx, c27_cdx, c28_cdx,
     c29_cdx, c2_cdx, c30_cdx, c31_cdx, c32_cdx, c33_cdx, c34_cdx, c35_cdx, c36_cdx, c37_cdx,
     c38_cdx, c39_cdx, c3_cdx, c40_cdx, c41_cdx, c42_cdx, c44_cdx, c45_cdx, c46_cdx, c47_cdx, c48_cdx, c49_cdx, c4_cdx, c50_cdx, c51_cdx, c52_cdx, c53_cdx, c54_cdx, c5_cdx, c7_cdx, c8_cdx, c9_cdx, cdx_containment,
-    cdx_cpe, cdx_dev_deps, cdx_distribution, cdx_hashes, cdx_homepage, cdx_licenses_concluded,
+    cdx_binary_role, cdx_cpe, cdx_dev_deps, cdx_distribution, cdx_hashes, cdx_homepage, cdx_licenses_concluded,
     cdx_licenses_declared, cdx_name, cdx_purl, cdx_root, cdx_runtime_deps, cdx_supplier, cdx_vcs,
     cdx_version, d1_cdx, d2_cdx, e1_cdx, f1_cdx, g1_cdx,
 };
@@ -72,7 +72,7 @@ use spdx2::{
     c30_spdx23, c31_spdx23, c32_spdx23, c33_spdx23, c34_spdx23, c35_spdx23, c36_spdx23, c37_spdx23,
     c38_spdx23, c39_spdx23, c3_spdx23, c40_spdx23, c41_spdx23, c44_spdx23, c45_spdx23, c46_spdx23, c47_spdx23, c48_spdx23, c49_spdx23, c4_spdx23, c50_spdx23, c51_spdx23, c52_spdx23, c53_spdx23, c54_spdx23, c5_spdx23, c7_spdx23, c8_spdx23,
     c9_spdx23, d1_spdx23, d2_spdx23, e1_spdx23, f1_spdx23, g1_spdx23, spdx23_containment,
-    spdx23_cpe, spdx23_dev_deps, spdx23_distribution, spdx23_hashes, spdx23_homepage,
+    spdx23_binary_role, spdx23_cpe, spdx23_dev_deps, spdx23_distribution, spdx23_hashes, spdx23_homepage,
     spdx23_licenses_concluded, spdx23_licenses_declared, spdx23_name, spdx23_purl, spdx23_root,
     spdx23_runtime_deps, spdx23_supplier, spdx23_vcs, spdx23_version,
 };
@@ -82,7 +82,7 @@ use spdx3::{
     c25_spdx3, c26_spdx3, c27_spdx3, c28_spdx3, c29_spdx3, c2_spdx3, c30_spdx3, c31_spdx3,
     c32_spdx3, c33_spdx3, c34_spdx3, c35_spdx3, c36_spdx3, c37_spdx3, c38_spdx3, c39_spdx3, c40_spdx3,
     c41_spdx3, c44_spdx3, c45_spdx3, c46_spdx3, c47_spdx3, c48_spdx3, c49_spdx3, c3_spdx3, c4_spdx3, c50_spdx3, c51_spdx3, c52_spdx3, c53_spdx3, c54_spdx3, c5_spdx3, c7_spdx3, c8_spdx3, c9_spdx3, d1_spdx3, d2_spdx3,
-    e1_spdx3, f1_spdx3, g1_spdx3, spdx3_containment, spdx3_cpe, spdx3_dev_deps,
+    e1_spdx3, f1_spdx3, g1_spdx3, spdx3_binary_role, spdx3_containment, spdx3_cpe, spdx3_dev_deps,
     spdx3_distribution, spdx3_hashes, spdx3_homepage, spdx3_licenses_concluded,
     spdx3_licenses_declared, spdx3_name, spdx3_purl, spdx3_root, spdx3_runtime_deps,
     spdx3_supplier, spdx3_vcs, spdx3_version,
@@ -116,6 +116,11 @@ pub static EXTRACTORS: &[ParityExtractor] = &[
     ParityExtractor { row_id: "A10", label: "external ref — VCS",      cdx: cdx_vcs,         spdx23: spdx23_vcs,         spdx3: spdx3_vcs,         directional: Directionality::SymmetricEqual, order_sensitive: false },
     ParityExtractor { row_id: "A11", label: "external ref — distribution", cdx: cdx_distribution, spdx23: spdx23_distribution, spdx3: spdx3_distribution, directional: Directionality::SymmetricEqual, order_sensitive: false },
     ParityExtractor { row_id: "A12", label: "CPE",                     cdx: cdx_cpe,         spdx23: spdx23_cpe,         spdx3: spdx3_cpe,         directional: Directionality::CdxSubsetOfSpdx, order_sensitive: false },
+    // Milestone 104: per-component role (Application / SharedLibrary
+    // / Object / Other) emitted into each format's native
+    // component-type field. SymmetricEqual: all three formats must
+    // agree component-by-component per FR-008.
+    ParityExtractor { row_id: "A13", label: "binary-reader role",     cdx: cdx_binary_role, spdx23: spdx23_binary_role, spdx3: spdx3_binary_role, directional: Directionality::SymmetricEqual, order_sensitive: false },
     // Section B — Graph structure
     ParityExtractor { row_id: "B1",  label: "dependency edge (runtime)", cdx: cdx_runtime_deps, spdx23: spdx23_runtime_deps, spdx3: spdx3_runtime_deps, directional: Directionality::SymmetricEqual, order_sensitive: false },
     ParityExtractor { row_id: "B2",  label: "dependency edge (dev)",   cdx: cdx_dev_deps,    spdx23: spdx23_dev_deps,    spdx3: spdx3_dev_deps,    directional: Directionality::SymmetricEqual, order_sensitive: false },

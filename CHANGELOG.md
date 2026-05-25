@@ -7,6 +7,47 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### Milestone 104 — Binary role classification (Application vs Library)
+
+Every binary discovered by the file-level binary reader (`mikebom-cli/src/scan_fs/binary/`) was historically emitted with CycloneDX `type: "library"` regardless of whether the file was an executable or a shared library. SBOM consumers reading the `type` field on `/bin/ls` saw `library` — the inverse of reality: `ls` is an application, not something other components link into. This milestone classifies every binary-reader-discovered component into one of four roles (`Application`, `SharedLibrary`, `Object`, `Other`) by reading the file's format header and maps the role to the format-native component-type field in each of CycloneDX, SPDX 2.3, and SPDX 3.
+
+**Classification rules** (per the [binary-role cross-format contract](./specs/104-binary-role-classification/contracts/binary-role-cross-format-mapping.md)):
+
+- **Mach-O**: `MH_EXECUTE` → Application; `MH_DYLIB` → SharedLibrary; `MH_OBJECT` → Object; `MH_BUNDLE` / `MH_KEXT_BUNDLE` / `MH_CORE` → Other.
+- **ELF**: `ET_EXEC` → Application; `ET_DYN` with `PT_INTERP` program-header → Application (PIE executables, the modern Linux default); `ET_DYN` without `PT_INTERP` → SharedLibrary; `ET_REL` → Object; `ET_CORE` → Other.
+- **PE**: `IMAGE_FILE_DLL` characteristic bit unset → Application; set → SharedLibrary; `IMAGE_FILE_SYSTEM` → Other.
+- **Universal/fat Mach-O**: classification taken from the first slice's filetype (FR-006), matching the existing milestone-030 convention for identity metadata extraction.
+
+**Format mapping**:
+
+| Role          | CycloneDX 1.6 `Component.type` | SPDX 2.3 `Package.primaryPackagePurpose` | SPDX 3.0.1 `software_Package.software_primaryPurpose` |
+|---------------|---------------------------------|------------------------------------------|------------------------------------------------------|
+| Application   | `application`                   | `APPLICATION`                            | `application`                                         |
+| SharedLibrary | `library`                       | `LIBRARY`                                | `library`                                             |
+| Object        | `file`                          | `FILE`                                   | `file`                                                |
+| Other         | `library` (historic default)    | _omitted_                                | _omitted_                                             |
+
+Per Constitution Principle V, all three target formats have purpose-built native fields for component typing — the role rides exclusively through those standards-native slots. **No `mikebom:binary-role` annotation is introduced**; the existing `mikebom:binary-class` annotation (carrying format `elf`/`macho`/`pe`) is preserved as a distinct signal.
+
+#### Added
+
+- **`BinaryRole` enum** in `mikebom_common::resolution` with four variants (`Application` / `SharedLibrary` / `Object` / `Other`). Serde-renames as `snake_case` for stable wire-format serialization.
+- **`binary_role: Option<BinaryRole>` field** on `ResolvedComponent` and `PackageDbEntry`. `Some(_)` for components from the binary reader; `None` for manifest- and lockfile-driven readers.
+- **`mikebom-cli/src/scan_fs/binary/role.rs` module** containing the four-way classifier, the ELF `PT_INTERP`-based PIE disambiguation helper, and 9 unit tests covering each role variant per format.
+- **CDX emission**: `binary_role_to_cdx_type` helper in `generate/cyclonedx/builder.rs` replaces the hardcoded `"type": "library"` literal.
+- **SPDX 2.3 emission**: `primary_package_purpose` derivation in `generate/spdx/packages.rs` extended to honor `binary_role` ahead of the existing main-module-tagged → APPLICATION fallback. `Library` and `File` variants of `SpdxPrimaryPackagePurpose` lose their `#[allow(dead_code)]` attributes (first real uses).
+- **SPDX 3 emission**: `software_primaryPurpose` derivation in `generate/spdx/v3_packages.rs` mirrors the SPDX 2.3 logic.
+- **Parity catalog row A13** in `parity/catalog.rs` (auto-loaded from the new `sbom-format-mapping.md` row) plus per-format extractors `cdx_binary_role` / `spdx23_binary_role` / `spdx3_binary_role`, scoped to binary-reader-emitted components only (detected via the existing `mikebom:binary-class` property/annotation). Marked `SymmetricEqual` so all three formats must agree component-by-component (FR-008).
+- **Tracing audit logs** at scan time for the ambiguous-fallback cases (FR-004): ELF ET_DYN PIE classification and Mach-O `Unknown` (bundle / kext) fallback. Lets operators audit unexpected role classifications without source-level debugging.
+- **Two new integration tests** in `mikebom-cli/tests/`: `binary_role_parity.rs` (5 tests covering CDX, SPDX 2.3, SPDX 3 per-format role typing + cross-format agreement) and `binary_role_disambiguation.rs` (3 tests covering ELF PIE vs shared-library disambiguation, fat Mach-O first-slice classification per FR-006, and the MH_BUNDLE → Other → CDX library fallback).
+- **`docs/reference/sbom-format-mapping.md`** new row A13 documenting the role-mapping table and pointing at the milestone's contract file. Constitution Principle V documentation requirement satisfied.
+
+#### Changed
+
+- The CycloneDX `Component.type` field for binary-reader-emitted components is now role-aware. Pre-milestone-104 every binary-reader component emitted `type: "library"`; post-fix executables emit `type: "application"`, shared libraries continue to emit `type: "library"`, object files emit `type: "file"`, and the `Other` bucket preserves the historic `"library"` default to avoid breaking consumers reading components the spec can't classify further.
+- The SPDX 2.3 `primaryPackagePurpose` and SPDX 3 `software_primaryPurpose` fields are now populated for binary-reader-emitted Packages (pre-milestone-104 both were omitted unless the component carried the main-module annotation).
+- No goldens regenerated. Per R4, no existing ecosystem fixture (cargo, gem, golang, maven, npm, pip, rpm, deb, apk, bazel, cmake) exercises the binary reader path — they're all manifest-driven, so the existing byte-identity goldens are unchanged.
+
 ### Issue #236 — image-scan SPDX root no longer orphaned + cross-format root PURL parity
 
 Fixes two related defects in mikebom's emission of a *synthesized* root for scans that have no natural single root (container images, OS-package-only scans, `requirements.txt`- / `Gemfile`-only Python and Ruby projects, and any other case where milestone-053-style main-module annotation isn't set).

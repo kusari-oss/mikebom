@@ -704,6 +704,7 @@ fn emit_entries_from_info(
                     // isn't in this binary's BuildInfo (their VCS is
                     // their own go.mod / repo).
                     extra_annotations: build_vcs_annotations(info),
+                    binary_role: None,
                 });
             }
         }
@@ -740,6 +741,7 @@ fn emit_entries_from_info(
                     sbom_tier: Some("analyzed".to_string()),
                     shade_relocation: None,
                     extra_annotations: Default::default(),
+                    binary_role: None,
                 });
             }
         }
@@ -793,6 +795,7 @@ fn emit_file_level_diagnostic(
         sbom_tier: Some("analyzed".to_string()),
         shade_relocation: None,
         extra_annotations: Default::default(),
+        binary_role: None,
     });
 }
 

@@ -203,6 +203,7 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
             shade_relocation: None,
             external_references: Vec::new(),
             extra_annotations: Default::default(),
+            binary_role: None,
         });
     }
 
@@ -580,6 +581,9 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
                 shade_relocation: entry.shade_relocation,
                 external_references: external_refs_from_purl(&entry.purl),
                 extra_annotations: entry.extra_annotations.clone(),
+                // Milestone 104 — propagate role from PackageDbEntry
+                // (set by the binary reader's `make_file_level_component`).
+                binary_role: entry.binary_role,
             });
 
             // Emit a Relationship edge for each dependency that

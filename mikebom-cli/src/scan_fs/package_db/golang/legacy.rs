@@ -165,7 +165,11 @@ pub(crate) struct GoModRequire {
 /// Parsed `go.mod` contents. `replaces` maps `(old_path, old_version) →
 /// (new_path, new_version)` — an `old_version` of `""` means "match any
 /// version of old_path". `excludes` holds the set that must be filtered
-/// out before PURL construction.
+/// out before PURL construction. `tools` holds the package paths from
+/// Go 1.24+'s `tool` directive — these declare build-time tool deps
+/// the same way `require` declares runtime deps, with the version
+/// resolved transitively via the matching `require` entry that
+/// `go mod tidy` adds alongside the `tool` line.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct GoModDocument {
     pub module_path: Option<String>,
@@ -173,6 +177,7 @@ pub(crate) struct GoModDocument {
     pub requires: Vec<GoModRequire>,
     pub replaces: HashMap<(String, String), (String, String)>,
     pub excludes: HashSet<(String, String)>,
+    pub tools: Vec<String>,
 }
 
 /// Parse a `go.mod` file body into a [`GoModDocument`]. The parser is
@@ -249,6 +254,24 @@ pub(crate) fn parse_go_mod(text: &str) -> GoModDocument {
             if let Some(coord) = parse_module_version_pair(rest) {
                 doc.excludes.insert(coord);
             }
+        } else if line == "tool (" {
+            for raw_inner in lines.by_ref() {
+                let inner_owned = strip_line_comment(raw_inner);
+                let inner = inner_owned.trim();
+                if inner == ")" {
+                    break;
+                }
+                if inner.is_empty() {
+                    continue;
+                }
+                if let Some(path) = parse_tool_line(inner) {
+                    doc.tools.push(path);
+                }
+            }
+        } else if let Some(rest) = line.strip_prefix("tool ") {
+            if let Some(path) = parse_tool_line(rest) {
+                doc.tools.push(path);
+            }
         }
         // else: unknown directive (`toolchain`, `retract`, ...) — skip.
     }
@@ -324,6 +347,51 @@ fn parse_module_version_pair(rest: &str) -> Option<(String, String)> {
     let path = parts.next()?.trim_matches('"').to_string();
     let version = parts.next()?.trim_matches('"').to_string();
     Some((path, version))
+}
+
+/// Parse a single `tool` directive line — the path of a Go 1.24+ build-
+/// tool dep. The directive takes a package path with no version (MVS
+/// resolves the version via the matching `require` entry that
+/// `go mod tidy` adds). Returns the **module path** prefix of the
+/// package path so the result can be cross-referenced against the
+/// module-keyed components mikebom emits — e.g.
+/// `github.com/foo/bar/cmd/baz` → `github.com/foo/bar`. We can't know
+/// the module-boundary split without consulting `go.mod` of the target
+/// (the path could be a 2-segment domain + N segments of repo +
+/// optional vN suffix + arbitrary subpath). Strategy: the tool's
+/// own go.mod is fetched/cached as part of `go mod tidy`, but we
+/// don't read it here. Instead, return the path as-given and let the
+/// edge-matching loop in `read()` (which already deduplicates against
+/// the discovered component set) drop it if no component matches —
+/// the same approach the resolver uses for `// indirect` requires
+/// whose declared parent doesn't match any module in scope.
+fn parse_tool_line(rest: &str) -> Option<String> {
+    let path = rest.split_whitespace().next()?.trim_matches('"').to_string();
+    if path.is_empty() {
+        None
+    } else {
+        Some(path)
+    }
+}
+
+/// Map a Go 1.24+ `tool` directive package path to the module path that
+/// contains it. Module paths emitted by mikebom are e.g.
+/// `github.com/golangci/golangci-lint`; tool paths in `go.mod` are e.g.
+/// `github.com/golangci/golangci-lint/cmd/golangci-lint`. The tool path
+/// is always a (possibly equal) descendant of the module path, so the
+/// longest module path that is a prefix of the tool path (at a path-
+/// segment boundary) is the answer. Returns `None` if no module in
+/// `module_paths` is a path-segment prefix of `tool_path`.
+fn resolve_tool_to_module<'a>(tool_path: &str, module_paths: &[&'a str]) -> Option<&'a str> {
+    let mut best: Option<&'a str> = None;
+    for &m in module_paths {
+        let matches = tool_path == m
+            || (tool_path.starts_with(m) && tool_path.as_bytes().get(m.len()) == Some(&b'/'));
+        if matches && best.map(|b| m.len() > b.len()).unwrap_or(true) {
+            best = Some(m);
+        }
+    }
+    best
 }
 
 // ---------------------------------------------------------------------------
@@ -1219,6 +1287,39 @@ pub fn read(rootfs: &Path, _include_dev: bool) -> (Vec<PackageDbEntry>, GoScanSi
                     }
                 }
             }
+            // Issue #250: emit edges from main-module to each Go 1.24+
+            // `tool` directive entry. The directive uses package paths
+            // (`example.com/mod/cmd/foo`) but mikebom emits components
+            // keyed by module paths (`example.com/mod`). Resolve each
+            // tool path to its enclosing module by longest-prefix-match
+            // against the already-discovered Go module set. The tool's
+            // module IS in go.sum (since `go mod tidy` adds an indirect
+            // require alongside the `tool` line) so it's been emitted
+            // as a component by `build_entries_from_go_module_with_lookup`
+            // above; we just need an incoming edge.
+            if !doc.tools.is_empty() {
+                let golang_modules: Vec<&str> = out
+                    .iter()
+                    .filter(|e| e.purl.as_str().starts_with("pkg:golang/"))
+                    .map(|e| e.name.as_str())
+                    .collect();
+                let existing: std::collections::HashSet<String> =
+                    main_entry.depends.iter().cloned().collect();
+                for tool_path in &doc.tools {
+                    if let Some(module_path) =
+                        resolve_tool_to_module(tool_path, &golang_modules)
+                    {
+                        if !existing.contains(module_path) {
+                            main_entry.depends.push(module_path.to_string());
+                        }
+                    } else {
+                        tracing::warn!(
+                            tool_path = %tool_path,
+                            "go.mod `tool` directive entry — no enclosing Go module found in scan scope; tool's component (if any) will appear as orphan"
+                        );
+                    }
+                }
+            }
             let purl_key = main_entry.purl.as_str().to_string();
             if seen_purls.insert(purl_key) {
                 out.push(main_entry);
@@ -1741,6 +1842,108 @@ replace github.com/old/lib v1.0.0 => github.com/new/lib v2.0.0
         let doc = parse_go_mod(src);
         assert_eq!(doc.module_path.as_deref(), Some("x"));
         assert_eq!(doc.go_version.as_deref(), Some("1.22"));
+    }
+
+    // --- issue #250: Go 1.24+ `tool` directive -----------------------------
+
+    #[test]
+    fn parses_single_tool_directive() {
+        let src = "module x\ngo 1.24\ntool github.com/golangci/golangci-lint/cmd/golangci-lint\n";
+        let doc = parse_go_mod(src);
+        assert_eq!(doc.tools.len(), 1);
+        assert_eq!(
+            doc.tools[0],
+            "github.com/golangci/golangci-lint/cmd/golangci-lint"
+        );
+    }
+
+    #[test]
+    fn parses_tool_block() {
+        let src = r#"
+module x
+go 1.24
+
+tool (
+    github.com/golangci/golangci-lint/cmd/golangci-lint
+    golang.org/x/tools/cmd/stringer
+)
+"#;
+        let doc = parse_go_mod(src);
+        assert_eq!(doc.tools.len(), 2);
+        assert!(doc
+            .tools
+            .iter()
+            .any(|t| t == "github.com/golangci/golangci-lint/cmd/golangci-lint"));
+        assert!(doc.tools.iter().any(|t| t == "golang.org/x/tools/cmd/stringer"));
+    }
+
+    #[test]
+    fn tool_directive_ignored_when_path_empty() {
+        let src = "module x\ngo 1.24\ntool \n";
+        let doc = parse_go_mod(src);
+        assert!(doc.tools.is_empty());
+    }
+
+    #[test]
+    fn tool_block_strips_line_comments() {
+        let src = r#"
+module x
+go 1.24
+
+tool (
+    github.com/golangci/golangci-lint/cmd/golangci-lint // linter
+    // golang.org/x/tools/cmd/stringer is intentionally commented out
+)
+"#;
+        let doc = parse_go_mod(src);
+        assert_eq!(doc.tools.len(), 1);
+        assert_eq!(
+            doc.tools[0],
+            "github.com/golangci/golangci-lint/cmd/golangci-lint"
+        );
+    }
+
+    #[test]
+    fn resolve_tool_to_module_picks_longest_prefix() {
+        let modules = vec![
+            "github.com/foo/bar",
+            "github.com/foo/bar/v2",
+            "example.com/x",
+        ];
+        // Tool path matches the v2 variant (longer prefix wins).
+        assert_eq!(
+            resolve_tool_to_module("github.com/foo/bar/v2/cmd/tool", &modules),
+            Some("github.com/foo/bar/v2"),
+        );
+    }
+
+    #[test]
+    fn resolve_tool_to_module_segment_boundary_required() {
+        // `github.com/foo/bar` should NOT match tool path
+        // `github.com/foo/barbaz/cmd/tool` (no segment boundary).
+        let modules = vec!["github.com/foo/bar"];
+        assert_eq!(
+            resolve_tool_to_module("github.com/foo/barbaz/cmd/tool", &modules),
+            None,
+        );
+    }
+
+    #[test]
+    fn resolve_tool_to_module_exact_match() {
+        let modules = vec!["github.com/example/cmd-as-module"];
+        assert_eq!(
+            resolve_tool_to_module("github.com/example/cmd-as-module", &modules),
+            Some("github.com/example/cmd-as-module"),
+        );
+    }
+
+    #[test]
+    fn resolve_tool_to_module_no_match() {
+        let modules = vec!["example.com/x", "github.com/foo/bar"];
+        assert_eq!(
+            resolve_tool_to_module("nowhere.example.org/cmd/tool", &modules),
+            None,
+        );
     }
 
     // --- go.sum parser -----------------------------------------------------

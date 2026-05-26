@@ -7,6 +7,23 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### Issue #234 — Multi-arch production container image
+
+Adds an official multi-arch (linux/amd64 + linux/arm64) container image published to `ghcr.io/kusari-sandbox/mikebom` per release. Image is signed with cosign keyless via Sigstore.
+
+#### Added
+
+- **`Dockerfile`** at repo root. Distroless base (`gcr.io/distroless/cc-debian12:nonroot`); ~25 MB final image. Runs as non-root user 65532 (uid). No shell, no package manager — Pod Security Standards "restricted" profile compatible. The image is assembled from the existing per-arch release tarballs (the same `cross`-compiled binaries published to GitHub Releases), not recompiled — so the binary inside the image is byte-identical to the tarball binary. Includes the eBPF object at the loader's expected relative path, so `mikebom trace` works inside the container when run with `CAP_BPF` + `CAP_PERFMON`.
+- **`publish-container-image` job** in `.github/workflows/release.yml`. Triggers on every release tag (`v*-alpha.*` / `v*-beta.*` / `v*-rc.*`). Depends on `build-linux-x86_64` + `build-linux-aarch64`. Steps: download both tarballs → extract into per-arch staging dirs → `docker buildx` multi-arch build → push to GHCR → `cosign sign` keyless via OIDC. Multi-arch via QEMU + buildx; pinned action SHAs match the existing repo convention.
+- **Three tags per release**: `ghcr.io/kusari-sandbox/mikebom:v0.1.0-alpha.X` (full git tag), `:0.1.0-alpha.X` (version without `v`), and `:latest` (moves with every alpha release until 1.0).
+- **Cosign keyless signing**: every published image is signed against the GitHub OIDC issuer; consumers verify with `cosign verify --certificate-identity-regexp 'https://github.com/kusari-sandbox/mikebom/.+' --certificate-oidc-issuer https://token.actions.githubusercontent.com <image>`.
+- **`docs/user-guide/installation.md`** new "Production container image" section with pull/run/verify examples and platform-portability notes.
+
+#### Compatibility
+
+- Existing `Dockerfile.dev` is unchanged and remains the recommended developer tool for eBPF + cross-compile workflows.
+- No Rust code changes. CI lane only.
+
 ### Issue #235 — Registry credential extension for in-cluster operation
 
 Extends the OCI registry credential resolution at `scan_fs/oci_pull/auth.rs` so mikebom can pull from private registries when running in environments without a Docker config file at the conventional `~/.docker/config.json` path — e.g. inside a Kubernetes CronJob pod where credentials arrive via `imagePullSecrets`-derived volume mounts or environment variables.

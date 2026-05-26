@@ -74,6 +74,50 @@ The workspace has three crates (`mikebom-cli`, `mikebom-common`,
 `mikebom-ebpf`) plus an `xtask` crate. A single `cargo build --release`
 from the repo root produces the CLI binary.
 
+## Production container image (multi-arch)
+
+Each `v0.1.0-alpha.*` release publishes a multi-arch distroless container image to GitHub Container Registry. The image is signed with cosign keyless via Sigstore (matches mikebom's existing attestation philosophy) and is suitable for Kubernetes Pod Security Standards "restricted" profiles — runs as non-root user `65532`, no shell, no package manager.
+
+**Pull:**
+
+```bash
+docker pull ghcr.io/kusari-sandbox/mikebom:v0.1.0-alpha.35
+# or:
+docker pull ghcr.io/kusari-sandbox/mikebom:0.1.0-alpha.35
+# or the latest alpha release:
+docker pull ghcr.io/kusari-sandbox/mikebom:latest
+```
+
+**Tags published per release:**
+
+- `ghcr.io/kusari-sandbox/mikebom:v0.1.0-alpha.35` — full git tag form
+- `ghcr.io/kusari-sandbox/mikebom:0.1.0-alpha.35` — version without `v` prefix
+- `ghcr.io/kusari-sandbox/mikebom:latest` — moves with every alpha release
+
+**Platforms:** `linux/amd64`, `linux/arm64`. The binary inside is byte-identical to the corresponding release tarball — the image is built from those artifacts, not re-compiled.
+
+**Verify the signature (optional but recommended for supply-chain scenarios):**
+
+```bash
+cosign verify \
+  --certificate-identity-regexp 'https://github.com/kusari-sandbox/mikebom/.+' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/kusari-sandbox/mikebom:v0.1.0-alpha.35
+```
+
+**Scan a directory mounted into the container** (the common case — `sbom scan` doesn't need any special privileges):
+
+```bash
+docker run --rm \
+  -v "$PWD:/scan:ro" \
+  ghcr.io/kusari-sandbox/mikebom:latest \
+  sbom scan --offline --path /scan --output /scan/sbom.cdx.json
+```
+
+**Pull from a private registry** (`mikebom sbom scan --image …` with auth) — see [`--registry-credentials-dir`](cli-reference.md#--registry-credentials-dir-path) for the K8s `imagePullSecrets`-mount pattern.
+
+**Trace mode in a container** is supported but uncommon. The image ships the eBPF object at the loader's expected relative path; you'd need to run with `CAP_BPF` + `CAP_PERFMON` (Linux only) and the appropriate host-mount setup. Most users want `sbom scan` or `sbom generate`, neither of which needs extra privileges.
+
 ## Development container (Linux eBPF, macOS, Windows)
 
 The tracing subcommands need a privileged Linux host. On macOS, Windows,

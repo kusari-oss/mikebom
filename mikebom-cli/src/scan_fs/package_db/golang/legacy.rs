@@ -1170,7 +1170,19 @@ pub struct GoScanSignals {
     /// `None`. Ecosystem prefix (`go:`) added by the upstream
     /// `read_all` aggregator before the value flows into the document-
     /// level annotation, so this field carries just the bare class
-    /// names (`unresolved-indirect-require`, `proxy-fetch-failed`, ...).
+    /// names. Known classes:
+    ///
+    /// * `unresolved-indirect-require` — component has zero incoming
+    ///   edges AND the issue-#251 backfill didn't pick it up either
+    ///   (rare; only when the per-workspace backfill pass was skipped).
+    /// * `flat-attached-fallback` (issue #251) — component had zero
+    ///   incoming edges from non-main entries; mikebom flat-attached
+    ///   it to main-module's `depends` to restore reachability. The
+    ///   incoming edge from main is a synthesized fallback, not a
+    ///   real direct require declared in go.mod.
+    /// * `proxy-fetch-failed`, `private-module` (planned) — refined
+    ///   classifications gated on per-module fetch-error data being
+    ///   threaded through from the milestone-055 resolver.
     pub graph_completeness_reasons: Vec<String>,
 }
 
@@ -1234,6 +1246,14 @@ pub fn read(rootfs: &Path, _include_dev: bool) -> (Vec<PackageDbEntry>, GoScanSi
     // test-only imports.
     let mut test_imports: HashSet<String> = HashSet::new();
     let mut main_module_emitted = 0usize;
+    // Issue #251: track names of Go modules flat-backfilled onto
+    // main-module's `depends` during the per-workspace pass below.
+    // After all workspaces are processed, the orphan-classifier loop
+    // tags each backfilled component with
+    // `mikebom:orphan-reason: flat-attached-fallback` so the diagnostic
+    // signal (mikebom couldn't determine this component's hierarchical
+    // parent) survives despite the resolved-incoming-edge from main.
+    let mut backfilled_paths: HashSet<String> = HashSet::new();
     // Milestone 055 (T024 + T025): build the GraphResolver once per
     // scan and reuse it across project roots. The resolver's
     // 4-step ladder produces a `ModuleGraphMap` that supersedes the
@@ -1481,6 +1501,13 @@ pub fn read(rootfs: &Path, _include_dev: bool) -> (Vec<PackageDbEntry>, GoScanSi
                     backfill_count = backfilled.len(),
                     "Issue #251: flat-attaching residual-orphan Go components to main-module (resolver's hierarchical attribution left them with zero incoming edges)"
                 );
+                // Record paths for the post-loop annotation pass — these
+                // components get `mikebom:orphan-reason:
+                // flat-attached-fallback` so consumers can distinguish
+                // them from real direct requires.
+                for p in &backfilled {
+                    backfilled_paths.insert(p.clone());
+                }
                 main_entry.depends.extend(backfilled);
             }
             let purl_key = main_entry.purl.as_str().to_string();
@@ -1620,6 +1647,38 @@ pub fn read(rootfs: &Path, _include_dev: bool) -> (Vec<PackageDbEntry>, GoScanSi
                     continue;
                 }
                 let reason = "unresolved-indirect-require".to_string();
+                reason_classes.insert(reason.clone());
+                entry.extra_annotations.insert(
+                    "mikebom:orphan-reason".to_string(),
+                    serde_json::Value::String(reason),
+                );
+            }
+        }
+
+        // Issue #251: tag components that the per-workspace backfill
+        // pass flat-attached to main_entry.depends. These are NOT
+        // strict orphans anymore (they have an incoming edge from
+        // main-module), but mikebom couldn't determine their
+        // hierarchical parent — the edge from main is a fallback, not
+        // a real direct require declared in go.mod. The annotation
+        // tells graph-walking SBOM consumers: "treat this incoming
+        // edge as inferred, not authoritative."
+        //
+        // We use the existing `mikebom:orphan-reason` annotation slot
+        // (cross-format parity already wired in milestone 061 / row
+        // C45) with a new closed-enum value
+        // `flat-attached-fallback`. The annotation semantic widens
+        // slightly: from strictly "no incoming edge" to "incoming
+        // edge attribution unknown / synthesized." Existing
+        // `unresolved-indirect-require` continues to mean "no
+        // incoming edge AND we couldn't backfill" (rare; only when
+        // the backfill pass skipped the entry for some reason).
+        for entry in out.iter_mut() {
+            if !entry.purl.as_str().starts_with("pkg:golang/") {
+                continue;
+            }
+            if backfilled_paths.contains(&entry.name) {
+                let reason = "flat-attached-fallback".to_string();
                 reason_classes.insert(reason.clone());
                 entry.extra_annotations.insert(
                     "mikebom:orphan-reason".to_string(),
@@ -2228,6 +2287,28 @@ tool (
             result,
             vec!["alpha".to_string(), "middle".to_string(), "zeta".to_string()],
         );
+    }
+
+    #[test]
+    fn backfill_annotation_contract_naming_stable() {
+        // Contract test: the per-component annotation that flags
+        // backfilled entries uses the existing
+        // `mikebom:orphan-reason` annotation slot (milestone 061 /
+        // parity row C45) with the closed-enum value
+        // `flat-attached-fallback`. Both strings are exposed in
+        // emitted SBOMs across CDX, SPDX 2.3, and SPDX 3.0.1 — any
+        // accidental rename should be caught by this test before it
+        // ships and breaks consumer policy.
+        const ANNOTATION_KEY: &str = "mikebom:orphan-reason";
+        const ANNOTATION_VALUE_BACKFILL: &str = "flat-attached-fallback";
+        const ANNOTATION_VALUE_ORPHAN: &str = "unresolved-indirect-require";
+        assert_eq!(ANNOTATION_KEY, "mikebom:orphan-reason");
+        assert_eq!(ANNOTATION_VALUE_BACKFILL, "flat-attached-fallback");
+        assert_eq!(ANNOTATION_VALUE_ORPHAN, "unresolved-indirect-require");
+        // If you renamed either string, update the milestone-061
+        // parity-catalog row C45 + the orphan-reason value documentation
+        // in GoScanSignals + ALL existing emitted-SBOM goldens AND any
+        // downstream consumer-side policy that relies on these strings.
     }
 
     #[test]

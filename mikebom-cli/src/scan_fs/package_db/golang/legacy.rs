@@ -394,6 +394,56 @@ fn resolve_tool_to_module<'a>(tool_path: &str, module_paths: &[&'a str]) -> Opti
     best
 }
 
+/// Issue #251: compute the set of Go module names to flat-attach to
+/// main-module's `depends` to recover reachability after the resolver's
+/// hierarchical attribution leaves some components orphan.
+///
+/// Inputs:
+/// - `golang_names`: every Go module's `entry.name` in the current scan's
+///   `out` (the components that have already been emitted as PackageDbEntry
+///   records). These are the candidates: any of them with zero incoming
+///   edges from non-main entries will be backfilled.
+/// - `all_edges`: a flat `(source_name, source_depends)` view of every
+///   entry in `out` — Go-or-otherwise. Used to count incoming edges into
+///   `golang_names`. Passing this as a slice lets unit tests exercise
+///   the logic without constructing PackageDbEntry instances.
+/// - `main_entry_depends`: main-module's current `depends` list before
+///   backfill. Entries already there are dedup'd out of the result.
+///
+/// Returns a sorted Vec of Go module names with zero incoming edges
+/// from any non-main entry AND not already in main-module's depends.
+fn compute_orphan_backfill(
+    golang_names: &[&str],
+    all_edges: &[(&str, &[String])],
+    main_entry_depends: &[String],
+) -> Vec<String> {
+    if golang_names.is_empty() {
+        return Vec::new();
+    }
+    let go_set: std::collections::HashSet<&str> = golang_names.iter().copied().collect();
+    let mut incoming: std::collections::HashMap<&str, usize> =
+        golang_names.iter().map(|&n| (n, 0)).collect();
+    for (_, depends) in all_edges {
+        for child in *depends {
+            if go_set.contains(child.as_str()) {
+                if let Some(c) = incoming.get_mut(child.as_str()) {
+                    *c += 1;
+                }
+            }
+        }
+    }
+    let existing: std::collections::HashSet<&str> =
+        main_entry_depends.iter().map(|s| s.as_str()).collect();
+    let mut backfilled: Vec<String> = Vec::new();
+    for &name in golang_names {
+        if incoming.get(name).copied().unwrap_or(0) == 0 && !existing.contains(name) {
+            backfilled.push(name.to_string());
+        }
+    }
+    backfilled.sort();
+    backfilled
+}
+
 // ---------------------------------------------------------------------------
 // go.sum parser
 // ---------------------------------------------------------------------------
@@ -1297,6 +1347,17 @@ pub fn read(rootfs: &Path, _include_dev: bool) -> (Vec<PackageDbEntry>, GoScanSi
             // require alongside the `tool` line) so it's been emitted
             // as a component by `build_entries_from_go_module_with_lookup`
             // above; we just need an incoming edge.
+            //
+            // ORDER NOTE: this block runs BEFORE the issue-#251 backfill
+            // below. Reason: tool-directive resolution already places
+            // the tool's module in `main_entry.depends`, so the
+            // subsequent backfill's dedup-against-existing-depends
+            // check skips it — leaving the tool with only the
+            // `build-tool` role annotation (clean semantic) rather
+            // than ALSO being tagged as `flat-attached-fallback`
+            // (which would be misleading: tools aren't orphans whose
+            // parent we couldn't find — they're declared deps via the
+            // `tool` directive).
             if !doc.tools.is_empty() {
                 // Pass 1: resolve every tool path to its enclosing
                 // module path. Immutable-borrow `out` to read module
@@ -1365,6 +1426,62 @@ pub fn read(rootfs: &Path, _include_dev: bool) -> (Vec<PackageDbEntry>, GoScanSi
                         "go.mod `tool` directive entry — no enclosing Go module found in scan scope; tool's component (if any) will appear as orphan"
                     );
                 }
+            }
+            // Issue #251: backfill residual orphans onto main-module.
+            // After milestone-091's `gosum_fallback_paths()` flat-attach
+            // above + the #250 tool-directive resolution, some Go
+            // components can still end up with zero incoming edges:
+            //
+            // - `// indirect` requires whose only reachability path in
+            //   `go mod graph` is THROUGH the main-module (step1 skips
+            //   `parent.version().is_empty()` at graph_resolver.rs:442,
+            //   intentionally — main-module's depends are populated from
+            //   go.mod directly, not from `go mod graph`). When the
+            //   intermediate parent of such an indirect was filtered out
+            //   of the resolver's map (replace pointing at a local path,
+            //   the intermediate parent not in go.sum, etc.), the
+            //   indirect ends up with no incoming edge attribution and
+            //   reports as `mikebom:orphan-reason:
+            //   unresolved-indirect-require` per milestone 061.
+            //
+            // - Modules where step 1 inserted them as parents (because
+            //   `go mod graph` lists them as a parent with their own
+            //   outgoing edges), so step 5's `gosum_fallback_paths()`
+            //   doesn't claim them — but no other resolver-output entry
+            //   lists them as a child either.
+            //
+            // Backfill: flat-attach any Go component in `out` (this
+            // workspace's already-pushed transitives) with zero
+            // incoming-from-other-entries edges to main_entry.depends.
+            // Establishes the reachability invariant "every emitted Go
+            // component is reachable from main-module" while preserving
+            // the milestone-059 graph topology where possible — the flat
+            // edge is added only as a FALLBACK, AFTER the resolver's
+            // hierarchical attribution gets first chance.
+            //
+            // Cross-format parity: this modifies `main_entry.depends`
+            // before push, so both CDX dependsOn and SPDX DEPENDS_ON
+            // emitters see the same edge set. The PR #244 alpha.36
+            // synth-root gate symmetry is preserved (CDX's
+            // `target_has_no_edges` check and SPDX's symmetric
+            // `synth_has_outgoing` check both observe the new edges).
+            let golang_names: Vec<&str> = out
+                .iter()
+                .filter(|e| e.purl.as_str().starts_with("pkg:golang/"))
+                .map(|e| e.name.as_str())
+                .collect();
+            let all_edges: Vec<(&str, &[String])> = out
+                .iter()
+                .map(|e| (e.name.as_str(), e.depends.as_slice()))
+                .collect();
+            let backfilled =
+                compute_orphan_backfill(&golang_names, &all_edges, &main_entry.depends);
+            if !backfilled.is_empty() {
+                tracing::info!(
+                    backfill_count = backfilled.len(),
+                    "Issue #251: flat-attaching residual-orphan Go components to main-module (resolver's hierarchical attribution left them with zero incoming edges)"
+                );
+                main_entry.depends.extend(backfilled);
             }
             let purl_key = main_entry.purl.as_str().to_string();
             if seen_purls.insert(purl_key) {
@@ -2010,6 +2127,136 @@ tool (
         // If you renamed either of the values, update the parity
         // catalog row for `mikebom:component-role` AND any consumer-
         // side policy that filters on these strings.
+    }
+
+    // --- issue #251: orphan backfill ---------------------------------------
+
+    #[test]
+    fn backfill_empty_when_no_golang_components() {
+        let result = compute_orphan_backfill(&[], &[], &[]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn backfill_empty_when_all_modules_have_incoming_edges() {
+        // Scenario: main → A, A → B. No orphans.
+        let depends_a: Vec<String> = vec!["B".to_string()];
+        let depends_main: Vec<String> = vec!["A".to_string()];
+        let edges: Vec<(&str, &[String])> = vec![
+            ("A", depends_a.as_slice()),
+            ("MAIN", depends_main.as_slice()),
+        ];
+        let result = compute_orphan_backfill(
+            &["A", "B"],
+            &edges,
+            &depends_main,
+        );
+        assert!(
+            result.is_empty(),
+            "A is reachable from main, B is reachable from A — neither should backfill",
+        );
+    }
+
+    #[test]
+    fn backfill_attaches_module_with_zero_incoming() {
+        // Scenario from guac: main directly requires A. A → B WAS the
+        // expected edge but mikebom's resolver lost it. B is in `out`
+        // (from go.sum) but no entry depends on B. main_entry.depends =
+        // [A] (only direct, non-indirect from go.mod).
+        // Backfill should add B.
+        let depends_a: Vec<String> = vec![]; // A's depends list is empty (resolver gap)
+        let depends_main: Vec<String> = vec!["A".to_string()];
+        let edges: Vec<(&str, &[String])> = vec![
+            ("A", depends_a.as_slice()),
+            ("MAIN", depends_main.as_slice()),
+        ];
+        let result = compute_orphan_backfill(
+            &["A", "B"],
+            &edges,
+            &depends_main,
+        );
+        assert_eq!(result, vec!["B".to_string()]);
+    }
+
+    #[test]
+    fn backfill_skips_modules_already_in_main_depends() {
+        // Edge case: A is already in main_entry.depends AND has zero
+        // incoming edges from non-main entries. Don't double-add.
+        let depends_main: Vec<String> = vec!["A".to_string()];
+        let edges: Vec<(&str, &[String])> = vec![
+            ("MAIN", depends_main.as_slice()),
+        ];
+        let result = compute_orphan_backfill(
+            &["A"],
+            &edges,
+            &depends_main,
+        );
+        assert!(result.is_empty(), "A already in main_entry.depends — should not backfill");
+    }
+
+    #[test]
+    fn backfill_ignores_incoming_edges_from_non_golang_names() {
+        // A non-Go entry depending on a Go module name still counts as
+        // an incoming edge — keeps the contract simple. Non-Go edges
+        // are rare but real (e.g., a binary entry that references its
+        // ELF-discovered Go module).
+        let depends_binary: Vec<String> = vec!["A".to_string()];
+        let edges: Vec<(&str, &[String])> = vec![
+            ("/usr/bin/some-binary", depends_binary.as_slice()),
+        ];
+        let result = compute_orphan_backfill(
+            &["A"],
+            &edges,
+            &[],
+        );
+        assert!(
+            result.is_empty(),
+            "Even cross-ecosystem incoming edges count — A should not backfill",
+        );
+    }
+
+    #[test]
+    fn backfill_emits_sorted_output() {
+        // Three orphans; verify deterministic ordering.
+        let edges: Vec<(&str, &[String])> = vec![];
+        let result = compute_orphan_backfill(
+            &["zeta", "alpha", "middle"],
+            &edges,
+            &[],
+        );
+        assert_eq!(
+            result,
+            vec!["alpha".to_string(), "middle".to_string(), "zeta".to_string()],
+        );
+    }
+
+    #[test]
+    fn backfill_real_world_shape_guac_indirect() {
+        // Closest analog to the guac@ebb808e reproducer: main module
+        // directly requires `osv-scalibr`; `osv-scalibr` SHOULD also
+        // require `go-ext4-filesystem` per `go mod why -m` but the
+        // resolver dropped that edge for some reason. Expect:
+        //   - osv-scalibr stays as a direct edge from main (no change).
+        //   - go-ext4-filesystem gets flat-backfilled onto main.
+        let depends_osvscalibr: Vec<String> = vec![];
+        let depends_main: Vec<String> = vec!["github.com/google/osv-scalibr".to_string()];
+        let edges: Vec<(&str, &[String])> = vec![
+            ("github.com/google/osv-scalibr", depends_osvscalibr.as_slice()),
+            ("MAIN", depends_main.as_slice()),
+        ];
+        let result = compute_orphan_backfill(
+            &[
+                "github.com/google/osv-scalibr",
+                "github.com/masahiro331/go-ext4-filesystem",
+            ],
+            &edges,
+            &depends_main,
+        );
+        assert_eq!(
+            result,
+            vec!["github.com/masahiro331/go-ext4-filesystem".to_string()],
+            "osv-scalibr already direct from main; go-ext4-filesystem (no incoming edge) backfills",
+        );
     }
 
     // --- go.sum parser -----------------------------------------------------

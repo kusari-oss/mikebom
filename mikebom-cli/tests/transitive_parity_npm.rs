@@ -12,7 +12,17 @@ use transitive_parity_common::*;
 
 const FIXTURE_SUBPATH: &str = "npm";
 
-const EXPECTED_MIKEBOM_EDGE_COUNT: usize = 150;
+// Baseline was 150 at alpha.24. After issue #262's nested-version-
+// pinning fix (alpha.38+), three edges from dev-scope parents
+// (morgan, basic-auth, mocha's nested debug) that previously
+// resolved via bare-name last-write-wins to hoisted runtime targets
+// now correctly resolve to their nested dev-scope targets. The
+// new edges are emitted as `DEV_DEPENDENCY_OF` (reversed direction)
+// rather than `DEPENDS_ON`, so they're not counted by
+// `extract_edges_spdx_2_3`. The 3-edge shift is a wire-format
+// reclassification, not a real edge loss — the underlying dep
+// relationships are still present.
+const EXPECTED_MIKEBOM_EDGE_COUNT: usize = 147;
 
 const EXPECTED_REPRESENTATIVE_EDGES: &[(&str, &str)] = &[
     // Confirmed in mikebom output — accepts pulls in mime-types.

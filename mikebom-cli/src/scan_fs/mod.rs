@@ -410,10 +410,20 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
             // Cargo writes the `<name> <version>` form ONLY when
             // ambiguity exists; single-version deps are still
             // resolved via the existing name-only key above.
-            if ecosystem == "cargo" {
+            //
+            // Issue #262 — same pattern for npm. When a parent
+            // package has a nested `node_modules/<parent>/node_modules/<dep>`
+            // install, the lockfile parser at
+            // `package_db/npm/package_lock.rs` emits the dep as
+            // `<dep> <version>` (instead of bare `<dep>`) so this
+            // disambiguation key resolves to the nested PURL rather
+            // than the hoisted one. Without the nested entry, the
+            // bare-name key from line 380 above still wins (matches
+            // the hoisted version).
+            if ecosystem == "cargo" || ecosystem == "npm" {
                 let nv_key = format!("{} {}", e.name, e.version);
                 name_to_purl.insert(
-                    (ecosystem, normalize_dep_name("cargo", &nv_key)),
+                    (ecosystem, normalize_dep_name(e.purl.ecosystem(), &nv_key)),
                     e.purl.as_str().to_string(),
                 );
             }

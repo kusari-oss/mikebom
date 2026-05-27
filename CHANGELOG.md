@@ -7,6 +7,43 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+## [0.1.0-alpha.40] — 2026-05-27
+
+This release bundles a major npm reachability fix (#267, validated against the `molcajete` corpus 66 → 0 orphans) plus a test-only Go regression (#264).
+
+### npm: full walk-up `node_modules` dep resolution (#267)
+
+PR #263 (alpha.38) introduced version-pinning for nested-`node_modules` installs. Validation against a real-world Vite + Vue corpus (`molcajete`) surfaced two remaining orphan classes — both attributable to a single root cause that this PR addresses fully:
+
+**Root cause** — mikebom's npm reader emitted `entry.depends` as bare names like `"commander"` when the immediate-child path lookup didn't match. The edge resolver's `name_to_purl` last-write-wins HashMap then produced the **wrong version** when multiple installs of the same package existed in the tree. Concrete case: `d3-dsv` declares `commander: "7"` with no nested install; a different parent (`editorconfig`) has nested `commander@10.0.1`. Pre-fix, `d3-dsv → commander@10` (wrong); the hoisted `commander@7.2.0` ended up orphan.
+
+**Fix** — walk up the `node_modules` tree to resolve every declared dep, mirroring npm's actual resolution algorithm. For a parent at `<a>/.../<x>` declaring dep `Y`:
+
+1. Try `<a>/.../<x>/node_modules/Y`
+2. Try `<a>/.../node_modules/Y`
+3. ... ascending
+4. Top-level `node_modules/Y` (hoisted)
+
+Whichever path finds Y FIRST wins. Bare-name fallback only fires for deps that aren't installed anywhere (rare for well-formed lockfiles).
+
+**Applied to BOTH** `package_lock.rs::parse_package_lock` (Tier A lockfile parsing) AND `walk.rs::build_npm_main_module_entry` (synth root's main-module emission). The latter previously bypassed all version-pinning because it doesn't go through `parse_package_lock`.
+
+**Section coverage** — the fix walks all four standard npm dep sections (`dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`). PR #263 walked only `dependencies`; canonical example: `optionalDependencies fsevents` declared by chokidar/rollup/esbuild/vite/vitest now correctly pins.
+
+**Molcajete corpus**:
+
+| Stage | Orphans |
+|---|---|
+| alpha.39 (pre-fix) | **66** |
+| Walk peer + optional + dev sections | 19 |
+| Full walk-up `node_modules` resolution | **0** |
+
+**Transitive-parity baseline shift** — `transitive_parity_npm`'s `EXPECTED_MIKEBOM_EDGE_COUNT` shifts 147 → 155. The +8 edges are recovered routings where bare-name last-write-wins was previously sending parents to dev-scoped nested variants (causing those edges to emit as `DEV_DEPENDENCY_OF` and not count in the extractor).
+
+### test(go): end-to-end regression for issue #250 tool-directive linkage (#264)
+
+Test-only. PR #252 (alpha.37) fixed the Go 1.24+ `tool` directive linkage with unit tests on `parse_go_mod` and `resolve_tool_to_module`. This PR adds the missing end-to-end test that exercises the full `read()` pipeline against the user's exact reproducer shape — pins the working behavior so future refactors can't silently regress.
+
 ## [0.1.0-alpha.39] — 2026-05-27
 
 This release bundles four PRs: a new global `--timeout` flag for wall-clock-bounded scans, two npm orphan-attribution fixes (#260, #263), and a docs recipe for Kubernetes workload identity tagging (#261).

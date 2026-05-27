@@ -130,6 +130,54 @@ the strict deployed-runtime view, use `--exclude-scope dev,build,test` (see
 the deprecation warning emitted on stderr). Set `MIKEBOM_NO_DEPRECATION_NOTICE=1`
 to suppress the warning during a controlled migration.
 
+### `--timeout <SECONDS>`
+
+Wall-clock time limit for the entire mikebom invocation, in seconds. If
+exceeded, mikebom emits a `tracing::error` to stderr and exits with status
+**124** (POSIX [`timeout(1)`](https://www.gnu.org/software/coreutils/manual/html_node/timeout-invocation.html)
+convention). Disabled when omitted or set to `0`.
+
+```bash
+mikebom --timeout 600 sbom scan --image registry.example.com/big-image:latest --output big.cdx.json
+echo "exit: $?"  # 124 if the scan ran longer than 600s, 0 otherwise
+```
+
+Use cases:
+
+- **CI**: bound a runaway scan against an unknown image.
+- **Kubernetes CronJob**: protect the pod-disruption budget when a per-pod scan
+  could otherwise outlast the job's deadline.
+- **Exploratory scans**: cap discovery against potentially-large container
+  filesystems.
+
+#### Interaction with other timeouts
+
+| Flag | Scope | Default |
+|---|---|---|
+| `--timeout <SECONDS>` (this flag) | Wall-clock cap on the entire `mikebom` invocation | Disabled |
+| `mikebom trace run --timeout <SECONDS>` | Caps the SUBPROCESS being traced (not mikebom itself) | `0` (no timeout) |
+| Internal per-fetch timeouts | OCI registry pulls, deps.dev HTTP requests, `go mod graph` subprocess | Hardcoded defaults |
+
+Whichever timeout fires first wins. The global `--timeout` is the only one
+that brings mikebom itself to a hard stop; the others are scoped to specific
+operations.
+
+#### Partial output
+
+Partial output may not be written when the watchdog fires — there are no
+atomic-flush guarantees. Operators who need "produce-the-best-SBOM-you-can-
+in-N-seconds" semantics should pair `--timeout` with `--output` to a specific
+path and check for that file's presence (and validity) after the run:
+
+```bash
+mikebom --timeout 600 sbom scan --path . --output project.cdx.json
+case $? in
+  0)   echo "scan completed within the time limit" ;;
+  124) echo "scan exceeded the time limit; partial output may not have been written" ;;
+  *)   echo "scan failed with another error: $?" ;;
+esac
+```
+
 ---
 
 ## `mikebom sbom scan`

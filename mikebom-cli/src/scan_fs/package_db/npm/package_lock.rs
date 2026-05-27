@@ -173,14 +173,26 @@ pub(crate) fn parse_package_lock(
         ] {
             if let Some(deps) = tbl.get(*section).and_then(|v| v.as_object()) {
                 for dep_name in deps.keys() {
-                    let nested_key = format!("{path_key}/node_modules/{dep_name}");
-                    let resolved = if let Some(nested_version) =
-                        path_versions.get(nested_key.as_str())
-                    {
-                        format!("{dep_name} {nested_version}")
-                    } else {
-                        dep_name.clone()
-                    };
+                    // Walk up the node_modules tree from this entry,
+                    // mirroring npm's resolution algorithm: a package
+                    // at `<...>/<parent>/.../X` resolves a declared
+                    // dep `Y` by checking
+                    // `<parent>/.../X/node_modules/Y` first, then
+                    // walking up to `<parent>/.../node_modules/Y`,
+                    // etc., until the top-level hoisted
+                    // `node_modules/Y`. Whichever level finds Y
+                    // first wins. Pre-fix only the immediate child
+                    // path was checked, with bare-name fallback that
+                    // the edge resolver's last-write-wins lookup
+                    // could resolve to the wrong version when
+                    // multiple installs of the same package exist.
+                    let resolved = resolve_dep_via_node_modules_walk(
+                        path_key,
+                        dep_name,
+                        &path_versions,
+                    )
+                    .map(|version| format!("{dep_name} {version}"))
+                    .unwrap_or_else(|| dep_name.clone());
                     // BTreeMap preserves deterministic order + dedup.
                     // If the same dep_name appears in multiple
                     // sections, the version-pinned form (if any)
@@ -312,6 +324,53 @@ pub(crate) fn parse_package_lock(
 /// `node_modules/foo` or `node_modules/@scope/bar` or deeply nested
 /// `node_modules/foo/node_modules/bar`. The real name is always the
 /// segment (or scope+segment) that follows the LAST `node_modules/`.
+/// Walk up the `node_modules/<...>` path tree from `parent_path_key`,
+/// returning the version of `dep_name` at the closest ancestor that
+/// has a matching `node_modules/<dep_name>` install. Mirrors npm's
+/// actual resolution algorithm.
+///
+/// For example, given:
+/// - `parent_path_key = "node_modules/foo/node_modules/bar"`
+/// - `dep_name = "baz"`
+///
+/// The lookup order is:
+/// 1. `node_modules/foo/node_modules/bar/node_modules/baz`
+/// 2. `node_modules/foo/node_modules/baz`
+/// 3. `node_modules/baz` (hoisted)
+///
+/// Returns `None` if `dep_name` isn't installed at any level. This
+/// is rare in well-formed lockfiles but can happen when a dep is
+/// declared but not actually resolved (e.g., `optionalDependencies`
+/// that failed install).
+fn resolve_dep_via_node_modules_walk<'a>(
+    parent_path_key: &str,
+    dep_name: &str,
+    path_versions: &std::collections::HashMap<&'a str, &'a str>,
+) -> Option<&'a str> {
+    let mut prefix = parent_path_key;
+    loop {
+        let candidate = format!("{prefix}/node_modules/{dep_name}");
+        if let Some(version) = path_versions.get(candidate.as_str()) {
+            return Some(*version);
+        }
+        // Walk up: find the last "/node_modules/" segment; the
+        // ancestor's path_key is the prefix BEFORE that occurrence.
+        // When no "/node_modules/" remains, we've passed the root
+        // package's own dir — try the top-level hoisted location
+        // `node_modules/<dep>` as the final step.
+        if let Some(idx) = prefix.rfind("/node_modules/") {
+            prefix = &prefix[..idx];
+        } else {
+            // Top-level hoisted lookup. `prefix` at this point is
+            // something like `node_modules/<pkg>` (or `node_modules`
+            // for the unusual case of a recursive call up from a
+            // top-level dir). Try `node_modules/<dep>`.
+            let top = format!("node_modules/{dep_name}");
+            return path_versions.get(top.as_str()).copied();
+        }
+    }
+}
+
 fn derive_name_from_path_key(key: &str) -> String {
     let idx = match key.rfind("node_modules/") {
         Some(i) => i + "node_modules/".len(),
@@ -501,10 +560,14 @@ mod tests {
     }
 
     #[test]
-    fn hoisted_only_dep_emits_bare_name() {
-        // Sanity: when there's no nested install, depends stays as
-        // bare name (existing behavior — matches the hoisted version
-        // via the name-only resolver key).
+    fn hoisted_only_dep_resolves_to_hoisted_version_pin() {
+        // When there's no nested install, depends walks up to the
+        // hoisted node_modules/<dep> entry and pins to its version.
+        // (Pre-walk-up fix: this returned bare-name, relying on the
+        // edge resolver's name_to_purl last-write-wins lookup —
+        // which produces the wrong version when multiple parents
+        // pin different versions of the same package. The walk-up
+        // produces a deterministic version-pinned reference.)
         let lockfile = serde_json::json!({
             "lockfileVersion": 3,
             "packages": {
@@ -519,8 +582,8 @@ mod tests {
         let mlly = entries.iter().find(|e| e.name == "mlly").expect("mlly");
         assert_eq!(
             mlly.depends,
-            vec!["pathe".to_string()],
-            "without a nested install, depends should be the bare name"
+            vec!["pathe 1.1.2".to_string()],
+            "walk-up resolution should find the hoisted pathe@1.1.2 and pin"
         );
     }
 
@@ -597,8 +660,8 @@ mod tests {
         sorted.sort();
         assert_eq!(
             sorted,
-            vec!["a 2.5.0".to_string(), "b".to_string()],
-            "nested dep version-pinned; hoisted dep stays bare-name"
+            vec!["a 2.5.0".to_string(), "b 3.0.0".to_string()],
+            "nested dep version-pinned to nested; hoisted dep version-pinned to hoisted (walk-up)"
         );
     }
 
@@ -702,6 +765,49 @@ mod tests {
             vec!["bar 1.5.0".to_string()],
             "deduped depends should contain only the version-pinned form, not both bare and pinned; got: {:?}",
             foo.depends
+        );
+    }
+
+    #[test]
+    fn walk_up_resolution_picks_hoisted_when_parent_lacks_nested() {
+        // Real-world molcajete bug: d3-dsv declares `commander: "7"`
+        // and has NO nested commander; a DIFFERENT parent
+        // (editorconfig) has a nested `commander@10.0.1`. Pre-walk-
+        // up fix, d3-dsv's bare-name "commander" fell through to
+        // name_to_purl's last-write-wins, which picked v10 instead
+        // of the hoisted v7. Walk-up resolution correctly pins
+        // d3-dsv → commander@7.2.0.
+        let lockfile = serde_json::json!({
+            "lockfileVersion": 3,
+            "packages": {
+                "node_modules/commander": { "version": "7.2.0" },
+                "node_modules/d3-dsv": {
+                    "version": "3.0.1",
+                    "dependencies": { "commander": "7" }
+                },
+                "node_modules/editorconfig": {
+                    "version": "1.0.4",
+                    "dependencies": { "commander": "^10.0.0" }
+                },
+                "node_modules/editorconfig/node_modules/commander": {
+                    "version": "10.0.1"
+                }
+            }
+        });
+        let entries = parse_package_lock(&lockfile, "/tmp/lock.json", false);
+
+        let d3 = entries.iter().find(|e| e.name == "d3-dsv").expect("d3-dsv");
+        assert_eq!(
+            d3.depends,
+            vec!["commander 7.2.0".to_string()],
+            "d3-dsv must pin to hoisted commander@7.2.0 (no nested install), not the unrelated nested commander@10"
+        );
+
+        let edit = entries.iter().find(|e| e.name == "editorconfig").expect("editorconfig");
+        assert_eq!(
+            edit.depends,
+            vec!["commander 10.0.1".to_string()],
+            "editorconfig must pin to its own nested commander@10.0.1"
         );
     }
 

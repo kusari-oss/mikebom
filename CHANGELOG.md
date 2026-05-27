@@ -7,6 +7,25 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+## [0.1.0-alpha.41] — 2026-05-27
+
+Quick follow-up to alpha.40. Single change.
+
+### npm: stop emitting edges for peerDependencies (#270)
+
+alpha.40's #267 walked all four standard npm dep sections — `dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies` — when building `entry.depends`. User flagged that `peerDependencies` are semantically **declarative** ("the consumer should have X installed") not **install-relational** ("this package depends on X"). The SBOM `dependsOn` / `DEPENDS_ON` slot encodes the latter; trivy and syft also skip peer-edges. mikebom now matches.
+
+Dropped from the walked sections in `parse_package_lock` (Tier A), `walk_node_modules` (Tier B), `apply_nameless_secondary_umbrella`, and `build_npm_main_module_entry`.
+
+**Molcajete validation (from alpha.40 → alpha.41):**
+
+| Metric | alpha.40 | alpha.41 |
+|---|---|---|
+| Orphan count | 0 | 0 (unchanged) |
+| Total relationships | 1368 | 1217 (-151 spurious peer-edges removed) |
+
+Every package previously reachable via a peer-edge is also reachable via a real dep / dev / optional edge from some other parent. Peer-edges were pure noise, not load-bearing.
+
 ## [0.1.0-alpha.40] — 2026-05-27
 
 This release bundles a major npm reachability fix (#267, validated against the `molcajete` corpus 66 → 0 orphans) plus a test-only Go regression (#264).

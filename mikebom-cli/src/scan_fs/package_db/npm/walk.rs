@@ -113,11 +113,27 @@ fn walk_node_modules(
             })
             .into_iter()
             .collect();
-        let depends = parsed
-            .get("dependencies")
-            .and_then(|v| v.as_object())
-            .map(|obj| obj.keys().cloned().collect())
-            .unwrap_or_default();
+        // Walk all four standard npm dep sections — Tier B's
+        // installed-tree walker uses the dep's OWN package.json as
+        // the source of truth, and packages declared via
+        // peer/optional sections must contribute incoming edges
+        // just like regular dependencies. BTreeSet for dedup +
+        // deterministic ordering.
+        let mut depends_set: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
+        for section in &[
+            "dependencies",
+            "devDependencies",
+            "peerDependencies",
+            "optionalDependencies",
+        ] {
+            if let Some(obj) = parsed.get(*section).and_then(|v| v.as_object()) {
+                for key in obj.keys() {
+                    depends_set.insert(key.clone());
+                }
+            }
+        }
+        let depends: Vec<String> = depends_set.into_iter().collect();
         let maintainer = extract_author_string(&parsed);
         // Feature 005 US1: tag entries emitted from inside npm's own
         // bundled tree with `npm_role=internal`. `in_npm_internals` is

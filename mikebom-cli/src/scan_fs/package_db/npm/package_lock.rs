@@ -135,34 +135,76 @@ pub(crate) fn parse_package_lock(
             .map(|h| vec![h])
             .unwrap_or_default();
 
-        // Issue #262: resolve each declared dep against the nested-
-        // path tree first, falling back to bare-name. When a parent
-        // at `node_modules/<parent>` has a nested child at
-        // `node_modules/<parent>/node_modules/<dep>`, emit the
-        // version-qualified `<dep> <version>` form so the edge
+        // Issue #262 + follow-up: resolve each declared dep against
+        // the nested-path tree first, falling back to bare-name.
+        // When a parent at `node_modules/<parent>` has a nested
+        // child at `node_modules/<parent>/node_modules/<dep>`, emit
+        // the version-qualified `<dep> <version>` form so the edge
         // resolver in `scan_fs/mod.rs` matches the nested install
         // rather than the hoisted version. Bare-name form is kept
         // for deps that resolve to the hoisted version (no nested
         // child exists for this parent). Mirrors cargo's milestone-
         // 087 disambiguation pattern (issue #172).
-        let depends: Vec<String> = tbl
-            .get("dependencies")
-            .and_then(|v| v.as_object())
-            .map(|deps| {
-                deps.keys()
-                    .map(|dep_name| {
-                        // Look up nested child: `<this_path>/node_modules/<dep_name>`.
-                        // Scoped packages (`@scope/pkg`) follow the same path shape.
-                        let nested_key = format!("{path_key}/node_modules/{dep_name}");
-                        if let Some(nested_version) = path_versions.get(nested_key.as_str()) {
-                            format!("{dep_name} {nested_version}")
-                        } else {
-                            dep_name.clone()
+        //
+        // Walks ALL four standard npm dep sections — `dependencies`,
+        // `devDependencies`, `peerDependencies`,
+        // `optionalDependencies`. The original PR #263 walked only
+        // `dependencies`, leaving packages declared via peer/optional
+        // sections orphan when they had nested installs. npm's
+        // resolver hoists or nests packages from any of the four
+        // sections uniformly — peer/optional declarations result in
+        // the same `node_modules/<parent>/node_modules/<dep>` install
+        // shape as regular `dependencies`, and the parent's
+        // `package.json` is the authoritative source for the
+        // version-spec the consumer needs.
+        //
+        // Deduplication: a single dep CAN appear in multiple
+        // sections (e.g., peer + optional, or dep + dev) — the
+        // version pin is the same in either case (the nested
+        // install path is shared). A HashSet collects unique
+        // (name → version-pinned-string) pairs.
+        let mut depends_set: std::collections::BTreeMap<String, String> =
+            std::collections::BTreeMap::new();
+        for section in &[
+            "dependencies",
+            "devDependencies",
+            "peerDependencies",
+            "optionalDependencies",
+        ] {
+            if let Some(deps) = tbl.get(*section).and_then(|v| v.as_object()) {
+                for dep_name in deps.keys() {
+                    let nested_key = format!("{path_key}/node_modules/{dep_name}");
+                    let resolved = if let Some(nested_version) =
+                        path_versions.get(nested_key.as_str())
+                    {
+                        format!("{dep_name} {nested_version}")
+                    } else {
+                        dep_name.clone()
+                    };
+                    // BTreeMap preserves deterministic order + dedup.
+                    // If the same dep_name appears in multiple
+                    // sections, the version-pinned form (if any)
+                    // wins via the existing-or-insert pattern:
+                    // version-pinned strings contain a space, bare
+                    // names don't — prefer the more specific form.
+                    use std::collections::btree_map::Entry;
+                    match depends_set.entry(dep_name.clone()) {
+                        Entry::Vacant(v) => {
+                            v.insert(resolved);
                         }
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+                        Entry::Occupied(mut o) => {
+                            // Prefer version-pinned over bare-name.
+                            if o.get().chars().filter(|c| *c == ' ').count() == 0
+                                && resolved.contains(' ')
+                            {
+                                *o.get_mut() = resolved;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let depends: Vec<String> = depends_set.into_values().collect();
 
         out.push(PackageDbEntry {
             purl,
@@ -558,5 +600,159 @@ mod tests {
             vec!["a 2.5.0".to_string(), "b".to_string()],
             "nested dep version-pinned; hoisted dep stays bare-name"
         );
+    }
+
+    // --- post-#263 follow-up: peer/optional sections + deeper nesting -----
+
+    #[test]
+    fn peer_dependencies_get_version_pinned_too() {
+        // A package declares `pathe` via `peerDependencies` and has
+        // a nested install at `<parent>/node_modules/pathe`. The
+        // version pin should fire just like for regular dependencies.
+        let lockfile = serde_json::json!({
+            "lockfileVersion": 3,
+            "packages": {
+                "node_modules/pathe": { "version": "1.1.2" },
+                "node_modules/mlly": {
+                    "version": "1.0.0",
+                    "peerDependencies": { "pathe": "^2.0.0" }
+                },
+                "node_modules/mlly/node_modules/pathe": { "version": "2.0.3" }
+            }
+        });
+        let entries = parse_package_lock(&lockfile, "/tmp/lock.json", false);
+        let mlly = entries.iter().find(|e| e.name == "mlly").expect("mlly");
+        assert!(
+            mlly.depends.contains(&"pathe 2.0.3".to_string()),
+            "mlly's peerDependencies pathe should pin to the nested install; got: {:?}",
+            mlly.depends
+        );
+    }
+
+    #[test]
+    fn optional_dependencies_get_version_pinned_too() {
+        // optionalDependencies fsevents — a classic real-world case.
+        let lockfile = serde_json::json!({
+            "lockfileVersion": 3,
+            "packages": {
+                "node_modules/fsevents": { "version": "2.3.0" },
+                "node_modules/chokidar": {
+                    "version": "3.5.0",
+                    "optionalDependencies": { "fsevents": "~2.3.0" }
+                },
+                "node_modules/chokidar/node_modules/fsevents": { "version": "2.3.3" }
+            }
+        });
+        let entries = parse_package_lock(&lockfile, "/tmp/lock.json", false);
+        let chokidar = entries.iter().find(|e| e.name == "chokidar").expect("chokidar");
+        assert!(
+            chokidar.depends.contains(&"fsevents 2.3.3".to_string()),
+            "chokidar's optionalDependencies fsevents should pin to nested; got: {:?}",
+            chokidar.depends
+        );
+    }
+
+    #[test]
+    fn dev_dependencies_get_version_pinned_too() {
+        let lockfile = serde_json::json!({
+            "lockfileVersion": 3,
+            "packages": {
+                "node_modules/jest-helper": { "version": "1.0.0" },
+                "node_modules/mocha": {
+                    "version": "10.2.0",
+                    "dev": true,
+                    "devDependencies": { "jest-helper": "^2.0.0" }
+                },
+                "node_modules/mocha/node_modules/jest-helper": {
+                    "version": "2.5.0",
+                    "dev": true
+                }
+            }
+        });
+        let entries = parse_package_lock(&lockfile, "/tmp/lock.json", true);
+        let mocha = entries.iter().find(|e| e.name == "mocha").expect("mocha");
+        assert!(
+            mocha.depends.contains(&"jest-helper 2.5.0".to_string()),
+            "mocha's devDependencies jest-helper should pin to nested; got: {:?}",
+            mocha.depends
+        );
+    }
+
+    #[test]
+    fn deps_in_multiple_sections_get_deduped_with_version_pin_preferred() {
+        // Some packages legitimately list the same dep in multiple
+        // sections (e.g., peer + optional, or peer + dep). When
+        // both forms resolve, the version-pinned form should win
+        // over the bare-name form in the deduplicated output.
+        let lockfile = serde_json::json!({
+            "lockfileVersion": 3,
+            "packages": {
+                "node_modules/foo": {
+                    "version": "1.0.0",
+                    "dependencies": { "bar": "^1.0.0" },
+                    "peerDependencies": { "bar": "^1.0.0" }
+                },
+                "node_modules/foo/node_modules/bar": { "version": "1.5.0" }
+            }
+        });
+        let entries = parse_package_lock(&lockfile, "/tmp/lock.json", false);
+        let foo = entries.iter().find(|e| e.name == "foo").expect("foo");
+        assert_eq!(
+            foo.depends,
+            vec!["bar 1.5.0".to_string()],
+            "deduped depends should contain only the version-pinned form, not both bare and pinned; got: {:?}",
+            foo.depends
+        );
+    }
+
+    #[test]
+    fn deep_nesting_resolves_at_each_level() {
+        // Three-level chain: pkg-a → pkg-b → pkg-c, all nested
+        // under each other due to version conflicts up the tree.
+        //
+        // node_modules/pkg-a/                v1
+        //   node_modules/pkg-b/              v2 (nested under pkg-a)
+        //     node_modules/pkg-c/            v3 (nested under pkg-b under pkg-a)
+        //
+        // Each entry's depends should pin to the child at its own
+        // nested level — verifying the lookup `<path>/node_modules/<dep>`
+        // correctly resolves arbitrarily-deep chains.
+        let lockfile = serde_json::json!({
+            "lockfileVersion": 3,
+            "packages": {
+                "node_modules/pkg-a": {
+                    "version": "1.0.0",
+                    "dependencies": { "pkg-b": "^2.0.0" }
+                },
+                "node_modules/pkg-a/node_modules/pkg-b": {
+                    "version": "2.0.0",
+                    "dependencies": { "pkg-c": "^3.0.0" }
+                },
+                "node_modules/pkg-a/node_modules/pkg-b/node_modules/pkg-c": {
+                    "version": "3.0.0"
+                }
+            }
+        });
+        let entries = parse_package_lock(&lockfile, "/tmp/lock.json", false);
+
+        let a = entries.iter().find(|e| e.name == "pkg-a").expect("pkg-a");
+        assert_eq!(a.depends, vec!["pkg-b 2.0.0".to_string()]);
+
+        let b = entries
+            .iter()
+            .find(|e| e.name == "pkg-b" && e.version == "2.0.0")
+            .expect("pkg-b at v2");
+        assert_eq!(
+            b.depends,
+            vec!["pkg-c 3.0.0".to_string()],
+            "level-2 nested entry should pin its level-3 nested child; got: {:?}",
+            b.depends
+        );
+
+        let c = entries
+            .iter()
+            .find(|e| e.name == "pkg-c" && e.version == "3.0.0")
+            .expect("pkg-c at v3");
+        assert!(c.depends.is_empty(), "leaf entry has no deps");
     }
 }

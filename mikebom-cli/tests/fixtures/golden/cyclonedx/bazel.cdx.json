@@ -26,6 +26,10 @@
         {
           "name": "mikebom:sbom-tier",
           "value": "source"
+        },
+        {
+          "name": "mikebom:source-mechanism",
+          "value": "bazel-http-archive"
         }
       ],
       "purl": "pkg:bazel/abseil-cpp@20240722.0",
@@ -61,6 +65,10 @@
         {
           "name": "mikebom:sbom-tier",
           "value": "source"
+        },
+        {
+          "name": "mikebom:source-mechanism",
+          "value": "bazel-http-archive"
         }
       ],
       "purl": "pkg:bazel/googletest@1.14.0",
@@ -101,6 +109,10 @@
         {
           "name": "mikebom:download-url",
           "value": "https://github.com/foo/rules_foo.git"
+        },
+        {
+          "name": "mikebom:source-mechanism",
+          "value": "bazel-http-archive"
         }
       ],
       "purl": "pkg:bazel/rules_foo@deadbee",
@@ -140,6 +152,10 @@
         {
           "name": "mikebom:download-url",
           "value": "https://github.com/bazelbuild/rules_python/archive/0.30.0.tar.gz"
+        },
+        {
+          "name": "mikebom:source-mechanism",
+          "value": "bazel-http-archive"
         }
       ],
       "purl": "pkg:bazel/rules_python@0.30.0",

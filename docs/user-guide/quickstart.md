@@ -205,7 +205,87 @@ carrier table and decode recipes.
 
 ---
 
-## Recipe 7 — Use a metadata sidecar file
+## Recipe 7 — Tag a Kubernetes workload (cluster, namespace, pod)
+
+When SBOMs are generated from Kubernetes cluster scans, downstream consumers
+(Dependency-Track, SeeBOM, in-house vulnerability dashboards) need to know
+*which cluster*, *which namespace*, and *which workload* an SBOM belongs to.
+Without this metadata embedded in the SBOM itself, the link between "this
+SBOM" and "this running workload" is lost once the file leaves the scanning
+context.
+
+mikebom doesn't ship dedicated `--cluster-id` / `--namespace` flags. Use the
+existing `--id <scheme>=<value>` flag (repeatable) to encode K8s workload
+identity:
+
+```bash
+mikebom sbom scan --image ghcr.io/example/webapp:1.25 \
+    --id k8s_cluster=prod-us-east \
+    --id k8s_namespace=production \
+    --id k8s_workload_name=webapp-v2 \
+    --id k8s_workload_kind=Deployment \
+    --id k8s_workload_uid=abc-123-def \
+    --output webapp-prod.cdx.json
+```
+
+The `k8s_*` scheme prefix is a convention — pick any naming pattern that fits
+your downstream consumer's expectations. The scheme name regex is
+`^[a-z][a-z0-9_-]*$`; `repo`, `git`, `image`, `attestation`, `subject` are
+reserved for the dedicated flags.
+
+### Where the values land per format
+
+| Format | Carrier |
+|---|---|
+| CycloneDX 1.6 | `metadata.annotations[].text` inside the document-level `mikebom:identifiers` envelope |
+| SPDX 2.3 | `annotations[]` at document level inside the `MikebomAnnotationCommentV1` envelope |
+| SPDX 3.0.1 | `Element.externalIdentifier[]` (native carrier, one entry per `--id`) |
+
+See [Identifiers](../reference/identifiers.md) for the full per-format carrier
+table and decode recipes.
+
+### Driving the flags from a Kubernetes operator
+
+The values are typically derived from the `Pod` object's metadata fields and
+the `ownerReferences[]` chain. From a CronJob or operator that scans pods:
+
+```bash
+# Inside a pod's scan loop, with $POD, $NAMESPACE, $CLUSTER pre-populated:
+WORKLOAD_KIND=$(kubectl get pod "$POD" -n "$NAMESPACE" \
+    -o jsonpath='{.metadata.ownerReferences[0].kind}')
+WORKLOAD_NAME=$(kubectl get pod "$POD" -n "$NAMESPACE" \
+    -o jsonpath='{.metadata.ownerReferences[0].name}')
+WORKLOAD_UID=$(kubectl get pod "$POD" -n "$NAMESPACE" \
+    -o jsonpath='{.metadata.ownerReferences[0].uid}')
+
+mikebom sbom scan --image "$(kubectl get pod "$POD" -n "$NAMESPACE" \
+    -o jsonpath='{.spec.containers[0].image}')" \
+    --id k8s_cluster="$CLUSTER" \
+    --id k8s_namespace="$NAMESPACE" \
+    --id k8s_workload_kind="$WORKLOAD_KIND" \
+    --id k8s_workload_name="$WORKLOAD_NAME" \
+    --id k8s_workload_uid="$WORKLOAD_UID" \
+    --output "/sboms/${WORKLOAD_NAME}.cdx.json"
+```
+
+For deployments-from-CronJob patterns where credentials arrive via a
+mounted `imagePullSecret`, see also
+[`--registry-credentials-dir`](cli-reference.md#--registry-credentials-dir-path).
+
+### Naming tips
+
+- **Stable across pod restarts**: prefer `workload_name` + `workload_kind`
+  (Deployment/StatefulSet/...) over the pod's own ephemeral name.
+- **Stable across deployments**: prefer `workload_uid` (the K8s UID of the
+  owning workload) as the canonical identifier. Pod UIDs change per restart;
+  Deployment UIDs do not.
+- **Multi-cluster**: a `cluster_id` should disambiguate across environments
+  (e.g., `prod-us-east`, `staging-eu-central`). The K8s API doesn't expose a
+  built-in cluster name — your scanning operator must inject it.
+
+---
+
+## Recipe 8 — Use a metadata sidecar file
 
 Centralize creator/annotator/comment metadata in a JSON sidecar instead of
 passing dozens of CLI flags:
@@ -236,7 +316,7 @@ See [CLI reference: `--metadata-file`](cli-reference.md) for the schema.
 
 ---
 
-## Recipe 8 — Verify a signed DSSE attestation
+## Recipe 9 — Verify a signed DSSE attestation
 
 Works on any OS. Accepts DSSE envelopes produced by mikebom, witness, or any
 other SBOMit-compliant tool.
@@ -262,7 +342,7 @@ flag set including `--layout` (in-toto policy enforcement) and the
 
 ---
 
-## Recipe 9 — Verify a cross-tier binding
+## Recipe 10 — Verify a cross-tier binding
 
 When you have both a source-tier SBOM and an image-tier SBOM that was
 emitted with `--bind-to-source`, verify that the image-tier per-component
@@ -295,7 +375,7 @@ binding-hash algorithm and per-format carrier shapes.
 
 ---
 
-## Recipe 10 — Generate an in-toto layout
+## Recipe 11 — Generate an in-toto layout
 
 ```bash
 mikebom policy init --functionary-key ci.pub --step-name build --output layout.json

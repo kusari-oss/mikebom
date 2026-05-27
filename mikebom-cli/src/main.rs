@@ -139,6 +139,28 @@ struct Cli {
     #[arg(long, global = true, env = "MIKEBOM_INCLUDE_LEGACY_RPMDB")]
     include_legacy_rpmdb: bool,
 
+    /// Wall-clock time limit for the entire mikebom invocation, in
+    /// seconds. If exceeded, mikebom emits a tracing::error and exits
+    /// with status 124 (POSIX `timeout(1)` convention).
+    ///
+    /// Use cases: bound a runaway scan in CI; protect a Kubernetes
+    /// CronJob's pod-disruption budget; cap exploratory image scans
+    /// against unknown content.
+    ///
+    /// Disabled when omitted or set to 0. Mutually exclusive with no
+    /// other flag — it complements `--offline`, registry timeouts,
+    /// and the existing `trace run --timeout` (which caps the
+    /// SUBPROCESS being traced, not mikebom itself; whichever fires
+    /// first wins).
+    ///
+    /// Partial output may not be written when the watchdog fires —
+    /// no atomic-flush guarantees apply. Operators who need
+    /// "produce-the-best-SBOM-you-can-in-N-seconds" semantics should
+    /// pair `--timeout` with `--output` to a specific path and check
+    /// for that file's presence after the run.
+    #[arg(long, global = true, value_name = "SECONDS")]
+    timeout: Option<u64>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -179,6 +201,31 @@ async fn main() -> anyhow::Result<std::process::ExitCode> {
         // SAFETY: single-threaded prelude before any async runtime
         // workers spawn — env mutation here is race-free.
         std::env::set_var("MIKEBOM_OFFLINE", "1");
+    }
+
+    // Global wall-clock watchdog. When `--timeout <SECONDS>` is set
+    // to a non-zero value, spawn a detached tokio task that sleeps
+    // for the configured duration; if it fires before the main work
+    // completes, emit a tracing::error and exit with status 124
+    // (matching POSIX `timeout(1)` from coreutils). The watchdog
+    // task is detached because we want the process to exit
+    // naturally on success — there's no `.await` on the handle.
+    //
+    // Whichever finishes first wins: if the main work completes
+    // before the timeout, the process exits via the normal return
+    // path and the still-sleeping watchdog gets cancelled by tokio
+    // runtime shutdown.
+    if let Some(secs) = cli.timeout {
+        if secs > 0 {
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
+                tracing::error!(
+                    timeout_secs = secs,
+                    "mikebom exceeded the configured --timeout wall-clock limit; exiting with status 124"
+                );
+                std::process::exit(124);
+            });
+        }
     }
 
     // Milestone 052/part-3: deprecation warning for --include-dev.

@@ -32,6 +32,48 @@ pub(crate) fn parse_package_lock(
     let mut keys: Vec<&String> = packages.keys().collect();
     keys.sort();
 
+    // Issue #262: build a (path_key → version) index up front so each
+    // entry's depends-resolution can look up nested children. npm
+    // installs the same package at multiple paths when version
+    // conflicts force it; `node_modules/foo/node_modules/bar` is
+    // bar's NESTED install (foo's specific version), distinct from
+    // the HOISTED `node_modules/bar`. Without nested-aware
+    // resolution, bare-name dep strings always match the hoisted
+    // version, leaving nested installs as orphans.
+    //
+    // The index is filtered to entries that WILL be emitted as
+    // components — same dev/optional/link filters as the main loop
+    // below. Without this filter, the parser would emit
+    // version-pinned dep strings like "fsevents 2.3.0" for nested
+    // entries that downstream get filtered out (e.g. optional:true),
+    // and the edge resolver would drop the edge as dangling.
+    let mut path_versions: std::collections::HashMap<&str, &str> =
+        std::collections::HashMap::with_capacity(keys.len());
+    for &k in &keys {
+        let Some(entry) = packages[k].as_object() else {
+            continue;
+        };
+        if entry.get("link").and_then(|v| v.as_bool()) == Some(true) {
+            continue;
+        }
+        let entry_is_dev = entry
+            .get("dev")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let entry_is_optional = entry
+            .get("optional")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if !include_dev && (entry_is_dev || entry_is_optional) {
+            continue;
+        }
+        if let Some(v) = entry.get("version").and_then(|x| x.as_str()) {
+            if !v.is_empty() {
+                path_versions.insert(k.as_str(), v);
+            }
+        }
+    }
+
     for path_key in keys {
         if path_key.is_empty() {
             // Root project entry — skip.
@@ -93,10 +135,33 @@ pub(crate) fn parse_package_lock(
             .map(|h| vec![h])
             .unwrap_or_default();
 
-        let depends = tbl
+        // Issue #262: resolve each declared dep against the nested-
+        // path tree first, falling back to bare-name. When a parent
+        // at `node_modules/<parent>` has a nested child at
+        // `node_modules/<parent>/node_modules/<dep>`, emit the
+        // version-qualified `<dep> <version>` form so the edge
+        // resolver in `scan_fs/mod.rs` matches the nested install
+        // rather than the hoisted version. Bare-name form is kept
+        // for deps that resolve to the hoisted version (no nested
+        // child exists for this parent). Mirrors cargo's milestone-
+        // 087 disambiguation pattern (issue #172).
+        let depends: Vec<String> = tbl
             .get("dependencies")
             .and_then(|v| v.as_object())
-            .map(|deps| deps.keys().cloned().collect::<Vec<_>>())
+            .map(|deps| {
+                deps.keys()
+                    .map(|dep_name| {
+                        // Look up nested child: `<this_path>/node_modules/<dep_name>`.
+                        // Scoped packages (`@scope/pkg`) follow the same path shape.
+                        let nested_key = format!("{path_key}/node_modules/{dep_name}");
+                        if let Some(nested_version) = path_versions.get(nested_key.as_str()) {
+                            format!("{dep_name} {nested_version}")
+                        } else {
+                            dep_name.clone()
+                        }
+                    })
+                    .collect()
+            })
             .unwrap_or_default();
 
         out.push(PackageDbEntry {
@@ -138,7 +203,67 @@ pub(crate) fn parse_package_lock(
         });
     }
 
-    out
+    // Issue #262 (sub-bug): dedup same-PURL entries preferring
+    // Runtime over Development scope. The same package version can
+    // appear at multiple install paths in a `node_modules/` tree —
+    // typically one dev-scoped path (e.g.,
+    // `node_modules/@babel/core/node_modules/ms`) and one runtime-
+    // scoped path (e.g., `node_modules/send/node_modules/ms`). With
+    // `--include-dev` enabled, the parser previously emitted ALL
+    // such entries and the upstream `seen_purls` dedup at
+    // `mod.rs:118` kept whichever came FIRST alphabetically by
+    // path_key — typically a dev entry (scope-prefixed paths sort
+    // before non-prefixed). This mis-tagged shared packages as Dev
+    // and (pre-#262 fix) didn't matter because the dev-tagged
+    // entries were orphans. After the #262 nested-version-pinning
+    // fix, edges actually land on these dedup'd components, so the
+    // Dev tag triggers `DEV_DEPENDENCY_OF` rewriting — which is
+    // wrong if the package is also used at runtime by other paths.
+    //
+    // Rule: keep the Runtime variant when both Dev and Runtime
+    // variants of the same PURL are present. If only one variant
+    // exists, keep it. Stable across ordering — preserves the
+    // existing seen_purls "first wins" semantic for the same-scope
+    // case.
+    let mut by_purl: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::with_capacity(out.len());
+    let mut keep: Vec<bool> = vec![true; out.len()];
+    for (idx, entry) in out.iter().enumerate() {
+        let purl_str = entry.purl.as_str().to_string();
+        use std::collections::hash_map::Entry;
+        match by_purl.entry(purl_str) {
+            Entry::Vacant(v) => {
+                v.insert(idx);
+            }
+            Entry::Occupied(mut o) => {
+                let existing_idx = *o.get();
+                use mikebom_common::resolution::LifecycleScope;
+                let existing_is_runtime = matches!(
+                    out[existing_idx].lifecycle_scope,
+                    Some(LifecycleScope::Runtime)
+                );
+                let new_is_runtime =
+                    matches!(entry.lifecycle_scope, Some(LifecycleScope::Runtime));
+                if new_is_runtime && !existing_is_runtime {
+                    // Promote the runtime variant; drop the dev one
+                    // from the existing slot.
+                    keep[existing_idx] = false;
+                    *o.get_mut() = idx;
+                } else {
+                    // Existing wins (either also runtime, or both
+                    // dev — first-by-iteration semantic preserved).
+                    keep[idx] = false;
+                }
+            }
+        }
+    }
+    let mut deduped: Vec<PackageDbEntry> = Vec::with_capacity(out.len());
+    for (idx, entry) in out.into_iter().enumerate() {
+        if keep[idx] {
+            deduped.push(entry);
+        }
+    }
+    deduped
 }
 
 /// Derive a package name from a `packages` path key like
@@ -296,5 +421,142 @@ mod tests {
             let res = read(dir.path(), false, crate::scan_fs::ScanMode::Path);
             assert!(res.is_ok(), "v{v} lockfile should parse without refusal");
         }
+    }
+
+    // --- issue #262: nested-node_modules version-pinning --------------------
+
+    #[test]
+    fn nested_dep_emits_version_pinned_string() {
+        // Issue #262 reproducer shape: mlly@1.0.0 depends on pathe;
+        // a NESTED pathe@2.0.3 is installed under mlly's own
+        // node_modules. The hoisted pathe@1.1.2 is also present.
+        // Parser should emit mlly.depends = ["pathe 2.0.3"] so the
+        // edge resolver in scan_fs/mod.rs picks the nested version.
+        let lockfile = serde_json::json!({
+            "lockfileVersion": 3,
+            "packages": {
+                "node_modules/pathe": { "version": "1.1.2" },
+                "node_modules/mlly": {
+                    "version": "1.0.0",
+                    "dependencies": { "pathe": "^2.0.0" }
+                },
+                "node_modules/mlly/node_modules/pathe": { "version": "2.0.3" }
+            }
+        });
+        let entries = parse_package_lock(&lockfile, "/tmp/lock.json", false);
+        let mlly = entries
+            .iter()
+            .find(|e| e.name == "mlly" && e.version == "1.0.0")
+            .expect("mlly entry");
+        assert_eq!(
+            mlly.depends,
+            vec!["pathe 2.0.3".to_string()],
+            "mlly should depend on the NESTED pathe@2.0.3 (version-pinned), not bare 'pathe'"
+        );
+        // Both pathes emitted as separate components.
+        assert!(entries.iter().any(|e| e.name == "pathe" && e.version == "1.1.2"));
+        assert!(entries.iter().any(|e| e.name == "pathe" && e.version == "2.0.3"));
+    }
+
+    #[test]
+    fn hoisted_only_dep_emits_bare_name() {
+        // Sanity: when there's no nested install, depends stays as
+        // bare name (existing behavior — matches the hoisted version
+        // via the name-only resolver key).
+        let lockfile = serde_json::json!({
+            "lockfileVersion": 3,
+            "packages": {
+                "node_modules/pathe": { "version": "1.1.2" },
+                "node_modules/mlly": {
+                    "version": "1.0.0",
+                    "dependencies": { "pathe": "^1.0.0" }
+                }
+            }
+        });
+        let entries = parse_package_lock(&lockfile, "/tmp/lock.json", false);
+        let mlly = entries.iter().find(|e| e.name == "mlly").expect("mlly");
+        assert_eq!(
+            mlly.depends,
+            vec!["pathe".to_string()],
+            "without a nested install, depends should be the bare name"
+        );
+    }
+
+    #[test]
+    fn scoped_package_nested_under_parent_is_version_pinned() {
+        // Scoped packages (`@scope/pkg`) follow the same path shape:
+        // node_modules/<parent>/node_modules/@scope/pkg. Parser must
+        // resolve them too.
+        let lockfile = serde_json::json!({
+            "lockfileVersion": 3,
+            "packages": {
+                "node_modules/@types/node": { "version": "20.0.0" },
+                "node_modules/some-tool": {
+                    "version": "1.0.0",
+                    "dependencies": { "@types/node": "^18.0.0" }
+                },
+                "node_modules/some-tool/node_modules/@types/node": { "version": "18.16.0" }
+            }
+        });
+        let entries = parse_package_lock(&lockfile, "/tmp/lock.json", false);
+        let some_tool = entries.iter().find(|e| e.name == "some-tool").expect("some-tool");
+        assert_eq!(
+            some_tool.depends,
+            vec!["@types/node 18.16.0".to_string()],
+            "scoped package nested under parent should be version-pinned: {:?}",
+            some_tool.depends
+        );
+    }
+
+    #[test]
+    fn multiple_nested_deps_each_version_pinned_independently() {
+        // A parent with two nested deps — each gets its own version-
+        // pinned reference.
+        let lockfile = serde_json::json!({
+            "lockfileVersion": 3,
+            "packages": {
+                "node_modules/foo": {
+                    "version": "1.0.0",
+                    "dependencies": { "a": "^2.0.0", "b": "^3.0.0" }
+                },
+                "node_modules/foo/node_modules/a": { "version": "2.5.0" },
+                "node_modules/foo/node_modules/b": { "version": "3.4.0" }
+            }
+        });
+        let entries = parse_package_lock(&lockfile, "/tmp/lock.json", false);
+        let foo = entries.iter().find(|e| e.name == "foo").expect("foo");
+        let mut sorted = foo.depends.clone();
+        sorted.sort();
+        assert_eq!(
+            sorted,
+            vec!["a 2.5.0".to_string(), "b 3.4.0".to_string()],
+            "each nested dep should be independently version-pinned"
+        );
+    }
+
+    #[test]
+    fn mixed_nested_and_hoisted_deps_are_disambiguated() {
+        // A parent with one nested dep and one hoisted-only dep —
+        // version-pinned vs bare-name forms coexist correctly.
+        let lockfile = serde_json::json!({
+            "lockfileVersion": 3,
+            "packages": {
+                "node_modules/b": { "version": "3.0.0" },
+                "node_modules/foo": {
+                    "version": "1.0.0",
+                    "dependencies": { "a": "^2.0.0", "b": "^3.0.0" }
+                },
+                "node_modules/foo/node_modules/a": { "version": "2.5.0" }
+            }
+        });
+        let entries = parse_package_lock(&lockfile, "/tmp/lock.json", false);
+        let foo = entries.iter().find(|e| e.name == "foo").expect("foo");
+        let mut sorted = foo.depends.clone();
+        sorted.sort();
+        assert_eq!(
+            sorted,
+            vec!["a 2.5.0".to_string(), "b".to_string()],
+            "nested dep version-pinned; hoisted dep stays bare-name"
+        );
     }
 }

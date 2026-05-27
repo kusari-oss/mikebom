@@ -1058,4 +1058,62 @@ mod tests {
         // If you rename this, update consumer-side policy AND any
         // future parity-catalog row for the annotation slot.
     }
+
+    // --- issue #262: nested-node_modules version-pinning end-to-end ---------
+
+    #[test]
+    fn nested_node_modules_install_emits_version_pinned_dep_string() {
+        // End-to-end shape: verify the parser change produces a
+        // version-qualified dep string that the scan_fs resolver can
+        // match against the nested PURL. We assert the depends string
+        // form here; the resolver-side wiring (cargo-mirroring
+        // `(npm, "name version")` key in scan_fs/mod.rs:413-420) is
+        // exercised by `cdx_regression` / integration tests at higher
+        // levels.
+        //
+        // Reproducer: mlly@1.0.0 has nested pathe@2.0.3 under
+        // node_modules/mlly/node_modules/pathe; pathe@1.1.2 hoisted
+        // at top-level node_modules/pathe.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package-lock.json"),
+            r#"{
+                "lockfileVersion": 3,
+                "packages": {
+                    "node_modules/pathe": { "version": "1.1.2" },
+                    "node_modules/mlly": {
+                        "version": "1.0.0",
+                        "dependencies": { "pathe": "^2.0.0" }
+                    },
+                    "node_modules/mlly/node_modules/pathe": { "version": "2.0.3" }
+                }
+            }"#,
+        )
+        .unwrap();
+        let out = read(dir.path(), false, crate::scan_fs::ScanMode::Path).unwrap();
+
+        // Both pathes emitted as components.
+        let pathe_versions: Vec<&str> = out
+            .iter()
+            .filter(|e| e.name == "pathe")
+            .map(|e| e.version.as_str())
+            .collect();
+        assert!(pathe_versions.contains(&"1.1.2"), "hoisted pathe should be emitted");
+        assert!(pathe_versions.contains(&"2.0.3"), "nested pathe should be emitted");
+
+        // mlly's depends carries the NESTED pathe's version pin so
+        // the edge resolver routes the edge to pathe@2.0.3 (not
+        // the hoisted 1.1.2).
+        let mlly = out.iter().find(|e| e.name == "mlly").expect("mlly");
+        assert!(
+            mlly.depends.contains(&"pathe 2.0.3".to_string()),
+            "mlly.depends should pin pathe to the NESTED version 2.0.3; got: {:?}",
+            mlly.depends
+        );
+        assert!(
+            !mlly.depends.contains(&"pathe".to_string()),
+            "mlly.depends should NOT carry the bare-name form (would route to hoisted); got: {:?}",
+            mlly.depends
+        );
+    }
 }

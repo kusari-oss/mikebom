@@ -7,6 +7,57 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+## [0.1.0-alpha.39] — 2026-05-27
+
+This release bundles four PRs: a new global `--timeout` flag for wall-clock-bounded scans, two npm orphan-attribution fixes (#260, #263), and a docs recipe for Kubernetes workload identity tagging (#261).
+
+### New global flag: `--timeout <SECONDS>` (#265)
+
+Adds a wall-clock time limit for the entire `mikebom` invocation. When exceeded, mikebom emits a `tracing::error` to stderr and exits with status `124` (POSIX [`timeout(1)`](https://www.gnu.org/software/coreutils/manual/html_node/timeout-invocation.html) convention). Disabled when omitted or set to `0`.
+
+Use cases: bounding runaway scans in CI, protecting Kubernetes CronJob pod-disruption budgets, capping exploratory image scans against potentially-large container filesystems.
+
+Coexists with the existing `mikebom trace run --timeout` (which caps the SUBPROCESS being traced, not mikebom itself). Whichever fires first wins. Per-fetch internal timeouts (OCI registry pulls, deps.dev HTTP, `go mod graph` subprocess) are unaffected.
+
+Partial output isn't guaranteed when the watchdog fires — operators who need "best-SBOM-in-N-seconds" semantics should pair `--timeout` with `--output <PATH>` and check the file's presence after the run. New docs section in `cli-reference.md` includes a `case $?` recipe for distinguishing exit 124 from 0.
+
+### npm: nested-`node_modules` deps now pin to their installed versions (#263, closes #262)
+
+When npm's resolver hoists one version of a transitive dep and nests another under its consumer (`node_modules/<parent>/node_modules/<dep>`), the nested install was previously emitted as a component but had **zero incoming edges** — the lockfile parser populated `entry.depends` with bare names like `"pathe"`, and the edge resolver's last-write-wins matched the hoisted version, leaving the nested one orphan.
+
+Real-world impact: a Vite + Vitest project's molcajete corpus had 47 multi-version orphans (`debug` 2.x/4.x, `minimatch` 3.x/9.x, three `@opentelemetry/semantic-conventions` versions, etc.) — ~7% of the dep tree unreachable from root.
+
+#### Fix shape
+
+1. **Lockfile parser**: build a `(path_key → version)` index up front. For each entry, when constructing `entry.depends`, check whether a nested child exists at `<this_path>/node_modules/<dep>`. If yes, emit the dep as `"<dep> <version>"` (version-pinned); else bare `"<dep>"` (existing behavior). Mirrors cargo's milestone-087 disambiguation pattern.
+2. **Edge resolver**: register a `(npm, "name version")` key for every npm component alongside the existing `(npm, "name")` bare-name key.
+3. **Same-PURL dev/runtime dedup**: when the same PURL appears as both Dev and Runtime variants (e.g., `@babel/core/node_modules/ms@2.1.3` dev alongside `send/node_modules/ms@2.1.3` runtime), the dedup at `mod.rs:118` previously kept whichever came first alphabetically — typically the dev variant. Inert pre-fix (the wrongly-tagged variants were orphans). After this PR's version-pinning lands, edges now correctly land on these dedup'd components, so the wrong scope tag triggers `DEV_DEPENDENCY_OF` rewriting. Fix: dedup IN `parse_package_lock` preferring Runtime over Development.
+
+#### Test baseline shift
+
+`transitive_parity_npm`'s `EXPECTED_MIKEBOM_EDGE_COUNT` shifts **150 → 147**. The 3-edge shift is a wire-format reclassification: 3 edges from dev-scope parents now correctly route to their nested dev-scope targets and emit as `DEV_DEPENDENCY_OF` (reversed direction, per milestone-228) instead of `DEPENDS_ON`. The underlying dep relationships are still present; they just don't ride the `DEPENDS_ON` slot. Pre-fix routing was wrong (bare-name last-write-wins accidentally pointed dev parents at hoisted runtime targets); post-fix routing matches the actually-installed nested versions.
+
+### npm: nameless-secondary umbrella widened to private+no-version manifests (#260, closes #245)
+
+PR #257's umbrella for nameless secondary `package.json` files only fired when the `name` field was missing. The trigger missed `private: true` + no-`version` manifests, which FR-001 also skips from main-module emission (per #104 guidance). Those manifests' declared deps ended up orphan.
+
+Fix: switch the umbrella's "target pool" criterion from "manifest has a name" to "manifest's main-module entry actually exists in entries". The new criterion captures every manifest the main-module-build loop didn't handle — whether nameless, private+no-version, or any future skip condition.
+
+The basic-shape #245 reproducer (named secondary with `node_modules/`) was already passing on alpha.38 thanks to milestone-066's main-module emission — a unit-test regression captures that working shape for future maintainers.
+
+### docs: Kubernetes workload identity recipe (#261, closes #231 + task #35)
+
+Issue #231 originally proposed dedicated `--cluster-id` / `--namespace` / `--workload-name` / `--workload-kind` / `--workload-uid` CLI flags. On triage we opted for a docs recipe using the existing `--id <scheme>=<value>` flag rather than adding net-new CLI surface for a single ecosystem's identity model.
+
+Recipe 7 in `docs/user-guide/quickstart.md` now covers:
+- The canonical flag invocation pattern with `k8s_*` scheme prefix.
+- Where the values land per format (CDX `metadata.annotations[]`, SPDX 2.3 document annotations, SPDX 3 native `externalIdentifier[]`).
+- A `kubectl get pod ... -o jsonpath=...` snippet for driving the flags from a Kubernetes operator.
+- Cross-reference to `--registry-credentials-dir` for the in-cluster `imagePullSecret`-mount pattern.
+- Naming tips (prefer `workload_uid` over pod-name for stability).
+
+Renumbered existing recipes 7-10 → 8-11.
+
 ## [0.1.0-alpha.38] — 2026-05-26
 
 This release bundles two orphan-attribution improvements that surfaced in user-supplied reproducers after alpha.37: the nameless secondary `package.json` umbrella (#257 / closes #256) and the Go `+incompatible` legacy-residue filter (#258 / closes #255). Both refine the orphan-handling work from PR #253 (alpha.37): #257 closes a real linkage gap that #253 didn't cover (orphan dep subtree from a non-npm-publishable secondary manifest); #258 reduces a false-positive (`+incompatible` residue getting flat-attached to root via #253's backfill).

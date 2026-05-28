@@ -238,6 +238,13 @@ fn build_bazel_entry(
             serde_json::json!(name),
         );
     }
+    // C/C++ provenance: explicit source-mechanism annotation
+    // (closed-enum value `bazel-http-archive`). See cmake.rs for
+    // the full rationale + enum docs.
+    extra_annotations.insert(
+        "mikebom:source-mechanism".to_string(),
+        serde_json::json!("bazel-http-archive"),
+    );
 
     let hashes = sha256_hex
         .and_then(|hex| ContentHash::sha256(hex).ok())
@@ -417,5 +424,32 @@ http_archive(
         let entries = read(tmp.path());
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].version, "2.0.0"); // MODULE wins
+    }
+
+    #[test]
+    fn source_mechanism_annotation_bazel_http_archive() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("WORKSPACE"),
+            r#"http_archive(
+    name = "zlib",
+    urls = ["https://zlib.net/zlib-1.3.1.tar.gz"],
+    sha256 = "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23",
+)
+"#,
+        )
+        .unwrap();
+        let entries = read(tmp.path());
+        assert!(!entries.is_empty());
+        for e in &entries {
+            assert_eq!(
+                e.extra_annotations
+                    .get("mikebom:source-mechanism")
+                    .and_then(|v| v.as_str()),
+                Some("bazel-http-archive"),
+                "every bazel entry should carry source-mechanism: bazel-http-archive; got: {:?}",
+                e.extra_annotations.get("mikebom:source-mechanism"),
+            );
+        }
     }
 }

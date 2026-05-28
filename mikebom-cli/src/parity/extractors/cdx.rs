@@ -579,6 +579,11 @@ cdx_anno!(c52_cdx, "mikebom:pe-linker-version",         component);
 // re-maps it. Both emit as `component.properties[].value` entries.
 cdx_anno!(c53_cdx, "mikebom:download-url",              component);
 cdx_anno!(c54_cdx, "mikebom:bazel-archive-name",        component);
+// C55 — closed-enum source-mechanism identifying which C/C++
+// reader emitted the component (cmake-fetchcontent-git /
+// cmake-fetchcontent-url / cmake-externalproject / cmake-vendored /
+// bazel-http-archive / vcpkg-manifest / conan-recipe).
+cdx_anno!(c55_cdx, "mikebom:source-mechanism",          component);
 
 // ============================================================
 // Section D — Evidence (D1, D2 — CDX-native shape)

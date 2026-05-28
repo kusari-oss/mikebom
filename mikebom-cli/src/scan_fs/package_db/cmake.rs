@@ -169,6 +169,17 @@ fn parse_fetch_block(content: &str, source_path: &str, rule_name: &str) -> Vec<P
         };
 
         if let Ok(purl) = Purl::new(&purl_str) {
+            // Distinguish source-mechanism by rule name + presence
+            // of GIT_REPOSITORY (FetchContent_Declare with git form)
+            // vs URL form. ExternalProject_Add only supports URL
+            // form in our parser.
+            let source_mechanism = if rule_name == "ExternalProject_Add" {
+                "cmake-externalproject"
+            } else if git_repo.is_some() {
+                "cmake-fetchcontent-git"
+            } else {
+                "cmake-fetchcontent-url"
+            };
             out.push(build_cmake_entry(
                 name,
                 &version,
@@ -177,6 +188,7 @@ fn parse_fetch_block(content: &str, source_path: &str, rule_name: &str) -> Vec<P
                 download_url.as_deref(),
                 url_hash_sha256.as_deref(),
                 false,
+                source_mechanism,
             ));
         }
     }
@@ -245,6 +257,7 @@ fn parse_vendored(
                 None,
                 None,
                 true,
+                "cmake-vendored",
             );
             // FR-009: JSON boolean `true` per the milestone-009
             // `mikebom:shade-relocation` precedent.
@@ -266,6 +279,7 @@ fn parse_version_from_url(url: &str) -> Option<String> {
     re.captures(url)?.get(1).map(|m| m.as_str().to_string())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_cmake_entry(
     name: &str,
     version: &str,
@@ -274,6 +288,7 @@ fn build_cmake_entry(
     download_url: Option<&str>,
     sha256_hex: Option<&str>,
     _vendored: bool,
+    source_mechanism: &str,
 ) -> PackageDbEntry {
     let mut extra_annotations: std::collections::BTreeMap<String, serde_json::Value> =
         std::collections::BTreeMap::new();
@@ -283,6 +298,17 @@ fn build_cmake_entry(
             serde_json::json!(url),
         );
     }
+    // C/C++ provenance: explicit `mikebom:source-mechanism` annotation
+    // so operators can grep/filter components by origin without
+    // reverse-engineering the PURL prefix + per-reader annotations.
+    // Closed enum across cmake / vcpkg / conan / bazel:
+    //   cmake-fetchcontent-git, cmake-fetchcontent-url,
+    //   cmake-externalproject, cmake-vendored,
+    //   bazel-http-archive, vcpkg-manifest, conan-recipe.
+    extra_annotations.insert(
+        "mikebom:source-mechanism".to_string(),
+        serde_json::json!(source_mechanism),
+    );
     let hashes = sha256_hex
         .and_then(|hex| ContentHash::sha256(hex).ok())
         .map(|h| vec![h])
@@ -440,6 +466,89 @@ add_subdirectory(tests)"#,
         assert!(
             entries.is_empty(),
             "first-party add_subdirectory(src) MUST NOT emit; got {entries:?}"
+        );
+    }
+
+    // --- C/C++ provenance: source-mechanism annotation ---------------------
+
+    #[test]
+    fn source_mechanism_annotation_fetchcontent_git() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("CMakeLists.txt"),
+            r#"FetchContent_Declare(googletest GIT_REPOSITORY https://github.com/google/googletest.git GIT_TAG release-1.14.0)"#,
+        )
+        .unwrap();
+        let entries = read(tmp.path(), false);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0]
+                .extra_annotations
+                .get("mikebom:source-mechanism")
+                .and_then(|v| v.as_str()),
+            Some("cmake-fetchcontent-git"),
+            "FetchContent_Declare GIT form should be `cmake-fetchcontent-git`; got: {:?}",
+            entries[0].extra_annotations.get("mikebom:source-mechanism"),
+        );
+    }
+
+    #[test]
+    fn source_mechanism_annotation_fetchcontent_url() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("CMakeLists.txt"),
+            r#"FetchContent_Declare(zlib URL https://zlib.net/zlib-1.3.1.tar.gz URL_HASH SHA256=9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23)"#,
+        )
+        .unwrap();
+        let entries = read(tmp.path(), false);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0]
+                .extra_annotations
+                .get("mikebom:source-mechanism")
+                .and_then(|v| v.as_str()),
+            Some("cmake-fetchcontent-url"),
+        );
+    }
+
+    #[test]
+    fn source_mechanism_annotation_externalproject() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("CMakeLists.txt"),
+            r#"ExternalProject_Add(boost URL https://example.com/boost_1_84_0.tar.gz)"#,
+        )
+        .unwrap();
+        let entries = read(tmp.path(), false);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0]
+                .extra_annotations
+                .get("mikebom:source-mechanism")
+                .and_then(|v| v.as_str()),
+            Some("cmake-externalproject"),
+        );
+    }
+
+    #[test]
+    fn source_mechanism_annotation_vendored() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("CMakeLists.txt"),
+            r#"add_subdirectory(third_party/foo)"#,
+        )
+        .unwrap();
+        // Vendored dir needs a version source — use third_party/foo/version.txt
+        std::fs::create_dir_all(tmp.path().join("third_party/foo")).unwrap();
+        std::fs::write(tmp.path().join("third_party/foo/version.txt"), "1.2.3").unwrap();
+        let entries = read(tmp.path(), true);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0]
+                .extra_annotations
+                .get("mikebom:source-mechanism")
+                .and_then(|v| v.as_str()),
+            Some("cmake-vendored"),
         );
     }
 }

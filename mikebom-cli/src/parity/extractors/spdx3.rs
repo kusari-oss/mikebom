@@ -517,6 +517,8 @@ spdx3_anno!(c52_spdx3, "mikebom:pe-linker-version",        component);
 // `mikebom:<key>=<value>` statement prefix.
 spdx3_anno!(c53_spdx3, "mikebom:download-url",             component);
 spdx3_anno!(c54_spdx3, "mikebom:bazel-archive-name",       component);
+// C55 — closed-enum source-mechanism. See cdx.rs for the docs.
+spdx3_anno!(c55_spdx3, "mikebom:source-mechanism",         component);
 
 // C47 — document-level user-defined identifiers (milestone 073).
 // Per `contracts/identifiers-annotation.md` C-1 SPDX 3 and C-2

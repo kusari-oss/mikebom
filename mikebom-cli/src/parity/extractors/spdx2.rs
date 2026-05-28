@@ -442,6 +442,8 @@ spdx23_anno!(c52_spdx23, "mikebom:pe-linker-version",        component);
 // Both emit as `Package.annotations[].comment` entries.
 spdx23_anno!(c53_spdx23, "mikebom:download-url",             component);
 spdx23_anno!(c54_spdx23, "mikebom:bazel-archive-name",       component);
+// C55 — closed-enum source-mechanism. See cdx.rs for the docs.
+spdx23_anno!(c55_spdx23, "mikebom:source-mechanism",         component);
 
 // ============================================================
 // Sections D-G — custom SPDX 2.3 extractors

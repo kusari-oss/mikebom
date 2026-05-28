@@ -157,7 +157,18 @@ fn build_entry(name: &str, version: &str, source_path: &str) -> Option<PackageDb
         hashes: Vec::new(),
         sbom_tier: Some("source".to_string()),
         shade_relocation: None,
-        extra_annotations: Default::default(),
+        extra_annotations: {
+            // C/C++ provenance: explicit source-mechanism annotation
+            // (closed-enum value `vcpkg-manifest`). See cmake.rs for
+            // the full rationale + enum docs.
+            let mut a: std::collections::BTreeMap<String, serde_json::Value> =
+                Default::default();
+            a.insert(
+                "mikebom:source-mechanism".to_string(),
+                serde_json::json!("vcpkg-manifest"),
+            );
+            a
+        },
         binary_role: None,
     })
 }
@@ -226,5 +237,27 @@ mod tests {
         .unwrap();
         // No panic; zero components per FR-015.
         assert!(read(tmp.path()).is_empty());
+    }
+
+    #[test]
+    fn source_mechanism_annotation_vcpkg_manifest() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("vcpkg.json"),
+            r#"{"dependencies":["zlib","openssl"]}"#,
+        )
+        .unwrap();
+        let entries = read(tmp.path());
+        assert_eq!(entries.len(), 2);
+        for e in &entries {
+            assert_eq!(
+                e.extra_annotations
+                    .get("mikebom:source-mechanism")
+                    .and_then(|v| v.as_str()),
+                Some("vcpkg-manifest"),
+                "every vcpkg entry should carry source-mechanism: vcpkg-manifest; got: {:?}",
+                e.extra_annotations.get("mikebom:source-mechanism"),
+            );
+        }
     }
 }

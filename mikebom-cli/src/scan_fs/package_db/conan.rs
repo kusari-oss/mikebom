@@ -206,7 +206,18 @@ fn parse_dep_token(
         hashes: Vec::new(),
         sbom_tier: Some("source".to_string()),
         shade_relocation: None,
-        extra_annotations: Default::default(),
+        extra_annotations: {
+            // C/C++ provenance: explicit source-mechanism annotation
+            // (closed-enum value `conan-recipe`). See cmake.rs for
+            // the full rationale + enum docs.
+            let mut a: std::collections::BTreeMap<String, serde_json::Value> =
+                Default::default();
+            a.insert(
+                "mikebom:source-mechanism".to_string(),
+                serde_json::json!("conan-recipe"),
+            );
+            a
+        },
         binary_role: None,
     })
 }
@@ -306,5 +317,27 @@ mod tests {
         let entries = read(tmp.path());
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].purl.as_str(), "pkg:conan/openssl@3.0.0");
+    }
+
+    #[test]
+    fn source_mechanism_annotation_conan_recipe() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("conanfile.txt"),
+            "[requires]\nzlib/1.3.1\nopenssl/3.0.0\n",
+        )
+        .unwrap();
+        let entries = read(tmp.path());
+        assert_eq!(entries.len(), 2);
+        for e in &entries {
+            assert_eq!(
+                e.extra_annotations
+                    .get("mikebom:source-mechanism")
+                    .and_then(|v| v.as_str()),
+                Some("conan-recipe"),
+                "every conan entry should carry source-mechanism: conan-recipe; got: {:?}",
+                e.extra_annotations.get("mikebom:source-mechanism"),
+            );
+        }
     }
 }

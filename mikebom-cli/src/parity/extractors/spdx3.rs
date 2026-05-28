@@ -519,6 +519,21 @@ spdx3_anno!(c53_spdx3, "mikebom:download-url",             component);
 spdx3_anno!(c54_spdx3, "mikebom:bazel-archive-name",       component);
 // C55 — closed-enum source-mechanism. See cdx.rs for the docs.
 spdx3_anno!(c55_spdx3, "mikebom:source-mechanism",         component);
+// C56 — `mikebom:also-detected-via` (FR-015). Same shape as
+// C56's SPDX 2.3 form: the annotation value is a JSON-array of
+// source-mechanism strings; the extractor parses + flattens.
+// SymmetricEqual against the CDX-native evidence.identity path.
+pub(super) fn c56_spdx3(doc: &Value) -> BTreeSet<String> {
+    extract_mikebom_annotation_values(doc, "mikebom:also-detected-via", false)
+        .into_iter()
+        .filter_map(|json_array_str| {
+            serde_json::from_str::<Vec<String>>(&json_array_str).ok()
+        })
+        .flatten()
+        .collect()
+}
+// C57 — `mikebom:build-reference` (FR-008a). Closed enum.
+spdx3_anno!(c57_spdx3, "mikebom:build-reference",          component);
 
 // C47 — document-level user-defined identifiers (milestone 073).
 // Per `contracts/identifiers-annotation.md` C-1 SPDX 3 and C-2

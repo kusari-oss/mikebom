@@ -63,13 +63,13 @@ Single-project workspace (the mikebom Rust workspace). All source under `mikebom
 
 ### 2D — Parity wiring for C56 + C57 (R6 / R7)
 
-- [ ] T015 Add `pub fn c56_cdx(component: &Value) -> BTreeSet<String>` to `mikebom-cli/src/parity/extractors/cdx.rs` per `contracts/dedup-precedence.md`'s parity-extractor contract (reads `evidence.identity[0].methods[].mikebom-source-mechanism` minus the first entry; returns BTreeSet of losers).
-- [ ] T016 [P] Add `pub fn c56_spdx23(package: &Value) -> BTreeSet<String>` to `mikebom-cli/src/parity/extractors/spdx2.rs` (reads `mikebom:also-detected-via` annotation; parses as JSON array; flattens).
-- [ ] T017 [P] Add `pub fn c56_spdx3(package: &Value) -> BTreeSet<String>` to `mikebom-cli/src/parity/extractors/spdx3.rs` (same shape as SPDX 2.3).
-- [ ] T018 Add `pub fn c57_cdx(component: &Value) -> BTreeSet<String>` to `cdx.rs` — extracts `mikebom:build-reference` from CDX properties. Mirror the existing `c55_cdx` pattern.
-- [ ] T019 [P] Add `pub fn c57_spdx23(package: &Value) -> BTreeSet<String>` to `spdx2.rs`.
-- [ ] T020 [P] Add `pub fn c57_spdx3(package: &Value) -> BTreeSet<String>` to `spdx3.rs`.
-- [ ] T021 Wire the new C56 + C57 ParityExtractor rows in `mikebom-cli/src/parity/extractors/mod.rs`: add to the three `use` statements (cdx/spdx2/spdx3 imports) and append two `ParityExtractor { row_id, label, cdx, spdx23, spdx3, directional: SymmetricEqual, order_sensitive: false }` entries after the existing C55 row at line 307. Mirror the PR #272 wiring pattern exactly.
+- [X] T015 Add `pub fn c56_cdx(component: &Value) -> BTreeSet<String>` to `mikebom-cli/src/parity/extractors/cdx.rs` per `contracts/dedup-precedence.md`'s parity-extractor contract (reads `evidence.identity[0].methods[].mikebom-source-mechanism` minus the first entry; returns BTreeSet of losers). ✅ Custom extractor at cdx.rs:587 walks `evidence.identity[0].methods[]` per component, skips method[0] (winner), collects remaining `mikebom-source-mechanism` sub-fields.
+- [X] T016 [P] Add `pub fn c56_spdx23(package: &Value) -> BTreeSet<String>` to `mikebom-cli/src/parity/extractors/spdx2.rs` (reads `mikebom:also-detected-via` annotation; parses as JSON array; flattens). ✅ Implemented at spdx2.rs:447 — JSON-parses the annotation value as `Vec<String>` and flattens.
+- [X] T017 [P] Add `pub fn c56_spdx3(package: &Value) -> BTreeSet<String>` to `mikebom-cli/src/parity/extractors/spdx3.rs` (same shape as SPDX 2.3). ✅ Implemented at spdx3.rs:522 — identical shape to SPDX 2.3.
+- [X] T018 Add `pub fn c57_cdx(component: &Value) -> BTreeSet<String>` to `cdx.rs` — extracts `mikebom:build-reference` from CDX properties. Mirror the existing `c55_cdx` pattern. ✅ Uses the standard `cdx_anno!` macro at cdx.rs:618 (simple property — no custom extractor needed).
+- [X] T019 [P] Add `pub fn c57_spdx23(package: &Value) -> BTreeSet<String>` to `spdx2.rs`. ✅ Standard `spdx23_anno!` macro at spdx2.rs:459.
+- [X] T020 [P] Add `pub fn c57_spdx3(package: &Value) -> BTreeSet<String>` to `spdx3.rs`. ✅ Standard `spdx3_anno!` macro at spdx3.rs:535.
+- [X] T021 Wire the new C56 + C57 ParityExtractor rows in `mikebom-cli/src/parity/extractors/mod.rs`: add to the three `use` statements (cdx/spdx2/spdx3 imports) and append two `ParityExtractor { row_id, label, cdx, spdx23, spdx3, directional: SymmetricEqual, order_sensitive: false }` entries after the existing C55 row at line 307. Mirror the PR #272 wiring pattern exactly. ✅ Six new identifiers added to the use statements; two new rows appended after C55. Plus catalog mapping doc `docs/reference/sbom-format-mapping.md` extended: C55 row's enum updated to list all 13 values; new C56 + C57 rows added with Principle V audit clauses (C56's hybrid-emission rationale per research R1; C57's "supersedes linkage-kind reuse" note per research R3).
 
 ### 2E — CDX hybrid emission for `also-detected-via` (R1 + R7)
 

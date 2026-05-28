@@ -579,7 +579,12 @@ impl CycloneDxBuilder {
                 "version": component.version,
                 "purl": component.purl.as_str(),
                 "bom-ref": bom_ref,
-                "evidence": build_evidence(&component.evidence, &component.occurrences)
+                // Milestone 105 phase 2E: extra (None, &[]) params are
+                // the cross-reader-dedup emission slots. Wired through
+                // by US1-US6 reader phases — until then the call shape
+                // produces byte-identical output to the pre-milestone-
+                // 105 builder.
+                "evidence": build_evidence(&component.evidence, &component.occurrences, None, &[])
             });
 
             // Milestone 052/part-2: native CDX `scope` field. Per

@@ -582,8 +582,62 @@ cdx_anno!(c54_cdx, "mikebom:bazel-archive-name",        component);
 // C55 — closed-enum source-mechanism identifying which C/C++
 // reader emitted the component (cmake-fetchcontent-git /
 // cmake-fetchcontent-url / cmake-externalproject / cmake-vendored /
-// bazel-http-archive / vcpkg-manifest / conan-recipe).
+// bazel-http-archive / vcpkg-manifest / conan-recipe / + milestone-105
+// additions: cpm-cmake / zephyr-west / idf-component /
+// idf-component-local / vcpkg-classic / git-submodule).
 cdx_anno!(c55_cdx, "mikebom:source-mechanism",          component);
+
+// C56 — `mikebom:also-detected-via` (FR-015). Records the
+// source-mechanism values of OTHER readers that produced the same
+// canonical PURL as the winning reader. Lets downstream consumers
+// see multi-reader corroboration without inflating component count.
+//
+// CDX-native emission per research R1: each detection record is a
+// `methods[]` entry under `evidence.identity[0].methods[]` carrying
+// `{technique, confidence, mikebom-source-mechanism}`. The FIRST
+// method entry is the winning reader (its source-mechanism is the
+// component's top-level `mikebom:source-mechanism` property already
+// covered by C55); the remaining entries are the losers. C56
+// extracts the loser set.
+//
+// On components that weren't dedup'd (single-reader detection),
+// `methods[]` has zero or one entry → empty set returned. The
+// SPDX-side extractor (`c56_spdx23` / `c56_spdx3`) reads the
+// `mikebom:also-detected-via` JSON-array annotation and yields the
+// same BTreeSet for SymmetricEqual parity.
+pub(super) fn c56_cdx(doc: &Value) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for component in walk_cdx_components_and_main_module(doc) {
+        let methods = match component
+            .get("evidence")
+            .and_then(|e| e.get("identity"))
+            .and_then(|i| i.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|first| first.get("methods"))
+            .and_then(|m| m.as_array())
+        {
+            Some(m) => m,
+            None => continue,
+        };
+        // Skip the first method (= winner). The remaining methods'
+        // `mikebom-source-mechanism` sub-field values are the losers.
+        for method in methods.iter().skip(1) {
+            if let Some(s) = method
+                .get("mikebom-source-mechanism")
+                .and_then(|v| v.as_str())
+            {
+                out.insert(s.to_string());
+            }
+        }
+    }
+    out
+}
+
+// C57 — `mikebom:build-reference` (FR-008a). Closed enum
+// `declared-and-used` / `declared-only` attached to git-submodule
+// components. Lets vuln scanners filter un-referenced submodules
+// with a single query. Simple property — uses the standard macro.
+cdx_anno!(c57_cdx, "mikebom:build-reference",           component);
 
 // ============================================================
 // Section D — Evidence (D1, D2 — CDX-native shape)

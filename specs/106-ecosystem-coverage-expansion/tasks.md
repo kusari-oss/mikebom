@@ -27,9 +27,9 @@ Single-project workspace (the mikebom Rust workspace). All source under `mikebom
 
 **Purpose**: Verify baseline state on a fresh branch off post-milestone-105 main.
 
-- [ ] T001 Verify branch checkout: confirm `git branch --show-current` returns `106-ecosystem-coverage-expansion` (the script-created branch).
-- [ ] T002 Confirm milestone 105's foundational layer (PRs #273, #279, #280) has merged to `main`, then rebase the 106 branch on the post-105 `main` head. **The milestone-052 lifecycle-scope infrastructure + the milestone-105 dedup pipeline are both prerequisites for this milestone's work.**
-- [ ] T003 [P] Run baseline pre-PR gate: `./scripts/pre-pr.sh` MUST pass clean on the rebased branch. Document the baseline scan-time for SC-008's ≤5% comparison.
+- [X] T001 Verify branch checkout: confirm `git branch --show-current` returns `106-ecosystem-coverage-expansion` (the script-created branch).
+- [X] T002 Confirm milestone 105's foundational layer (PRs #273, #279, #280) has merged to `main`, then rebase the 106 branch on the post-105 `main` head. **The milestone-052 lifecycle-scope infrastructure + the milestone-105 dedup pipeline are both prerequisites for this milestone's work.** ✅ Milestone 105 + bug fix PR #282 all merged; planning artifacts committed as ad07a98; branch up-to-date with origin/main.
+- [X] T003 [P] Run baseline pre-PR gate: `./scripts/pre-pr.sh` MUST pass clean on the rebased branch. Document the baseline scan-time for SC-008's ≤5% comparison. ✅ Baseline = **54.2s wall-clock** for full clippy + workspace tests.
 
 **Checkpoint**: Baseline confirmed. Phase 2 can begin.
 
@@ -43,21 +43,19 @@ Single-project workspace (the mikebom Rust workspace). All source under `mikebom
 
 ### 2A — JSONC comment stripper (used by US2)
 
-- [ ] T004 Create `mikebom-cli/src/scan_fs/package_db/npm/jsonc.rs` with `pub fn strip_comments(input: &str) -> String` per `contracts/jsonc-stripper.md`. State machine handles `Normal`, `InString`, `LineComment`, `BlockComment` states. Newlines from comments are preserved as `\n` for serde_json error-position fidelity.
-- [ ] T005 [P] Add 10 unit tests in `mikebom-cli/src/scan_fs/package_db/npm/jsonc.rs` matching `contracts/jsonc-stripper.md`'s test-case table: `strip_line_comment_basic`, `strip_block_comment_basic`, `preserves_strings`, `preserves_strings_with_block_marker`, `escaped_quote_in_string`, `multiline_block_preserves_newlines`, `unterminated_block_comment`, `top_of_file_bun_marker`, `adjacent_comment_types`, `empty_input`.
-- [ ] T006 Wire the new module into `mikebom-cli/src/scan_fs/package_db/npm/mod.rs`: add `mod jsonc;` and `pub(super) use jsonc::strip_comments;` so the bun_lock reader (US2) can reference it as `super::jsonc::strip_comments`.
+- [X] T004 Create `mikebom-cli/src/scan_fs/package_db/npm/jsonc.rs` with `pub fn strip_comments(input: &str) -> String` per `contracts/jsonc-stripper.md`. State machine handles `Normal`, `InString`, `LineComment`, `BlockComment` states. Newlines from comments are preserved as `\n` for serde_json error-position fidelity. ✅ Implemented as `pub(super) fn strip_comments(input: &str) -> String`. `#[allow(dead_code)]` until US2/T024 wires the consumer.
+- [X] T005 [P] Add 10 unit tests in `mikebom-cli/src/scan_fs/package_db/npm/jsonc.rs` matching `contracts/jsonc-stripper.md`'s test-case table. ✅ All 10 tests pass: `strip_line_comment_basic`, `strip_block_comment_basic`, `preserves_strings`, `preserves_strings_with_block_marker`, `escaped_quote_in_string`, `multiline_block_preserves_newlines`, `unterminated_block_comment`, `top_of_file_bun_marker`, `adjacent_comment_types`, `empty_input`.
+- [X] T006 Wire the new module into `mikebom-cli/src/scan_fs/package_db/npm/mod.rs`: add `mod jsonc;` and `pub(super) use jsonc::strip_comments;` so the bun_lock reader (US2) can reference it as `super::jsonc::strip_comments`. ✅ Added `mod jsonc;` to the existing module list. US2 will reference as `super::jsonc::strip_comments` when the bun_lock reader lands.
 
 ### 2B — C40 catalog row enum extension (used by US1 + US2)
 
-- [ ] T007 Update `docs/reference/sbom-format-mapping.md` C40 row (around line 86-87): extend the documented enum list to include `"workspace-root"` alongside the existing `"build-tool"`, `"language-runtime"`, `"main-module"` values. Per research R3, the annotation is open-enum, so this is a doc-only update — no parity extractor changes needed. Add a one-line note explaining `"workspace-root"` is emitted by uv/Bun workspace synthetic roots.
+- [X] T007 Update `docs/reference/sbom-format-mapping.md` C40 row (around line 86-87): extend the documented enum list to include `"workspace-root"` alongside the existing `"build-tool"`, `"language-runtime"`, `"main-module"` values. Per research R3, the annotation is open-enum, so this is a doc-only update — no parity extractor changes needed. Add a one-line note explaining `"workspace-root"` is emitted by uv/Bun workspace synthetic roots. ✅ Updated. New text describes the workspace-root value's role (synthetic component above main-module members; `pkg:generic/<workspace-name>` PURL; dependsOn edges to members preserve intra-workspace structure). Per-ecosystem matrix at the bottom of the cell now includes uv ✅ (106) + Bun ✅ (106).
 
 ### 2C — Workspace emission helper (used by US1 + US2)
 
-- [ ] T008 Create `mikebom-cli/src/scan_fs/package_db/workspace.rs` with helpers for the shared workspace emission policy per `contracts/workspace-emission.md`:
-  - `pub fn synthesize_workspace_root(name: Option<&str>, source_path: &Path) -> PackageDbEntry` — builds the synthetic workspace-root component with `pkg:generic/<name>` PURL + `mikebom:component-role: "workspace-root"` + `mikebom:source-files` annotation.
-  - `pub fn workspace_root_name(root_manifest_field: Option<&str>) -> String` — returns the manifest's `name` field if present, otherwise `"workspace-root"`.
-- [ ] T009 [P] Add unit tests in `mikebom-cli/src/scan_fs/package_db/workspace.rs`: `synthesizes_root_with_explicit_name`, `synthesizes_root_with_placeholder_name`, `annotation_is_workspace_root`.
-- [ ] T010 Wire into `mikebom-cli/src/scan_fs/package_db/mod.rs`: add `mod workspace;` and `pub(super) use workspace::{synthesize_workspace_root, workspace_root_name};` so US1 and US2 readers can call the helpers as `super::super::workspace::*`.
+- [X] T008 Create `mikebom-cli/src/scan_fs/package_db/workspace.rs` with helpers for the shared workspace emission policy per `contracts/workspace-emission.md`. ✅ Implemented two `pub(super)` fns: `synthesize_workspace_root(name: &str, source_path: &Path) -> Option<PackageDbEntry>` (constructs the synthetic-root PackageDbEntry with `pkg:generic/<name>` PURL + component-role + source-files annotations) and `workspace_root_name(root_manifest_field: Option<&str>) -> String` (returns trimmed manifest name or `"workspace-root"` placeholder). Returns `Option<...>` for PURL-construction safety; `WORKSPACE_ROOT_PLACEHOLDER` const for the fallback name.
+- [X] T009 [P] Add unit tests in `mikebom-cli/src/scan_fs/package_db/workspace.rs`. ✅ Added 5 tests: `synthesizes_root_with_explicit_name`, `synthesizes_root_with_placeholder_name`, `annotation_is_workspace_root`, `workspace_root_name_strips_whitespace`, `workspace_root_name_falls_back_on_empty`. All passing.
+- [X] T010 Wire into `mikebom-cli/src/scan_fs/package_db/mod.rs`: add `mod workspace;`. ✅ Added as `mod workspace;` (non-public — only `pub(super)` callers within `package_db/` reach it). US1 and US2 readers will reach it as `super::workspace::*` from their respective `pip/` and `npm/` sub-directories.
 
 **Checkpoint**: Phase 2 complete. The JSONC stripper, the workspace helper, and the C40 enum doc-update are all in place. The 4 user stories can now ship as independent sub-PRs.
 

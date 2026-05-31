@@ -55,6 +55,7 @@ mod dist_info;
 mod pipfile;
 mod poetry;
 mod requirements_txt;
+mod uv_lock;
 
 pub use dist_info::collect_claimed_paths;
 
@@ -131,6 +132,14 @@ pub fn read(rootfs: &Path, include_dev: bool) -> Vec<PackageDbEntry> {
             merge_without_override(&mut entries, lockfile_entries);
         }
         if let Some(lockfile_entries) = pipfile::read_pipfile_lock(&project_root, include_dev) {
+            merge_without_override(&mut entries, lockfile_entries);
+        }
+        // Milestone 106 US1 (issue #276): uv.lock support. Sibling to
+        // poetry / pipfile readers — dispatched per-project-root with
+        // the same merge_without_override dedup semantics. Returns
+        // workspace-root + members + transitives when the root
+        // pyproject.toml declares [tool.uv.workspace].
+        if let Some(lockfile_entries) = uv_lock::read_uv_lock(&project_root, include_dev) {
             merge_without_override(&mut entries, lockfile_entries);
         }
         if let Some(req_entries) = requirements_txt::read_requirements_files(&project_root) {
@@ -287,6 +296,7 @@ fn candidate_python_project_roots(rootfs: &Path) -> Vec<PathBuf> {
 fn has_python_project_marker(dir: &Path) -> bool {
     if dir.join("poetry.lock").is_file()
         || dir.join("Pipfile.lock").is_file()
+        || dir.join("uv.lock").is_file()
         || dir.join("pyproject.toml").is_file()
     {
         return true;

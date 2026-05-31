@@ -1,0 +1,11 @@
+// bun: lockfileVersion: 1
+{
+  "lockfileVersion": 1,
+  "workspaces": {
+    "": { "name": "bun-basic-fixture" }
+  },
+  "packages": {
+    "lodash": ["lodash@4.17.21", "sha512-aaa"],
+    "@types/node": ["@types/node@22.5.0", "sha512-bbb"]
+  }
+}

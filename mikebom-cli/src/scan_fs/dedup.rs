@@ -69,6 +69,15 @@ pub enum SourceMechanism {
     IdfComponentLocal,
     VcpkgClassic, // ranks BELOW VcpkgManifest per US5 scenario 2
     ZephyrWest,
+    // Milestone 107 — Yocto / OpenEmbedded readers (FR-010 precedence:
+    // installed-DB > image-manifest > recipe-declaration).
+    // OpkgInstalled outranks YoctoImageManifest because it observes
+    // what's ACTUALLY installed on the device vs what was INTENDED to
+    // ship. BitbakeRecipe is lowest — recipes declared by a layer may
+    // never have been selected by any image build.
+    OpkgInstalled,
+    YoctoImageManifest,
+    BitbakeRecipe,
     // Mixed-tier (manifest-driven but non-canonical PURL form).
     CmakeFetchcontentGit,
     CmakeFetchcontentUrl,
@@ -99,6 +108,9 @@ impl SourceMechanism {
             Self::IdfComponentLocal => "idf-component-local",
             Self::VcpkgClassic => "vcpkg-classic",
             Self::GitSubmodule => "git-submodule",
+            Self::OpkgInstalled => "opkg-installed",
+            Self::YoctoImageManifest => "yocto-image-manifest",
+            Self::BitbakeRecipe => "bitbake-recipe",
         }
     }
 }
@@ -192,6 +204,15 @@ pub fn precedence_rank(record: &DetectionRecord) -> u16 {
         SourceMechanism::CmakeFetchcontentGit
         | SourceMechanism::CmakeFetchcontentUrl
         | SourceMechanism::CmakeExternalproject => 1,
+        // Milestone 107 — Yocto / OpenEmbedded readers.
+        // OpkgInstalled is tier 0 (highest authority — what's actually
+        // installed on the device, same authority as installed-DB
+        // readers in other ecosystems). YoctoImageManifest is tier 0
+        // too (BitBake-recorded; authoritative for the image's
+        // intended contents). BitbakeRecipe is tier 2 (layer
+        // declaration only — recipes may never have been built).
+        SourceMechanism::OpkgInstalled | SourceMechanism::YoctoImageManifest => 0,
+        SourceMechanism::BitbakeRecipe => 2,
         // Filesystem-derived tier (lowest priority).
         SourceMechanism::GitSubmodule | SourceMechanism::CmakeVendored => 2,
     };

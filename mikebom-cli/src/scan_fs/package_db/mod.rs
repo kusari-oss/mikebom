@@ -27,6 +27,7 @@ pub mod maven;
 pub mod maven_sidecar;
 pub mod npm;
 pub mod nuget;
+pub mod opkg;
 pub mod pip;
 mod project_roots;
 pub mod rpm;
@@ -35,6 +36,7 @@ pub mod rpmdb_bdb;
 pub mod rpmdb_sqlite;
 pub mod vcpkg;
 mod workspace;
+pub mod yocto;
 
 use std::path::Path;
 
@@ -306,6 +308,15 @@ pub struct ScanDiagnostics {
     /// `"go:unresolved-indirect-require"`, `"go:proxy-fetch-failed"`,
     /// joined with `,` when multiple classes contributed.
     pub go_graph_completeness_reason: Option<String>,
+
+    /// Milestone 107 FR-005a: scan-context ambiguities detected by the
+    /// Yocto sysroot-vs-rootfs heuristic. Each entry is a free-form
+    /// reason string explaining the conflict (e.g. "env-script present
+    /// but filesystem shape suggests rootfs (init.d=true, ...)"). The
+    /// downstream format emitters surface this via `mikebom:scan-
+    /// ambiguity` properties on SBOM metadata when populated.
+    /// Deduplicated; insertion order preserved.
+    pub scan_ambiguities: Vec<String>,
 }
 
 /// Document-level completeness classification for the Go ecosystem
@@ -337,6 +348,15 @@ impl ScanDiagnostics {
     pub fn record_missing_os_release_field(&mut self, field: &str) {
         if !self.os_release_missing_fields.iter().any(|f| f == field) {
             self.os_release_missing_fields.push(field.to_string());
+        }
+    }
+
+    /// Record a scan-context ambiguity (milestone 107 FR-005a). The
+    /// reason string is preserved verbatim for downstream emission as
+    /// a `mikebom:scan-ambiguity` SBOM-metadata property.
+    pub fn record_scan_ambiguity(&mut self, reason: &str) {
+        if !self.scan_ambiguities.iter().any(|r| r == reason) {
+            self.scan_ambiguities.push(reason.to_string());
         }
     }
 }
@@ -702,6 +722,22 @@ pub fn read_all(
         }
         Err(e) => tracing::debug!(error = %e, "apk db read failed (expected if no apk)"),
     }
+
+    // Milestone 107 US1+US3+US5: opkg installed-DB reader for Yocto /
+    // OpenEmbedded rootfs + SDK sysroot scans. The reader also returns
+    // the ScanContext detected by the two-signal sysroot heuristic so
+    // we can record any FR-005a ambiguity at the document level.
+    let (opkg_entries, opkg_ctx) = opkg::read(rootfs);
+    if let Some(reason) = opkg_ctx.ambiguity_reason() {
+        diagnostics.record_scan_ambiguity(reason);
+    }
+    out.extend(opkg_entries);
+    let _ = opkg::collect_claimed_paths(
+        rootfs,
+        &mut claimed,
+        #[cfg(unix)]
+        &mut claimed_inodes,
+    );
 
     // Python: venv dist-info + lockfiles + requirements.txt per R13 tiers.
     // No fail-closed: an empty Python section is fine if the scan root

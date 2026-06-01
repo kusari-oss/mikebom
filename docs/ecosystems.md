@@ -14,7 +14,7 @@ diving into the [architecture docs](architecture/overview.md).
 | [gem](#gem) | `Gemfile.lock` + `specifications/*.gemspec` | Lockfile indent-6 | — | — / ✓ | Implemented |
 | [golang](#golang) | `go.mod` / `go.sum` + module cache; `runtime/debug.BuildInfo` for binaries | Cache walker (source); **none** (binaries) | `go.sum` H1 (Merkle trie, not CDX) | ✓ / ✓ | Implemented |
 | [maven](#maven) | Project `pom.xml` + JAR `META-INF/maven` + `~/.m2` + deps.dev fallback + Gradle `gradle.lockfile` / `buildscript-gradle.lockfile` | Layered: local → JAR → `~/.m2` BFS → parent POM chain → deps.dev. Gradle lockfile = flat | JAR sidecar `.sha512` > `.sha256` > `.sha1` | ✓ / ✓ | Implemented |
-| [npm](#npm) | `package-lock.json` v2/v3, `pnpm-lock.yaml`, `bun.lock`, `node_modules/` | Lockfile (full tree) | Lockfile `integrity` | ✓ / ✓ | Implemented |
+| [npm](#npm) | `package-lock.json` v2/v3, `pnpm-lock.yaml`, `bun.lock`, `yarn.lock` (v1 + Berry), `node_modules/` | Lockfile (full tree) | Lockfile `integrity` (package-lock / pnpm-lock only) | ✓ / ✓ | Implemented |
 | [nuget](#nuget) | `*.csproj` / `*.vbproj` / `*.fsproj` + `packages.lock.json` + `Directory.Packages.props` | Lockfile (full tree) when present; otherwise direct-deps only | — | ✓ / — | Implemented |
 | [pip](#pip) | venv `dist-info/METADATA` + Poetry/Pipfile + `uv.lock` + `requirements.txt` | Lockfile (Poetry / Pipfile / uv), flat (venv) | `--hash=alg:hex` flags | ✓ / ✓ | Implemented |
 | [rpm](#rpm) | `/var/lib/rpm/rpmdb.sqlite` (pure-Rust reader) | DB (`REQUIRES`) | — (rpmdb has none) | — / — | Implemented (BDB format detected, not parsed) |
@@ -416,6 +416,47 @@ emitted as a separate component.
 
 **PURL format:** `pkg:npm/<name>@<version>` — scoped names
 URL-encode the `@` (`@scope/name` → `pkg:npm/%40scope/name@version`).
+
+### Yarn lockfile (milestone 106)
+
+**Module:** `mikebom-cli/src/scan_fs/package_db/npm/yarn_lock.rs`
+
+**Detection:** `yarn.lock` at any project root in the scan tree.
+Yarn-only projects are picked up via the `has_npm_signal` marker.
+
+**Format auto-detection:** both Yarn lockfile formats are supported,
+sniffed from file content:
+
+- **v1 (Yarn Classic)** — text-based, indent-2 / indent-4 structure.
+  Top-level entries are `"<descriptor>":` lines like `"foo@^1.0.0"`
+  (or comma-joined alias lists like
+  `"foo@^1.0.0", "foo@^1.1.0":`). Each body declares
+  `version "..."`, optional `resolved "..."`, optional
+  `integrity ...`, and an optional `dependencies:` sub-block.
+- **Berry (Yarn 2+)** — YAML-shaped, parsed via `serde_yaml`. Has a
+  `__metadata:` block at the top (the format-detection sentinel).
+  Descriptors carry an `npm:` protocol prefix
+  (`"foo@npm:^1.0.0"`); per-entry block uses YAML mappings.
+
+**PURL format:** `pkg:npm/<name>@<version>` — same scheme as
+package-lock / pnpm-lock / bun.lock, including scoped-name
+URL-encoding.
+
+**Dep graph:** each entry's `dependencies:` map populates
+`PackageDbEntry.depends`. The scan orchestrator drops edges whose
+target isn't present in the same scan (same pattern as
+package-lock).
+
+**Hashes:** not currently surfaced into `components[].hashes[]`.
+v1's `integrity ...` line and Berry's `checksum:` field are
+present in the source but not threaded through to `PackageDbEntry.hashes`
+yet — tracked as a follow-up.
+
+**Out of scope (milestone 106):**
+- Yarn 2+ workspaces protocol entries (workspace synthesis
+  mirroring the bun_lock shape).
+- `resolutions:` overrides (rare in practice; future milestone if
+  there's demand).
 
 ---
 

@@ -88,6 +88,11 @@ pub fn read(
             // tier-A authority as package-lock / pnpm-lock. The
             // legacy binary `bun.lockb` format is out of scope.
             project_entries.extend(bun_entries);
+        } else if let Some(yarn_entries) = yarn_lock::read_yarn_lock(&project_root, include_dev) {
+            // Milestone 106 US5 (issue #274): Yarn support. Handles
+            // both v1 (Classic) and Berry (v2+) formats, auto-
+            // detected via the `__metadata:` block sentinel.
+            project_entries.extend(yarn_entries);
         }
 
         // Post-Tier-A author enrichment: lockfiles (v2/v3 and
@@ -463,6 +468,7 @@ fn has_npm_signal(dir: &Path) -> bool {
     dir.join("package-lock.json").is_file()
         || dir.join("pnpm-lock.yaml").is_file()
         || dir.join("bun.lock").is_file()
+        || dir.join("yarn.lock").is_file()
         || dir.join("node_modules").is_dir()
         || dir.join("package.json").is_file()
 }
@@ -556,6 +562,7 @@ mod jsonc;
 mod package_lock;
 mod pnpm_lock;
 mod walk;
+mod yarn_lock;
 
 fn build_npm_purl(name: &str, version: &str) -> Option<Purl> {
     let purl_str = if let Some(rest) = name.strip_prefix('@') {

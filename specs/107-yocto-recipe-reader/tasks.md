@@ -131,26 +131,26 @@ Single-project workspace (the mikebom Rust workspace). All source under `mikebom
 
 ### Fixtures + tests
 
-- [ ] T037 [P] [US4] Create fixture tree `mikebom-cli/tests/fixtures/golden_inputs/yocto_recipe_layer/meta-mikebom-fixture/` with 4 `recipes-*/<name>/<name>_<version>.bb` files (one with `+git<sha>` version suffix, one with no `_<version>` segment to exercise the missing-version annotation, two normal). Add one `${PN}_${PV}.bb` to verify the silent-skip path. Include a `conf/layer.conf` (empty is fine) so the layer dir looks authentic.
-- [ ] T038 [P] [US4] Add contract tests in `mikebom-cli/src/scan_fs/package_db/yocto/recipe.rs::tests`: `extracts_name_and_version_from_filename`, `emits_layer_qualifier_from_meta_ancestor`, `unexpanded_variables_skipped_silently`, `version_only_filename_emits_unknown_version_annotation`, `bbappend_and_bbclass_files_ignored`.
+- [X] T037 [P] [US4] Recipe-layer fixture. ✅ `yocto_recipe_layer/meta-mikebom-fixture/` with 4 `.bb` files: `mikebom-fixture-lib_1.2.3.bb`, `mikebom-fixture-app_2.0+git1234abcd.bb`, `mikebom-fixture-noversion.bb` (no `_<version>`), `${PN}_${PV}.bb` (unexpanded variables — silent-skip path). Plus `conf/layer.conf` for layout authenticity.
+- [X] T038 [P] [US4] Unit tests. ✅ 6 tests in `yocto/recipe.rs::tests`: `extracts_name_and_version_from_filename`, `emits_layer_qualifier_from_meta_ancestor`, `unexpanded_variables_skipped_silently`, `version_only_filename_emits_unknown_version_annotation`, `bbappend_and_bbclass_files_ignored`, `git_version_suffix_preserved_in_version`.
 
 ### Implementation
 
-- [ ] T039 [US4] Create `mikebom-cli/src/scan_fs/package_db/yocto/recipe.rs` per `contracts/bitbake-recipe.md`: implement `pub(super) fn read(rootfs: &Path) -> Vec<PackageDbEntry>` walking the scan tree (max_depth=8 via `walkdir`) for `.bb` files matching the filename regex; skip `.bbappend` and `.bbclass`.
-- [ ] T040 [US4] Implement the filename-extraction regex: `^(?P<name>[a-zA-Z0-9_\-\+\.]+)_(?P<version>[a-zA-Z0-9_\-\+\.\~]+)\.bb$`. Filenames containing `${` (literal unexpanded BitBake variable) match the skip-with-warn path per FR-008.
-- [ ] T041 [US4] Implement layer-root detection: walk UP from the recipe's directory looking for the enclosing `meta-<name>/` directory; the basename becomes the `?layer=<layer>` PURL qualifier. Fall back to "path component above first `recipes-*/` directory" if no `meta-*/` ancestor exists.
-- [ ] T042 [US4] Implement PURL derivation: `pkg:bitbake/<name>@<version>?layer=<layer_name>` via `Purl::new` + `encode_purl_segment`. Layer name passed verbatim into the qualifier.
-- [ ] T043 [US4] Implement `mikebom:version-status: "missing"` annotation for `.bb` files with no `_<version>` segment (rare but legal — e.g. `helloworld.bb`).
-- [ ] T044 [US4] Wire `yocto::recipe::read` into the dispatcher. Order in `read_all`: AFTER yocto-manifest (Phase 4), maintaining the FR-010 precedence order (opkg-installed > yocto-image-manifest > bitbake-recipe).
-- [ ] T045 [US4] Add `SourceMechanism::BitbakeRecipe` variant with `canonical_str` returning `"bitbake-recipe"`. Lowest-precedence among the 107 milestone's three new variants.
+- [X] T039 [US4] `yocto/recipe.rs`. ✅ `pub fn read(rootfs)` walks scan tree (max_depth=8, default-skip-set reused) for `.bb` files; `.bbappend` / `.bbclass` correctly ignored via the `ends_with(".bb")` exact check.
+- [X] T040 [US4] Filename regex. ✅ `^(?P<name>[a-zA-Z0-9_\-\+\.]+)_(?P<version>[a-zA-Z0-9_\-\+\.\~]+)\.bb$`. Pre-regex `filename.contains("${")` check captures FR-008 silent-skip path.
+- [X] T041 [US4] Layer-root detection. ✅ Walks UP from recipe path looking for `meta-<name>/` or bare `meta/` directory. Falls back to "path component above first `recipes-*/`" when no `meta-*/` ancestor.
+- [X] T042 [US4] PURL derivation. ✅ `pkg:bitbake/<name>@<version>?layer=<layer>` via `Purl::new` + `encode_purl_segment` on all three segments. `+` in version (git suffix) correctly encodes to `%2B`.
+- [X] T043 [US4] Version-status annotation. ✅ `.bb` filenames without `_<version>` segment emit with `version="unknown"` + `mikebom:version-status: "missing"` annotation.
+- [X] T044 [US4] Wire into dispatcher. ✅ `out.extend(yocto::recipe::read(rootfs))` inserted in `read_all` after the yocto::manifest call. FR-010 ordering preserved (opkg-installed > yocto-image-manifest > bitbake-recipe).
+- [X] T045 [US4] `SourceMechanism::BitbakeRecipe`. ✅ Already added in PR #294's enum extension. `canonical_str` returns `"bitbake-recipe"`. Tier 2 (lowest, declaration-only).
 
 ### Integration test
 
-- [ ] T046 [P] [US4] Add integration test `mikebom-cli/tests/scan_yocto_recipe.rs`: end-to-end binary scan of `yocto_recipe_layer/` fixture; assert 3 components emerge (4 well-formed recipes minus the 1 that's skipped with no-version annotation = 3 valid; or assert 4 components emerge with one carrying `mikebom:version-status` = "missing" — depends on T043's exact handling); assert `${PN}_${PV}.bb` recipe is silently skipped; assert PURL `?layer=meta-mikebom-fixture` qualifier present on all emitted entries.
+- [X] T046 [P] [US4] `tests/scan_yocto_recipe.rs`. ✅ End-to-end scan of the 4-recipe fixture; asserts exactly 3 `pkg:bitbake/...` components emerge (the `${PN}_${PV}.bb` is silently skipped per FR-008); verifies the no-version recipe carries `mikebom:version-status: "missing"`; verifies all 3 carry the `?layer=meta-mikebom-fixture` qualifier; verifies all 3 carry `mikebom:source-mechanism: "bitbake-recipe"`.
 
 ### Polyglot + PR
 
-- [ ] T047 [US4] Run `./scripts/pre-pr.sh` clean. Open PR titled `feat(yocto): add BitBake recipe walker for layer-tree scans (closes #NEW3)`.
+- [X] T047 [US4] Pre-PR gate. ✅ `./scripts/pre-pr.sh` clean. 6 new unit + 1 new integration test pass; all 1722+ existing tests still pass.
 
 **Checkpoint**: US4 shippable. Layer-tree audit scans emerge with one component per declared recipe.
 

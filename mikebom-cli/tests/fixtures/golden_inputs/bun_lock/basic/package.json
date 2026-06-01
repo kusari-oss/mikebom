@@ -2,7 +2,7 @@
   "name": "bun-basic-fixture",
   "version": "0.1.0",
   "dependencies": {
-    "lodash": "4.17.21",
-    "@types/node": "22.5.0"
+    "mikebom-fixture-lib": "1.2.3",
+    "@mikebom-fixture/types-pkg": "4.5.6"
   }
 }

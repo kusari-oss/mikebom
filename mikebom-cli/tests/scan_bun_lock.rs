@@ -71,13 +71,18 @@ fn bun_lock_basic_fixture_emits_npm_components() {
         .collect();
 
     // Both fixture packages MUST appear, including the scoped name
-    // with URL-encoded `@` (per the PURL spec).
+    // with URL-encoded `@` (per the PURL spec). The names are
+    // deliberately synthetic (`mikebom-fixture-*`) so the fixture
+    // never collides with real-world CVE advisories — Inspector +
+    // dependency policy gates don't whack-a-mole us on package
+    // version churn (the fixture is a parser exercise, not a real
+    // build dep).
     assert!(
-        npm_purls.contains(&"pkg:npm/lodash@4.17.21"),
-        "expected lodash in output; got: {npm_purls:?}",
+        npm_purls.contains(&"pkg:npm/mikebom-fixture-lib@1.2.3"),
+        "expected mikebom-fixture-lib in output; got: {npm_purls:?}",
     );
     assert!(
-        npm_purls.contains(&"pkg:npm/%40types/node@22.5.0"),
-        "expected URL-encoded @types/node in output; got: {npm_purls:?}",
+        npm_purls.contains(&"pkg:npm/%40mikebom-fixture/types-pkg@4.5.6"),
+        "expected URL-encoded @mikebom-fixture/types-pkg in output; got: {npm_purls:?}",
     );
 }

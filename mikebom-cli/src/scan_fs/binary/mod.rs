@@ -18,6 +18,7 @@
 
 pub mod cargo_auditable;
 pub mod elf;
+pub(crate) mod fingerprints;
 pub mod jdk_collapse;
 pub mod linkage;
 pub mod macho;

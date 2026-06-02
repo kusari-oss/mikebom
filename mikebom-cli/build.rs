@@ -1,6 +1,7 @@
 // build.rs combines:
 //   - eBPF bytecode-build coordination (existing)
-//   - Milestone 090 — fixture-repo fetch (new)
+//   - Milestone 090 — fixture-repo fetch (existing)
+//   - Milestone 108 — fingerprint-corpus SHA pin (new)
 //
 // The eBPF side is mostly a no-op: bytecode is compiled via
 // `cargo xtask ebpf` and included via include_bytes_aligned! in
@@ -12,6 +13,13 @@
 // cache path to test code via the `MIKEBOM_FIXTURES_DIR` compile-time
 // env var. Cache-warm builds skip the network entirely. See
 // specs/090-split-test-fixtures-repo/contracts/fixture-path-helper.md.
+//
+// The fingerprint-corpus SHA pin reads `<workspace>/tests/fingerprints.rev`
+// and emits it as the `MIKEBOM_FINGERPRINTS_CORPUS_SHA` compile-time
+// env var consumed by the runtime corpus loader. Unlike fetch_fixtures,
+// this build step does NOT touch the network — the runtime loader
+// handles cache-miss fetch when `--fingerprints-corpus` is set at
+// scan time. See specs/108-fingerprint-corpus/contracts/cache-layout.md.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -22,6 +30,7 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
     fetch_fixtures();
+    emit_fingerprints_corpus_sha();
 }
 
 fn fetch_fixtures() {
@@ -163,4 +172,49 @@ fn resolve_cache_parent() -> PathBuf {
     std::fs::create_dir_all(&fallback)
         .expect("OUT_DIR-based fixture cache fallback must be writable");
     fallback
+}
+
+/// Milestone 108 — read the pinned `kusari-sandbox/mikebom-fingerprints`
+/// SHA from `<workspace>/tests/fingerprints.rev` and emit it as the
+/// `MIKEBOM_FINGERPRINTS_CORPUS_SHA` compile-time env var.
+///
+/// Unlike `fetch_fixtures`, this step does NOT touch the network. The
+/// runtime corpus loader handles cache-miss fetch when an operator
+/// passes `--fingerprints-corpus` at scan time. The build only emits
+/// the pin so `env!("MIKEBOM_FINGERPRINTS_CORPUS_SHA")` resolves to
+/// a known value in production code.
+///
+/// Validation: the file must contain a single 40-char lowercase hex
+/// SHA (with optional trailing newline). Anything else panics the
+/// build — the pin is reproducibility-critical and a malformed pin
+/// would silently produce broken binaries.
+fn emit_fingerprints_corpus_sha() {
+    let manifest_dir = PathBuf::from(
+        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set by cargo"),
+    );
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("CARGO_MANIFEST_DIR must have a parent (the workspace root)")
+        .to_path_buf();
+    let pin_path = workspace_root.join("tests").join("fingerprints.rev");
+
+    println!("cargo:rerun-if-changed={}", pin_path.display());
+
+    let sha_raw = std::fs::read_to_string(&pin_path).unwrap_or_else(|e| {
+        panic!(
+            "\nfailed to read fingerprint-corpus pin at {}: {}\n\nThis commit predates the milestone-108 fingerprint-corpus split,\nOR the pin file is missing. Either:\n  1. Check out a post-108 mikebom revision that has tests/fingerprints.rev, OR\n  2. Manually create the file with a 40-char hex SHA from\n     https://github.com/kusari-sandbox/mikebom-fingerprints/commits/main\n",
+            pin_path.display(),
+            e,
+        )
+    });
+    let sha = sha_raw.trim().to_string();
+    let valid = sha.len() == 40
+        && sha
+            .chars()
+            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c));
+    if !valid {
+        panic!("\ntests/fingerprints.rev MUST be a 40-char lowercase hex SHA; got {sha:?}\n");
+    }
+
+    println!("cargo:rustc-env=MIKEBOM_FINGERPRINTS_CORPUS_SHA={sha}");
 }

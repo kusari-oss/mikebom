@@ -166,21 +166,30 @@ US3 is largely satisfied by Phase 4's annotation emission. This phase adds docum
 
 ### Subcommand machinery
 
-- [ ] T044 [US4] Create `mikebom-cli/src/cli/fingerprints_cmd.rs` per `contracts/cli-surface.md`. Three subcommands: `fetch [--corpus-rev <sha>]`, `cache-clear [--keep-rev <sha>]`, `list`. Each clap-derived; common error handling via `anyhow::Result`.
-- [ ] T045 [US4] Wire `fingerprints` into the top-level subcommand routing in `mikebom-cli/src/cli/mod.rs`. Help text discoverability: `mikebom --help` lists `fingerprints` alongside `sbom`, `trace`, etc.
+- [X] T044 [US4] Create `mikebom-cli/src/cli/fingerprints_cmd.rs` per `contracts/cli-surface.md`. Three subcommands: `fetch [--corpus-rev <sha>]`, `cache-clear [--keep-rev <sha>]`, `list`. Each clap-derived; common error handling via `anyhow::Result`.
+  - Added the file with `FingerprintsCommand`/`FingerprintsSubcommand` clap-derived shapes. Implementation + tests in the same file: 4 unit tests for the SHA validator helper (`parse_sha_or_invalid`: accept lowercase / reject uppercase / reject short / reject non-hex). Per-subcommand doc comments include the FR-008 / FR-009 worked examples per `cli-surface.md` §"Help-text discoverability".
+- [X] T045 [US4] Wire `fingerprints` into the top-level subcommand routing in `mikebom-cli/src/cli/mod.rs`. Help text discoverability: `mikebom --help` lists `fingerprints` alongside `sbom`, `trace`, etc.
+  - Added `pub mod fingerprints_cmd;` to `cli/mod.rs`, added the `Fingerprints(FingerprintsCommand)` variant to the `Commands` enum in `main.rs`, dispatched via `cli::fingerprints_cmd::execute(cmd).await` next to the other top-level subcommands. Verified `mikebom --help` lists `fingerprints` and `mikebom fingerprints --help` enumerates `fetch`/`cache-clear`/`list`.
 
 ### Behavior implementation
 
-- [ ] T046 [US4] Implement `fingerprints fetch` subcommand: validate SHA (or use embedded), check cache for hit (print "cache hit: <sha>"; exit 0), otherwise invoke `fetch::fetch_corpus(...)` from Phase 4. Print "fetched: <sha> → <cache-path>" on success; exit non-zero with categorized error per `contracts/cli-surface.md` exit-code table on failure.
-- [ ] T047 [US4] Implement `fingerprints cache-clear`: validate `--keep-rev <sha>` if provided; iterate `<cache-root>/*`; remove all (or all except kept). Print removed paths on stdout; exit 0.
-- [ ] T048 [US4] Implement `fingerprints list`: enumerate `<cache-root>/*` directories; print `<full-sha>  <records-count>  <mtime>` per cached SHA.
+- [X] T046 [US4] Implement `fingerprints fetch` subcommand: validate SHA (or use embedded), check cache for hit (print "cache hit: <sha>"; exit 0), otherwise invoke `fetch::fetch_corpus(...)` from Phase 4. Print "fetched: <sha> → <cache-path>" on success; exit non-zero with categorized error per `contracts/cli-surface.md` exit-code table on failure.
+  - Categorized exit codes per the contract table: 0 success, 1 invalid arg, 2 network, 3 HTTP 404, 4 disk-write, 10 other. The `FetchError` enum from Phase 4 maps cleanly to the codes via the categorization `match` in `run_fetch`. Cache-hit short-circuit verified by integration test `fetch_short_circuits_on_cache_hit` (offline).
+- [X] T047 [US4] Implement `fingerprints cache-clear`: validate `--keep-rev <sha>` if provided; iterate `<cache-root>/*`; remove all (or all except kept). Print removed paths on stdout; exit 0.
+  - Reuses Phase 2C's `cache::cache_clear(KeepRev)` helper. Malformed `--keep-rev` exits 1 with `error: invalid SHA \`...\`` on stderr (exercised by `cache_clear_rejects_malformed_keep_rev_with_exit_1` integration test).
+- [X] T048 [US4] Implement `fingerprints list`: enumerate `<cache-root>/*` directories; print `<full-sha>  <records-count>  <mtime>` per cached SHA.
+  - Best-effort `index.json` parse for the records column (no schema re-validation per cache directory — would be wasteful for an introspection command). Skips non-SHA-shaped subdirectories (e.g. lingering `.tmp-<uuid>/` from a crashed fetcher). mtime formatted via `chrono` as RFC 3339. Output sorted alphabetically by SHA for byte-stable scripting.
 
 ### Tests
 
-- [ ] T049 [P] [US4] Add `mikebom-cli/tests/fingerprints_fetch_cmd.rs` — integration test for `mikebom fingerprints fetch` (network-gated via the same env var as Phase 4).
-- [ ] T050 [P] [US4] Add `mikebom-cli/tests/fingerprints_cache_clear_cmd.rs` — integration test for `cache-clear` (uses tempdir + `MIKEBOM_FINGERPRINTS_CACHE_DIR` env override; fully offline).
-- [ ] T051 [P] [US4] Add `mikebom-cli/tests/fingerprints_list_cmd.rs` — integration test for `list` (offline; uses tempdir).
-- [ ] T052 [US4] Add an end-to-end air-gapped roundtrip test `mikebom-cli/tests/airgapped_fingerprint_roundtrip.rs`: stage 1 runs `mikebom fingerprints fetch --corpus-rev <hardcoded-test-sha>` in tempdir A; stage 2 tars the tempdir; stage 3 untars to tempdir B; stage 4 runs `mikebom sbom scan --offline --fingerprints-corpus --fingerprints-rev <same-sha>` against a fixture binary in tempdir B; stage 5 asserts the SBOM matches stage 1's expected output. Gated behind `MIKEBOM_FINGERPRINTS_NETWORK_TESTS=1`.
+- [X] T049 [P] [US4] Add `mikebom-cli/tests/fingerprints_fetch_cmd.rs` — integration test for `mikebom fingerprints fetch` (network-gated via the same env var as Phase 4).
+  - 3 tests: `fetch_short_circuits_on_cache_hit` (offline; seeds a synthetic cache entry at the build-time-embedded SHA, asserts `cache hit:` short-circuit + exit 0), `fetch_rejects_malformed_corpus_rev_with_exit_1` (offline; exit code + `invalid SHA` stderr), `fetch_populates_cache_and_prints_fetched_message` (network-gated; verifies the populated-cache + `fetched:` message invariants).
+- [X] T050 [P] [US4] Add `mikebom-cli/tests/fingerprints_cache_clear_cmd.rs` — integration test for `cache-clear` (uses tempdir + `MIKEBOM_FINGERPRINTS_CACHE_DIR` env override; fully offline).
+  - 4 tests: clear-all (default), `--keep-rev` preserves the named SHA, idempotent on empty cache, malformed `--keep-rev` exits 1.
+- [X] T051 [P] [US4] Add `mikebom-cli/tests/fingerprints_list_cmd.rs` — integration test for `list` (offline; uses tempdir).
+  - 3 tests: empty cache prints nothing + exits 0, two cached SHAs print alphabetically sorted with correct record counts, non-SHA directories (e.g. `.tmp-<uuid>/` staging) are skipped.
+- [X] T052 [US4] Add an end-to-end air-gapped roundtrip test `mikebom-cli/tests/airgapped_fingerprint_roundtrip.rs`: stage 1 runs `mikebom fingerprints fetch --corpus-rev <hardcoded-test-sha>` in tempdir A; stage 2 tars the tempdir; stage 3 untars to tempdir B; stage 4 runs `mikebom sbom scan --offline --fingerprints-corpus --fingerprints-rev <same-sha>` against a fixture binary in tempdir B; stage 5 asserts the SBOM matches stage 1's expected output. Gated behind `MIKEBOM_FINGERPRINTS_NETWORK_TESTS=1`.
+  - **Deviation**: spec called for `--corpus-rev <hardcoded-test-sha>` (stage 1) + `--fingerprints-rev <same-sha>` (stage 4), but `--fingerprints-rev` is a Phase 7 / US5 feature (T053). Implemented with the build-time-embedded SHA throughout — no explicit `--corpus-rev` / `--fingerprints-rev` flags needed. Stage 1 fetches the embedded SHA; stage 4 reads from the same SHA's populated cache under `--offline`. The roundtrip semantics (cache is portable; `--offline` + populated cache succeeds without network) are fully covered by the single-pin scenario. Phase 7 can add a sibling test that exercises the runtime-override variant after `--fingerprints-rev` lands.
 
 **Checkpoint**: US4 shippable. PR title (proposed): `feat(fingerprints): add fetch/cache-clear/list subcommands + air-gapped roundtrip`.
 

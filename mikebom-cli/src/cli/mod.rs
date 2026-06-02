@@ -1,4 +1,5 @@
 pub mod attestation_cmd;
+pub mod fingerprints_cmd;
 pub mod sbom_cmd;
 pub mod trace_cmd;
 

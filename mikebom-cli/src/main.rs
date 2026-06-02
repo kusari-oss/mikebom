@@ -178,6 +178,13 @@ enum Commands {
     Attestation(cli::attestation_cmd::AttestationCommand),
     /// In-toto policy layout management (feature 006 US4)
     Policy(cli::policy::PolicyCommand),
+    /// Manage the external symbol-fingerprint corpus cache.
+    /// Air-gapped operators use `fingerprints fetch` to pre-populate
+    /// the cache on an internet-connected machine, then ship the
+    /// cache directory to the air-gapped destination. See
+    /// docs/reference/identifiers.md §11 for the consumer-side
+    /// verification recipe. (Milestone 108 US4.)
+    Fingerprints(cli::fingerprints_cmd::FingerprintsCommand),
 }
 
 #[tokio::main]
@@ -268,5 +275,6 @@ async fn main() -> anyhow::Result<std::process::ExitCode> {
             cli::policy::execute(cmd).await?;
             Ok(std::process::ExitCode::from(0))
         }
+        Commands::Fingerprints(cmd) => cli::fingerprints_cmd::execute(cmd).await,
     }
 }

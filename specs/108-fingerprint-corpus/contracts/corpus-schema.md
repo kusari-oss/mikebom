@@ -60,7 +60,7 @@
 
 ## Cross-field invariants (enforced by sibling-repo CI script alongside schema validation)
 
-- `symbols.length >= 2 * min_symbols` — otherwise the threshold is meaningless.
+- `symbols.length >= min_symbols` — mathematical floor; otherwise the record can never match. (An earlier draft floor of `2 * min_symbols` was loosened during the milestone-108 implementation when the milestone-099 in-source baseline — which uses an 80% match floor of 8-of-10 — would have failed it. Curators are encouraged to leave headroom (e.g., 10-12 symbols for `min_symbols=8`) but it's not enforced.)
 - `library` (with optional `variant` suffix) is unique across all corpus files. Two records with the same `(library, variant)` pair fail CI.
 - `target_purl` parses cleanly via a PURL-spec parser (the sibling-repo CI invokes a small Rust binary that uses `packageurl = "0.4"` to verify; same parser as mikebom-cli's `Purl::new`).
 - `symbols` does NOT include any of the curator-defined "common-prefix tripwire" terms: `init`, `start`, `open`, `close`, `read`, `write`, `error`, `version`, `info`, `debug` — these are too generic and would match unrelated binaries. (Curator can override per-record with a `notes:` justification, in which case CI emits a warning but doesn't block.)

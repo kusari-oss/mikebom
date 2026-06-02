@@ -241,9 +241,12 @@ pub(super) fn scan_binary(path: &Path, bytes: &[u8]) -> Option<BinaryScan> {
     //   exactly one leading underscore so `_crc32` matches the
     //   `crc32` entry in the fingerprint corpus.
     //
-    // - PE: deferred. PE's export table is a separate
-    //   `IMAGE_EXPORT_DIRECTORY` shape, not the standard symbol
-    //   table — needs distinct extraction. Tracked separately.
+    // - PE: read `IMAGE_EXPORT_DIRECTORY` via the milestone-109
+    //   `pe::extract_pe_export_names` helper. PE exports live in
+    //   the data directory, not the COFF symbol table; needs a
+    //   distinct dispatch from ELF/Mach-O. Catches DLLs that
+    //   re-export wrapped library APIs; stripped EXEs with no
+    //   export table return empty.
     let symbol_names = if class == "elf" {
         use object::Object;
         use object::ObjectSymbol;
@@ -265,6 +268,8 @@ pub(super) fn scan_binary(path: &Path, bytes: &[u8]) -> Option<BinaryScan> {
             .filter(|s| !s.is_empty())
             .map(|s| strip_macho_underscore_prefix(&s).to_string())
             .collect()
+    } else if class == "pe" {
+        super::pe::extract_pe_export_names(bytes)
     } else {
         Vec::new()
     };

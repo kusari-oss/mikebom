@@ -154,6 +154,64 @@ pub fn parse_linker_version<'a, Pe: ImageNtHeaders>(
     format!("{}.{}", opt.major_linker_version(), opt.minor_linker_version())
 }
 
+/// Milestone 109 — PE export-table extraction for the symbol-
+/// fingerprint matcher. PE binaries don't have ELF's `.dynsym` or
+/// Mach-O's `LC_SYMTAB` externals; the exported names live in
+/// `IMAGE_EXPORT_DIRECTORY` (a.k.a. the export data directory).
+///
+/// What this catches: DLLs that re-export a statically-embedded
+/// library's API (the canonical fingerprint-matcher target on
+/// Windows — wrapper DLLs around third-party C libraries). EXEs
+/// built with `/EXPORT:` or `__declspec(dllexport)` also surface
+/// their exports here.
+///
+/// What this MISSES: a typical stripped Windows EXE that uses
+/// zlib internally without re-exporting its API has an EMPTY
+/// export table. The fingerprint matcher has nothing to match
+/// against in that case. Same shape as the ELF/Mach-O scanners —
+/// they identify libraries from EXPORTED symbols, not internal
+/// references. Operators wanting to identify statically-embedded
+/// libraries in stripped Windows EXEs should pair the fingerprint
+/// matcher with the milestone-026 embedded-version-string scanner
+/// (which works on any binary format regardless of export table).
+///
+/// Returns symbol names as `String` with empty-name + missing-name
+/// entries dropped. PE export names are conventionally ASCII /
+/// UTF-8; `from_utf8_lossy` keeps malformed bytes from blocking the
+/// scan.
+///
+/// Cross-architecture: works for both PE32 (x86) and PE32+ (x64 +
+/// ARM64) via the same magic-byte dispatch as `parse_pe_identity`.
+pub fn extract_pe_export_names(bytes: &[u8]) -> Vec<String> {
+    match detect_pe_magic(bytes) {
+        Some(PE32_MAGIC) => match PeFile32::parse(bytes) {
+            Ok(file) => collect_export_names(&file),
+            Err(_) => Vec::new(),
+        },
+        Some(PE32_PLUS_MAGIC) => match PeFile64::parse(bytes) {
+            Ok(file) => collect_export_names(&file),
+            Err(_) => Vec::new(),
+        },
+        _ => Vec::new(),
+    }
+}
+
+fn collect_export_names<'a, Pe: ImageNtHeaders>(
+    file: &PeFile<'a, Pe, &'a [u8]>,
+) -> Vec<String> {
+    let Ok(Some(table)) = file.export_table() else {
+        return Vec::new();
+    };
+    let Ok(exports) = table.exports() else {
+        return Vec::new();
+    };
+    exports
+        .into_iter()
+        .filter_map(|e| e.name.map(|n| String::from_utf8_lossy(n).into_owned()))
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
 fn machine_to_str(value: u16) -> &'static str {
     match value {
         pe::IMAGE_FILE_MACHINE_I386 => "i386",
@@ -515,5 +573,60 @@ mod tests {
             Some("0.0"),
             "FR-003: always-emit, '0.0' on zeroed optional-header bytes"
         );
+    }
+
+    // ====================================================================
+    // Milestone 109 — PE export-table extraction
+    // ====================================================================
+
+    /// Garbage / non-PE bytes return empty. Defensive guard: the
+    /// scan-binary dispatcher only calls into `extract_pe_export_names`
+    /// for binaries already classified as `class == "pe"`, but the
+    /// helper should never panic on unrelated input.
+    #[test]
+    fn extract_pe_export_names_returns_empty_for_non_pe_bytes() {
+        assert!(extract_pe_export_names(b"this is not a PE binary at all").is_empty());
+        assert!(extract_pe_export_names(b"").is_empty());
+        assert!(extract_pe_export_names(&[0u8; 4096]).is_empty());
+    }
+
+    /// A minimal PE with no IMAGE_EXPORT_DIRECTORY at all returns
+    /// empty. This is the typical stripped-EXE case — common on
+    /// Windows for binaries that statically embed a library without
+    /// re-exporting its API. Documents the false-negative-by-design
+    /// behavior of the fingerprint matcher on this class of binary.
+    #[test]
+    fn extract_pe_export_names_returns_empty_for_pe_without_export_table() {
+        let img = build_minimal_pe(
+            true,
+            pe::IMAGE_FILE_MACHINE_AMD64,
+            pe::IMAGE_SUBSYSTEM_WINDOWS_CUI,
+            None,
+        );
+        // Verify the fixture is a valid parseable PE first (sanity:
+        // the helper's empty return must come from the missing
+        // export table, not from a malformed image).
+        let (_, machine, _, linker) = parse_pe_identity(&img);
+        assert_eq!(machine.as_deref(), Some("amd64"));
+        assert_eq!(linker.as_deref(), Some("0.0"));
+        // Now the actual assertion.
+        assert!(
+            extract_pe_export_names(&img).is_empty(),
+            "PE with no IMAGE_EXPORT_DIRECTORY must yield empty export names"
+        );
+    }
+
+    /// Same as the 64-bit case but for PE32 (x86). The dispatch
+    /// branch is separate (`PeFile32::parse` vs `PeFile64::parse`)
+    /// so the test covers both code paths.
+    #[test]
+    fn extract_pe_export_names_returns_empty_for_pe32_without_export_table() {
+        let img = build_minimal_pe(
+            false,
+            pe::IMAGE_FILE_MACHINE_I386,
+            pe::IMAGE_SUBSYSTEM_WINDOWS_CUI,
+            None,
+        );
+        assert!(extract_pe_export_names(&img).is_empty());
     }
 }

@@ -88,9 +88,12 @@ Single-project workspace (the mikebom Rust workspace). Mikebom-cli code under `m
 
 ### Polish for sibling-repo
 
-- [ ] T030 [US1] Validate the bootstrap PR's CI works end-to-end by opening a deliberate-failure test PR (e.g., `corpus/test-record.json` missing the `min_symbols` field) and confirming the CI blocks the merge. Delete the test PR after verification.
-- [ ] T031 [US1] Document the contribution flow in `kusari-sandbox/mikebom-fingerprints/CONTRIBUTING.md` with a worked example: "Adding libxml2 — symbols selection, min_symbols rationale, PR template". Reviewer guidelines spelled out.
-- [ ] T032 [US1] Add a `validate-locally` script (`scripts/validate.sh`) that runs the same checks the CI does, so contributors can pre-flight their PRs without pushing.
+- [X] T030 [US1] Validate the bootstrap PR's CI works end-to-end by opening a deliberate-failure test PR (e.g., `corpus/test-record.json` missing the `min_symbols` field) and confirming the CI blocks the merge. Delete the test PR after verification.
+  - **Verified**: opened `kusari-sandbox/mikebom-fingerprints#2` (`chore/ci-deliberate-failure-test-T030`) with `corpus/mikebom-ci-test.json` deliberately omitting `min_symbols`. The `schema + invariants` check failed in 10s on `missingProperty: 'min_symbols'` ([log](https://github.com/kusari-sandbox/mikebom-fingerprints/actions/runs/26831486186/job/79113732411)). PR closed (not merged); branch deleted both locally and on origin. Branch protection (1 approving review + green `schema + invariants` required + strict) would refuse a merge attempt independently.
+- [X] T031 [US1] Document the contribution flow in `kusari-sandbox/mikebom-fingerprints/CONTRIBUTING.md` with a worked example: "Adding libxml2 — symbols selection, min_symbols rationale, PR template". Reviewer guidelines spelled out.
+  - **Already completed** in the original sibling-repo bootstrap PR (`kusari-sandbox/mikebom-fingerprints#1`). `CONTRIBUTING.md` (157 lines) includes the libxml2 worked example, the `min_symbols` rule-of-thumb table, symbol-selection do/don'ts, the PR title format (`add fingerprint: <library>`), the PR body template, and reviewer guidelines. No additional work needed.
+- [X] T032 [US1] Add a `validate-locally` script (`scripts/validate.sh`) that runs the same checks the CI does, so contributors can pre-flight their PRs without pushing.
+  - **Already completed** in the original sibling-repo bootstrap PR (`kusari-sandbox/mikebom-fingerprints#1`). `scripts/validate.sh` runs ajv-cli `--strict=true --spec=draft2020` per-library + against the index, then invokes `scripts/validate-invariants.sh` — bit-for-bit the same as the CI workflow. Pre-flight-verified against the T030 deliberate-failure fixture: exits 1 with the same ajv error CI emits.
 
 **Checkpoint**: US1 shippable. The contribution flow is documented + the CI gate proven by both successful + deliberate-fail PRs.
 

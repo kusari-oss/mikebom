@@ -185,11 +185,53 @@ const FINGERPRINTS: &[SymbolFingerprint] = &[
     },
 ];
 
+/// Milestone 108 — expose the bundled `FINGERPRINTS` const as a
+/// `Vec<FingerprintRecord>` for the new `fingerprints::load_bundled`
+/// path. `FINGERPRINTS` uses `&'static str` for compile-time
+/// efficiency; the bundled-records view allocates owned Strings once
+/// per process (memoized via `OnceLock` in
+/// `super::fingerprints::load_bundled`).
+///
+/// The bundled records are SEMANTICALLY IDENTICAL to what the seeded
+/// `kusari-sandbox/mikebom-fingerprints` repo ships on day 1 — same
+/// 7 libraries, same symbol lists, same `min_symbols=8` threshold.
+/// Operators who don't opt into the external corpus see zero
+/// behavioral change (FR-001 / SC-003).
+///
+/// **DO NOT ADD NEW LIBRARIES HERE.** Post-milestone-108, the
+/// source-of-truth corpus lives at `kusari-sandbox/mikebom-fingerprints`.
+/// This const is the bundled fallback ONLY. (Const-growth guard
+/// task T060a — milestone 108 polish PR — adds a unit test asserting
+/// `FINGERPRINTS.len() == 7`.)
+#[allow(dead_code)]
+pub(crate) fn bundled_records() -> Vec<super::fingerprints::FingerprintRecord> {
+    FINGERPRINTS
+        .iter()
+        .map(|fp| super::fingerprints::FingerprintRecord {
+            library: fp.library.to_string(),
+            target_purl: format!("pkg:generic/{}", fp.library),
+            symbols: fp.symbols.iter().map(|s| s.to_string()).collect(),
+            min_symbols: fp.required as u32,
+            version_hint: None,
+            variant: None,
+            notes: None,
+        })
+        .collect()
+}
+
 /// Match the binary's dynamic-symbol set against the v1 fingerprint
 /// table. Returns one entry per matched library.
 ///
 /// `symbol_names` is a slice of exported-symbol names (the values
 /// the caller pulled from ELF `.dynsym`). Empty slice → empty result.
+///
+/// Currently uses the bundled `FINGERPRINTS` const exclusively. Phase
+/// 4 of milestone 108 will add a `scan_with_corpus` variant that
+/// consumes an external corpus from
+/// `super::fingerprints::load_corpus(...)`; the bundled-only `scan()`
+/// will become a thin wrapper at that point. Until then, both paths
+/// return identical matches because the bundled corpus and the
+/// seeded sibling-repo content are content-identical.
 pub fn scan(symbol_names: &[String]) -> Vec<SymbolFingerprintMatch> {
     if symbol_names.is_empty() {
         return Vec::new();

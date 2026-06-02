@@ -7,6 +7,45 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+## [0.1.0-alpha.43] — 2026-06-01
+
+Yocto / OpenEmbedded coverage (milestone 107) — the explicit follow-on to milestone 105's US7 split-off, and the largest remaining C/C++ source coverage gap. Three new filesystem readers landed across five PRs, plus a foundational refactor that opkg shares with dpkg. Filesystem-only, zero new Cargo dependencies, zero new network calls (FR-011 build-time audited).
+
+### Foundation refactor: control_file stanza parser (#293)
+
+opkg's `/var/lib/opkg/status` uses byte-identical RFC-822 control-file syntax to dpkg's status file. Rather than duplicate the ~70-LOC stanza parser, #293 extracts it into a new shared `mikebom-cli/src/scan_fs/package_db/control_file.rs` helper that both `dpkg.rs` and the new `opkg.rs` consume. **Net behavior-neutral for dpkg**: the 33 byte-identity goldens (11 CDX + 11 SPDX 2.3 + 11 SPDX 3) pass byte-identically post-refactor. First-occurrence-wins on duplicate field names, multi-line `Description:` continuation, case-insensitive field-name lookup — all the prior dpkg parser's behaviors preserved verbatim.
+
+### opkg installed-DB reader + sysroot detection (#294, US1+US3+US5)
+
+New reader at `mikebom-cli/src/scan_fs/package_db/opkg.rs`. Yocto-built device rootfs scans and OpenSTLinux SDK sysroot scans now emit one `pkg:opkg/<name>@<version>?arch=<arch>` component per stanza, with `mikebom:source-mechanism: "opkg-installed"` annotation feeding the milestone-105 dedup pipeline. Per-package `/usr/lib/opkg/info/<pkg>.list` files are read for binary-walker claim collection (prevents duplicate `pkg:generic/<basename>` emissions for files already owned by an opkg package).
+
+New `yocto/context.rs` implements the FR-005a two-signal sysroot heuristic: primary = `environment-setup-*` script anywhere from the scan target up to 2 ancestors above (Yocto SDK installer always writes one); secondary = `/usr/include/` present + `/etc/init.d/` absent. Sysroot context applies `LifecycleScope::Build` to every emitted entry → CDX `scope: "excluded"`, SPDX `BUILD_DEPENDENCY_OF`. Ambiguity (primary fires AND `/etc/init.d/` actively present) records a `mikebom:scan-ambiguity` SBOM-metadata diagnostic.
+
+Per-stanza FR-006 override: `nativesdk-*` prefixed packages OR packages whose `Architecture:` field matches a host-arch literal (`x86_64`, `i686`, `aarch64`, `arm64`) always carry build-scope regardless of context.
+
+### Yocto image-manifest reader (#295, US2)
+
+New reader at `mikebom-cli/src/scan_fs/package_db/yocto/manifest.rs`. Walks `build/tmp/deploy/images/<machine>/*.manifest` and emits one `pkg:opkg/<name>@<version>?arch=<arch>` component per `<name> <arch> <version>` line — same PURL ecosystem as the installed-DB reader, so cross-source emissions of the same coord collapse via the milestone-105 dedup pipeline. FR-010 precedence: `OpkgInstalled` > `YoctoImageManifest`, so when both fire on the same scan the installed-DB wins and the manifest's source-mechanism appears in `mikebom:also-detected-via`.
+
+### BitBake recipe walker (#296, US4)
+
+New reader at `mikebom-cli/src/scan_fs/package_db/yocto/recipe.rs`. Walks the scan tree (max_depth=8) for `.bb` recipe files in `meta-<vendor>/recipes-*/<name>/<name>_<version>.bb` and emits one component per recipe. **Filename-only** — recipe body is NOT parsed (FR-007 explicit scope boundary). PURL: `pkg:bitbake/<name>@<version>?layer=<layer-name>` — distinct ecosystem from `pkg:opkg/` because recipes are layer declarations, not installed packages.
+
+Per FR-008: filenames containing unexpanded `${...}` (typically shared-base recipes like `${PN}_${PV}.bb`) are silently skipped with `tracing::warn!` — no placeholder component, no `unresolved` sentinel. Filenames with no `_<version>` segment emit with `version: "unknown"` + `mikebom:version-status: "missing"` annotation.
+
+### Polish (#297)
+
+- `docs/ecosystems.md` gains a new `## yocto` H2 section covering all three readers + a `[yocto](#yocto)` matrix row.
+- `tests/offline_mode_audit_ecosystem_107.rs` (FR-011) grep-audits the 6 new reader source files against tripwire substrings (`reqwest::`, `tokio::net::`, `hyper::`, `Command::new("curl"|"wget"|"http"`, `TcpStream`/`TcpListener`, `std::net::TcpStream/Listener`). Asserts FR-011 offline-only contract independently of the readers' own behavior.
+- `tests/polyglot_robustness_ecosystem_107.rs` (SC-006) builds a single-rootfs fixture with well-formed AND malformed inputs from all three readers in close proximity (opkg DB with a garbage block between two well-formed stanzas; two `.manifest` files in adjacent machine dirs — one well-formed, one wrong-token-count; one well-formed `.bb` + one `${PN}_${PV}.bb` for the silent-skip path). Asserts the scan exits 0 and each well-formed input still surfaces despite its malformed sibling.
+- `tests/cross_reader_dedup_ecosystem_107.rs` (SC-007) puts the same canonical PURL into BOTH `/var/lib/opkg/status` and a `<image>.manifest`. Asserts the emitted SBOM's surviving component carries `mikebom:source-mechanism: "opkg-installed"` — proving the FR-010 precedence ladder + the `SourceMechanism` enum declaration order are wired correctly.
+
+### Validation across the milestone
+
+- Workspace-wide unit + integration tests: 1730+ tests pass on `./scripts/pre-pr.sh`.
+- All fixture package names use synthetic `mikebom-fixture-*` prefixes (lesson from milestone 106 — no CVE-advisory collisions).
+- No new Cargo dependencies — uses existing `regex` (workspace) for the `.bb` filename parser; everything else is std.
+
 ## [0.1.0-alpha.42] — 2026-05-31
 
 Ecosystem coverage expansion (milestone 106). Five new lockfile readers landed across six PRs, covering every modern JS / Python / Java / .NET package manager mikebom didn't previously see on source-tree scans. Filesystem-only, zero new Cargo dependencies, zero new network calls (FR-012 build-time audited).

@@ -74,8 +74,9 @@ pub(crate) struct FingerprintCorpus {
 /// Options accepted by `load_corpus`. `external_enabled` controls the
 /// opt-in (FR-001 / SC-003: when false, bundled fallback only — no
 /// cache access, no annotation stamping). `offline` short-circuits the
-/// network fetch on a cache miss; Phase 7 (US5) will extend this with
-/// a `sha_override` for hermetic-build pinning.
+/// network fetch on a cache miss. `sha_override` (milestone 108 US5)
+/// lets operators pin a specific corpus SHA at runtime — the cache
+/// lookup, fetch URL, AND SBOM annotation all reflect the override.
 #[derive(Clone, Debug, Default)]
 #[allow(dead_code)]
 pub(crate) struct LoadOptions {
@@ -88,19 +89,42 @@ pub(crate) struct LoadOptions {
     /// network fetch entirely and falls back to bundled defaults with
     /// a single `tracing::warn!`.
     pub offline: bool,
+    /// Runtime-override SHA per milestone-108 US5 (`--fingerprints-rev`
+    /// or `MIKEBOM_FINGERPRINTS_REV=<SHA>`). When `Some(sha)`, mikebom
+    /// uses this SHA instead of the build-time-embedded one for both
+    /// cache lookup and any cache-miss fetch. The SBOM annotation
+    /// reflects the override.
+    pub sha_override: Option<CorpusSha>,
 }
 
 impl LoadOptions {
     /// Build the options from the process env. Drives the milestone-108
     /// env-var bridge that `scan_cmd::execute` populates from the CLI
     /// flag (same pattern as `MIKEBOM_INCLUDE_VENDORED`) — keeps the
-    /// caller from threading two more boolean params through
-    /// `scan_path`'s 75-callsite chain.
+    /// caller from threading params through `scan_path`'s 75-callsite
+    /// chain. Malformed `MIKEBOM_FINGERPRINTS_REV` values are caught
+    /// at clap parse time; reaching `from_env()` with a bad value
+    /// implies an external caller (e.g., a test or a downstream
+    /// embedder) set the env directly — we emit a warn and discard
+    /// the override rather than panicking mid-scan.
     #[allow(dead_code)]
     pub fn from_env() -> Self {
+        let sha_override =
+            std::env::var("MIKEBOM_FINGERPRINTS_REV").ok().and_then(|s| {
+                CorpusSha::from_hex(&s)
+                    .map_err(|e| {
+                        tracing::warn!(
+                            value = %s,
+                            error = %e,
+                            "MIKEBOM_FINGERPRINTS_REV is malformed; ignoring (using build-time-embedded SHA instead)",
+                        );
+                    })
+                    .ok()
+            });
         Self {
             external_enabled: env_flag("MIKEBOM_FINGERPRINTS_CORPUS"),
             offline: env_flag("MIKEBOM_OFFLINE"),
+            sha_override,
         }
     }
 }
@@ -147,7 +171,13 @@ pub(crate) fn load_corpus(opts: LoadOptions) -> FingerprintCorpus {
     if !opts.external_enabled {
         return load_bundled().clone();
     }
-    let sha = CorpusSha::build_time_embedded();
+    // Milestone 108 US5: runtime override (when present) wins over
+    // the build-time-embedded SHA. The override flows through to
+    // BOTH the cache key AND the fetch URL, so the SBOM annotation
+    // and any disk artifacts reflect the operator's pin.
+    let sha = opts
+        .sha_override
+        .unwrap_or_else(CorpusSha::build_time_embedded);
     resolve_external_or_fallback(&sha, opts.offline)
 }
 
@@ -228,6 +258,7 @@ mod tests {
         let corpus = load_corpus(LoadOptions {
             external_enabled: false,
             offline: false,
+            sha_override: None,
         });
         assert!(matches!(corpus.source, CorpusSource::Bundled));
         assert_eq!(corpus.source.annotation_value(), "bundled");
@@ -246,8 +277,53 @@ mod tests {
         let corpus = load_corpus(LoadOptions {
             external_enabled: true,
             offline: true,
+            sha_override: None,
         });
         assert!(matches!(corpus.source, CorpusSource::Bundled));
+        unsafe {
+            std::env::remove_var("MIKEBOM_FINGERPRINTS_CACHE_DIR");
+        }
+    }
+
+    #[test]
+    fn load_corpus_honors_sha_override_for_cache_lookup() {
+        // Milestone 108 US5 — verify the override SHA is what drives
+        // the cache-key lookup AND the annotation, not the build-time-
+        // embedded SHA.
+        let _g = test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let path_str = tmp.path().to_string_lossy().into_owned();
+        unsafe {
+            std::env::set_var("MIKEBOM_FINGERPRINTS_CACHE_DIR", &path_str);
+        }
+        let override_sha =
+            CorpusSha::from_hex("0123456789abcdef0123456789abcdef01234567").unwrap();
+        // Pre-populate the cache at the OVERRIDE SHA (not the embedded
+        // one). The embedded SHA's cache directory does not exist.
+        let corpus_dir = tmp.path().join(override_sha.to_full_hex()).join("corpus");
+        std::fs::create_dir_all(&corpus_dir).unwrap();
+        std::fs::write(
+            corpus_dir.join("index.json"),
+            r#"{"version":1,"entries":[{"library":"libfoo","path":"libfoo.json"}]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            corpus_dir.join("libfoo.json"),
+            r#"{"library":"libfoo","target_purl":"pkg:generic/libfoo","symbols":["a","b","c","d","e","f","g","h"],"min_symbols":5}"#,
+        )
+        .unwrap();
+        let corpus = load_corpus(LoadOptions {
+            external_enabled: true,
+            offline: true, // No network — proves the cache-lookup path used the override.
+            sha_override: Some(override_sha),
+        });
+        // The annotation reflects the OVERRIDE — not the embedded SHA.
+        assert!(matches!(corpus.source, CorpusSource::Cached { .. }));
+        assert_eq!(corpus.source.annotation_value(), override_sha.to_short_hex());
+        // And the records come from the override SHA's directory, not
+        // the bundled fallback.
+        assert_eq!(corpus.records.len(), 1);
+        assert_eq!(corpus.records[0].library, "libfoo");
         unsafe {
             std::env::remove_var("MIKEBOM_FINGERPRINTS_CACHE_DIR");
         }
@@ -279,6 +355,7 @@ mod tests {
         let corpus = load_corpus(LoadOptions {
             external_enabled: true,
             offline: true, // Doesn't matter — cache hit short-circuits.
+            sha_override: None,
         });
         assert!(matches!(corpus.source, CorpusSource::Cached { .. }));
         assert_eq!(corpus.records.len(), 1);

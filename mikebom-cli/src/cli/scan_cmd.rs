@@ -607,6 +607,46 @@ pub struct ScanArgs {
     /// Also enabled via `MIKEBOM_FINGERPRINTS_CORPUS=1`.
     #[arg(long, env = "MIKEBOM_FINGERPRINTS_CORPUS")]
     pub fingerprints_corpus: bool,
+
+    /// Milestone 108 (US5) — override the build-time-embedded corpus
+    /// SHA with a runtime-specified one. Format: 40-char lowercase hex.
+    /// Requires `--fingerprints-corpus` (or
+    /// `MIKEBOM_FINGERPRINTS_CORPUS=1`); when the override is supplied
+    /// without the opt-in, mikebom emits a warning and ignores the
+    /// override (the bundled fallback path is used). Use this to test
+    /// newer corpora before they're embedded in a mikebom release, or
+    /// to pin a specific corpus version for reproducibility across
+    /// machines whose embedded SHAs differ.
+    ///
+    /// Also settable via `MIKEBOM_FINGERPRINTS_REV=<SHA>`.
+    #[arg(
+        long = "fingerprints-rev",
+        env = "MIKEBOM_FINGERPRINTS_REV",
+        value_name = "SHA",
+        value_parser = parse_fingerprints_rev_flag,
+    )]
+    pub fingerprints_rev: Option<String>,
+}
+
+/// Clap value parser for `--fingerprints-rev`. Validates the value is
+/// 40-char lowercase hex; returns the string verbatim on success so
+/// downstream `LoadOptions` plumbing can parse it via
+/// `CorpusSha::from_hex` without re-validating.
+pub(crate) fn parse_fingerprints_rev_flag(value: &str) -> Result<String, String> {
+    if value.len() != 40 {
+        return Err(format!(
+            "--fingerprints-rev must be 40-char lowercase hex; got {} chars",
+            value.len()
+        ));
+    }
+    if !value.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()) {
+        return Err(
+            "--fingerprints-rev must be 40-char lowercase hex; \
+             rejected uppercase / non-hex characters"
+                .to_string(),
+        );
+    }
+    Ok(value.to_string())
 }
 
 /// Clap value_parser for `--spdx2-relationship-compat`. Accepts
@@ -1384,6 +1424,24 @@ pub async fn execute(
         // SAFETY: see comment above — single-threaded.
         unsafe {
             std::env::set_var("MIKEBOM_FINGERPRINTS_CORPUS", "1");
+        }
+    }
+
+    // Milestone 108 US5: re-export `--fingerprints-rev` to the env so
+    // the matcher's `LoadOptions::from_env()` sees the runtime
+    // override (and ignores it if the operator didn't also pass the
+    // opt-in flag — implicit-dependency warn handled inline below).
+    if let Some(ref rev) = args.fingerprints_rev {
+        if !args.fingerprints_corpus {
+            tracing::warn!(
+                rev = %rev,
+                "--fingerprints-rev provided without --fingerprints-corpus; ignoring (bundled fallback will be used)",
+            );
+        } else {
+            // SAFETY: see comment above — single-threaded.
+            unsafe {
+                std::env::set_var("MIKEBOM_FINGERPRINTS_REV", rev);
+            }
         }
     }
 
@@ -2543,6 +2601,8 @@ mod tests {
             include_vendored: false,
             // Milestone 108 — default external fingerprint-corpus opt-in OFF.
             fingerprints_corpus: false,
+            // Milestone 108 US5 — default runtime SHA override unset.
+            fingerprints_rev: None,
         }
     }
 

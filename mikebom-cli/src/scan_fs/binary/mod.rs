@@ -19,6 +19,7 @@
 pub mod cargo_auditable;
 pub mod elf;
 pub(crate) mod fingerprints;
+pub(crate) mod source_binding;
 pub mod jdk_collapse;
 pub mod linkage;
 pub mod macho;
@@ -143,6 +144,27 @@ pub fn read(
         Some(fingerprints::load_corpus(fingerprints_opts))
     } else {
         None
+    };
+
+    // Milestone 109 — build the source-tier attribution registry exactly
+    // once per scan when the operator opted in via `--fingerprints-corpus`.
+    // The registry maps (library_name_lc, scope_path) → cmake build-dir
+    // observation; the per-binary matcher loop rewrites fingerprint-
+    // match PURLs from `pkg:generic/<library>` to the source-tier PURL
+    // when the binary lives under a cmake project that declared the
+    // library via `FetchContent_Declare`. Empty registry (no cmake
+    // projects in the scan root) is the no-op fallback — matcher
+    // behavior is byte-identical to milestone 108 in that case.
+    //
+    // The cmake reader is re-invoked here because `binary::read()`
+    // doesn't otherwise see the source-tier declarations from the
+    // package_db layer. Cost: microseconds (regex + line iteration on
+    // CMakeLists.txt files at depth 1 + Modules/ + third_party/).
+    let attribution_registry = if external_corpus.is_some() {
+        let cmake_decls = crate::scan_fs::package_db::cmake::read(rootfs, false);
+        source_binding::build_attribution_registry(rootfs, &cmake_decls)
+    } else {
+        source_binding::BuildAttributionRegistry::from_observations(Vec::new())
     };
 
     for path in discover_binaries(rootfs) {
@@ -479,9 +501,17 @@ pub fn read(
             // SC-003 byte-identity contract for the 33 byte-identity
             // goldens.
             let symbol_matches = match &external_corpus {
-                Some(corpus) => {
-                    symbol_fingerprint::scan_with_corpus(&scan.symbol_names, corpus, true)
-                }
+                Some(corpus) => symbol_fingerprint::scan_with_corpus(
+                    &scan.symbol_names,
+                    corpus,
+                    true,
+                    // Milestone 109 — feed the attribution registry +
+                    // this binary's path so the matcher can rewrite
+                    // generic PURLs to source-tier PURLs when the
+                    // cmake build-dir observation matches.
+                    Some(&attribution_registry),
+                    Some(&path),
+                ),
                 None => symbol_fingerprint::scan(&scan.symbol_names),
             };
             for m in symbol_matches {

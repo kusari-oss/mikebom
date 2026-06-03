@@ -186,6 +186,27 @@ pub fn deduplicate(components: Vec<ResolvedComponent>) -> Vec<ResolvedComponent>
                     best.sbom_tier = Some("source".to_string());
                 }
             }
+
+            // Milestone 109 — preserve LOSER-side `extra_annotations`
+            // that the WINNER doesn't already carry. The winner's
+            // values stay authoritative for any key both sides
+            // carry (existing dedup contract: highest-confidence wins).
+            // The loser's keys that don't conflict get folded in so
+            // multi-evidence components (source-tier + binary-tier)
+            // surface BOTH sides' annotations on the merged result —
+            // e.g., a cmake source-tier zlib component (winner) +
+            // a binary-tier fingerprint match for the same PURL
+            // (loser) merges into one component carrying both
+            // `mikebom:source-mechanism = cmake-fetchcontent-git` AND
+            // `mikebom:fingerprint-corpus-sha = <sha>` AND
+            // `mikebom:fingerprint-symbols-matched = "10/10"`.
+            //
+            // Conservative merge — only inserts when the key isn't
+            // already present on `best`. No upgrade-by-precedence
+            // logic per key (the winner is authoritative).
+            for (key, value) in other.extra_annotations {
+                best.extra_annotations.entry(key).or_insert(value);
+            }
         }
 
         result.push(best);

@@ -38,6 +38,17 @@ pub(super) fn symbol_match_to_entry(
     // path emits the same `pkg:generic/<library>` shape as pre-108
     // by construction (see `symbol_fingerprint::bundled_records`).
     let purl = mikebom_common::types::purl::Purl::new(&m.target_purl).ok()?;
+    // Milestone 109 — when attribution rewrote the PURL to a source-
+    // tier value carrying a version (e.g. `pkg:github/madler/zlib@v1.3.1`),
+    // adopt that version into the PackageDbEntry's `version` field so
+    // the downstream deduplicator (`resolve::deduplicator::deduplicate`)
+    // keys this binary-tier component with the SAME `(ecosystem, name,
+    // version, parent_purl)` tuple as the source-tier component the
+    // cmake reader emitted. Without this, the two would land in
+    // separate dedup buckets and the SBOM would carry two zlib
+    // components — the SC-001 single-component contract requires the
+    // merge.
+    let version = purl.version().unwrap_or("").to_string();
     let mut extra: std::collections::BTreeMap<String, serde_json::Value> =
         Default::default();
     extra.insert(
@@ -66,7 +77,7 @@ pub(super) fn symbol_match_to_entry(
     Some(PackageDbEntry {
         purl,
         name: m.library.clone(),
-        version: String::new(),
+        version,
         arch: None,
         source_path: path.to_string_lossy().into_owned(),
         depends: Vec::new(),

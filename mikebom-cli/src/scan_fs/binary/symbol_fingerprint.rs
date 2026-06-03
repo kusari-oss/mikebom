@@ -250,7 +250,7 @@ pub(crate) fn bundled_records() -> Vec<super::fingerprints::FingerprintRecord> {
 /// SC-003 byte-identity: `scan()`'s output is identical to the
 /// pre-108 implementation — same matches, no new annotations.
 pub fn scan(symbol_names: &[String]) -> Vec<SymbolFingerprintMatch> {
-    scan_with_corpus(symbol_names, super::fingerprints::load_bundled(), false)
+    scan_with_corpus(symbol_names, super::fingerprints::load_bundled(), false, None, None)
 }
 
 /// Match the binary's dynamic-symbol set against a (bundled OR
@@ -271,6 +271,8 @@ pub fn scan_with_corpus(
     symbol_names: &[String],
     corpus: &super::fingerprints::FingerprintCorpus,
     stamp_corpus_sha: bool,
+    attribution_registry: Option<&super::source_binding::BuildAttributionRegistry>,
+    binary_path: Option<&std::path::Path>,
 ) -> Vec<SymbolFingerprintMatch> {
     if symbol_names.is_empty() {
         return Vec::new();
@@ -334,6 +336,25 @@ pub fn scan_with_corpus(
             }
             others.sort();
             hits[i].also_detected_via = others;
+        }
+    }
+
+    // Milestone 109 — source-tier PURL attribution. When the caller
+    // provided a `BuildAttributionRegistry` AND a `binary_path`, look
+    // up each match's library against the registry; if a cmake build-
+    // dir observation matches (per `contracts/attribution-rules.md`),
+    // rewrite the match's `target_purl` from `pkg:generic/<library>`
+    // to the source-tier PURL. The rewrite is in-place + happens
+    // BEFORE the per-binary entry passes through the dedup pipeline,
+    // so the source-tier + binary-tier components merge naturally on
+    // shared PURL via the existing milestone-105 dedup machinery.
+    if let (Some(registry), Some(bin_path)) = (attribution_registry, binary_path) {
+        if !registry.is_empty() {
+            for hit in hits.iter_mut() {
+                if let Some(observation) = registry.lookup(&hit.library, bin_path) {
+                    hit.target_purl = observation.source_tier_purl.clone();
+                }
+            }
         }
     }
     hits
@@ -674,7 +695,7 @@ mod tests {
             "BN_new",
         ]);
         let bundled = super::super::fingerprints::load_bundled();
-        let hits = scan_with_corpus(&s, bundled, true);
+        let hits = scan_with_corpus(&s, bundled, true, None, None);
         assert_eq!(hits.len(), 1);
         assert_eq!(
             hits[0].corpus_sha_annotation.as_deref(),
@@ -708,7 +729,7 @@ mod tests {
             source: CorpusSource::Cached { sha },
         };
         let s = syms(&["foo_init", "foo_run", "foo_close"]);
-        let hits = scan_with_corpus(&s, &corpus, true);
+        let hits = scan_with_corpus(&s, &corpus, true, None, None);
         assert_eq!(hits.len(), 1);
         let stamp = hits[0].corpus_sha_annotation.as_deref().unwrap();
         assert_eq!(stamp.len(), 12, "annotation must be 12-hex; got {stamp:?}");
@@ -749,7 +770,7 @@ mod tests {
             ],
             source: CorpusSource::Cached { sha },
         };
-        let hits = scan_with_corpus(&shared_symbols, &corpus, true);
+        let hits = scan_with_corpus(&shared_symbols, &corpus, true, None, None);
         assert_eq!(hits.len(), 2, "both records must emit (no silent dedup)");
         // openssl → also_detected_via = ["libressl"]
         let openssl = hits.iter().find(|h| h.library == "openssl").unwrap();

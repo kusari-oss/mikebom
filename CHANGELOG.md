@@ -7,6 +7,83 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+## [0.1.0-alpha.46] — 2026-06-08
+
+Milestone 110 Phase 4 surface complete: the pluggable fingerprint corpus v2 capability lands end-to-end. mikebom now ships a multi-indicator corpus record schema (symbols + version strings + Build-IDs + ABI markers + ecosystem-alias PURLs + CPE candidates) AND the matcher + loader + production wiring that consumes it. Third-party corpus authors can target `docs/reference/corpus-record-v2.schema.json` today and have mikebom load, fuse, and emit versioned PURLs against scanned binaries.
+
+**Default behavior unchanged.** Operators who don't opt into `--fingerprints-corpus` see byte-identical SBOMs to alpha.45 across all 33 byte-identity goldens. Operators who DO opt in continue to see the milestone-108 behavior; v2 records only emit when authored AND present in the fingerprint cache — neither condition is met by today's public milestone-108 corpus, so the v2 path is dormant for typical operators until corpus authors begin publishing v2 records.
+
+### Pluggable fingerprint corpus v2 — foundational types (#313)
+
+Lays the type system + public JSON Schema for v2 corpus records. New types in `mikebom-cli/src/scan_fs/binary/fingerprints/`:
+
+- `confidence.rs` — `Confidence` newtype + `FusedConfidence` enum (`High` / `Medium` only — no `Low` variant; encodes the spec-clarified below-medium-suppression rule at the type level). `from_pct_in_range_const::<PCT>()` const constructor preserves constitution Principle IV at fixed-baseline call sites without `.unwrap()`.
+- `record.rs` extended — `CorpusRecordV2`, `IndicatorKind` (closed enum), `IndicatorSpec` (tagged enum: `SymbolSet` / `RodataLiteral` / `ExactHash`), `Provenance`, `CollisionSpec`, `CorpusError` (thiserror). v1 `FingerprintRecord` unchanged for backward compat. `#[serde(deny_unknown_fields)]` throughout.
+- `source_config.rs` — `CorpusSource` + `CorpusSourceId` (16-char BASE32(sha256(url)) or `"public-milestone-108"` sentinel for the default).
+- `self_identity.rs` + `matcher.rs` — stubs declaring the Phase 4/6 surface area (the matcher stub becomes real in #315; the resolver ladder ships in a follow-on milestone).
+
+User-visible behaviour change for opt-in scans: every fingerprint-derived component now carries a new `mikebom:fingerprint-confidence` annotation whose value is the numeric fused-confidence score (formatted `"X.XX"` — e.g., `"0.70"` / `"0.85"` / `"0.99"`). Distinct from the existing C16 `mikebom:confidence` enum-string carrier (value=`"heuristic"`) so no collision. Spec FR-017 revised during implementation to emit numeric (lossless, matches CDX-native `evidence.identity.confidence` semantics) rather than the originally-planned bucket-name.
+
+Public artifacts:
+- `docs/reference/corpus-record-v2.schema.json` — JSON Schema Draft 2020-12 contract for third-party corpus authors.
+- `mikebom-cli/contracts/corpus-record-v2.schema.json` — test-local copy.
+- `specs/110-pluggable-corpus-v2/` — full spec + plan + research + data-model + contracts + quickstart + tasks artifacts (~125 KB of design).
+
+Validation: 28 new unit tests + 6 new integration tests cover the type system + JSON-Schema conformance + the new annotation's presence-on-opt-in / absence-on-default-scan contract.
+
+### Parity row C59 for `mikebom:fingerprint-confidence` (#314)
+
+Adds the catalog row for the new annotation in `docs/reference/sbom-format-mapping.md` + the three parity-extractor entries (CDX 1.6 / SPDX 2.3 / SPDX 3.0.1). Principle-V audit clause documents the distinction from the existing C16 carrier + the Phase-4 forward-pointer for additionally populating CDX-native `evidence.identity[].confidence`. The existing `sbom_format_mapping_coverage` + `mapping_doc_bidirectional` CI gates continue to enforce 100% row coverage.
+
+### v2 matcher + fusion algorithm (#315)
+
+Replaces the Phase-2 `matcher.rs` stub with the actual multi-indicator matching + confidence-fusion logic. Pure additive — production scan path continues through milestone-108's matcher until #317 wires the new pipeline in.
+
+- `BinaryArtifact` — matcher-internal synthesis struct carrying the extracted-indicator inputs (`exported_symbols`, `rodata_strings`, `build_id`, `macho_uuid`, `pe_pdb`).
+- `MatchResult` — emission shape with `confidence_score` (numeric) alongside the coarser `FusedConfidence` bucket so downstream annotation emission can populate the numeric value losslessly.
+- "max + bump" fusion algorithm per the design-doc §7 / research R2: `max(per-indicator baseline)`, then `+0.05` per agreeing additional indicator, capped at `0.99`.
+- Per-indicator matchers: `match_symbol_set` (HashSet-based O(N+M) overlap), `match_rodata_literal` (substring search), `match_exact_hash` (case-insensitive hex equality against Build-ID / LC_UUID / PE PDB GUID).
+- `match_binary` — multi-record driver with deterministic emission order (`bucket DESC, numeric score DESC, primary_purl ASC`).
+
+21 new unit tests covering per-indicator matchers, fusion arithmetic edge cases, above/below-floor emission, and deterministic ordering.
+
+### v2 loader (#316)
+
+Extends `loader.rs` with `load_v2_records_from_cache` that peeks at each JSON file's `schema_version` field to dispatch (presence → v2; absence → v1). v1 and v2 records may now coexist in a single corpus archive — detection is record-level rather than archive-level because existing milestone-108 archives have no `VERSION` sentinel and adding one would be a breaking change to the public corpus contract.
+
+The two loader entry points (`load_corpus_from_cache` for v1, `load_v2_records_from_cache` for v2) are independent: a caller may invoke one or both. Forward-compat for archives that adopt v2 ahead of mikebom's matcher wiring.
+
+6 new unit tests covering empty-when-v1-only, mixed-archive-loads-only-v2, unsupported-schema-version skip, malformed-record graceful degradation, missing-index error path, v1-and-v2-loaders-independent on the same cache.
+
+### v2 production wiring (#317)
+
+Bridges the v2 matcher + v2 loader into the existing `binary/mod.rs` scan loop. v2 records living in the configured fingerprint cache now flow through the matcher and emit as `PackageDbEntry` components alongside the v1 path. The v2 matcher pipeline is now **end-to-end live in production scans**.
+
+Critical ordering for byte-identity preservation: v2 results merge **after** v1 and **only for libraries the v1 path didn't already cover** (the `entry().or_insert_with(...)` gate). A v2 record sharing a library name with a v1 record does NOT override the v1 emission — the 33 existing byte-identity goldens stay byte-identical for default scans.
+
+New helpers:
+- `v2_bridge::extract_printable_strings` — `strings(1)`-style extractor over `BinaryScan.string_region`.
+- `v2_bridge::binary_artifact_from_scan` — `BinaryScan` → matcher's `BinaryArtifact`.
+- `entry::v2_match_to_entry` — `MatchResult` → `PackageDbEntry`. Uses the matcher's numeric confidence score for `mikebom:fingerprint-confidence` rather than v1's hardcoded `"0.70"` baseline.
+
+9 new unit tests for the helpers + zero v1 regression (all 1800+ existing tests pass unchanged).
+
+### v2 pipeline end-to-end integration test (#318)
+
+Three integration tests in `mikebom-cli/tests/fingerprints_v2_e2e.rs` prove the v2 pipeline emits versioned PURLs in production SBOMs:
+
+1. **`v2_record_emits_canonical_purl_when_indicators_match`** — proves the v2 component emits with its canonical (versioned) PURL.
+2. **`v2_record_emits_numeric_confidence_annotation`** — proves the FR-017 numeric annotation surfaces with value ≥ `"0.70"`.
+3. **`v1_zlib_emission_survives_alongside_v2_emission`** — proves the v2 path's by_library merge gate doesn't override the v1 / source-binding zlib emission.
+
+Fixture cache built in a `tempfile::tempdir`; the v2 record's PURL name is intentionally distinct from `zlib` so the by_library merge doesn't collide with the existing v1 / source-binding emission. Tests skip gracefully when the cmake-demo isn't pre-built on the test host (same pattern as the milestone-109 binary_source_binding tests).
+
+### Validation across the release
+
+- Workspace-wide unit + integration tests: 1840+ tests pass on `./scripts/pre-pr.sh` (matcher + loader + e2e + parity additions land cleanly).
+- 33 byte-identity goldens pass byte-identically pre/post each PR — SC-003 contract honored across the entire release window. The version-bump-only golden regeneration in this release is the only delta to those files.
+- No new Cargo dependencies between alpha.45 and alpha.46.
+
 ## [0.1.0-alpha.45] — 2026-06-03
 
 Cross-platform completion of the symbol-fingerprint matcher (PE now joins ELF + Mach-O) + the milestone-109 cross-tier PURL attribution that closes the cmake-demo's documented "source SBOM and binary SBOM don't equality-join" gap.

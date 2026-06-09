@@ -531,6 +531,10 @@ impl SourceSbomContext {
                 strength: b.strength,
                 reason: b.reason.clone(),
                 algo: b.algo.clone(),
+                // Source-tier bindings never carry milestone-111
+                // alias context; aliases are image-tier-only.
+                alias_from: None,
+                alias_to: None,
             },
             None => SourceDocumentBinding::unknown(
                 self.source_doc_id.clone(),
@@ -586,6 +590,8 @@ mod tests {
             strength: BindingStrength::Verified,
             reason: None,
             algo: "v1".to_string(),
+            alias_from: None,
+            alias_to: None,
         }
     }
 

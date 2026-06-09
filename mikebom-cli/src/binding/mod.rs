@@ -24,12 +24,15 @@
 //! or enum. Production code uses `anyhow::Result` / `BindingError`;
 //! test code uses `#[cfg_attr(test, allow(clippy::unwrap_used))]`.
 
+pub mod alias;
 pub mod annotation;
 pub mod hash;
 pub mod identifiers;
 pub mod source_inputs;
 pub mod user_metadata;
 pub mod verify;
+
+pub use alias::{parse_pkg_alias, AliasError, AliasMap, PurlAlias};
 
 // ---------------------------------------------------------------------
 // Errors
@@ -194,9 +197,23 @@ pub struct SourceDocumentBinding {
     /// Optional for `Verified` / `Weak`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
-    /// Algorithm version. Always `"v1"` for milestone 072.
+    /// Algorithm version. Always `"v1"` for milestone 072. Milestone
+    /// 111's additive `alias_from`/`alias_to` fields do NOT bump this
+    /// version — they are metadata, not algorithm changes
+    /// (specs/111-pkg-alias-binding/research.md §2).
     #[serde(default = "default_algo_v1")]
     pub algo: String,
+    /// Milestone 111 — when this binding result was reached via a
+    /// `--pkg-alias` declaration, the LHS PURL the operator declared.
+    /// `None` otherwise. MUST be `Some` iff `alias_to` is `Some`
+    /// (paired-presence invariant).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias_from: Option<mikebom_common::types::purl::Purl>,
+    /// Milestone 111 — pair of `alias_from`. When `Some`, this is the
+    /// RHS PURL the binder matched against in the bind-source SBOM.
+    /// Paired-presence invariant with `alias_from`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias_to: Option<mikebom_common::types::purl::Purl>,
 }
 
 fn default_algo_v1() -> String {
@@ -214,6 +231,8 @@ impl SourceDocumentBinding {
             strength: BindingStrength::Unknown,
             reason: Some(reason.into()),
             algo: default_algo_v1(),
+            alias_from: None,
+            alias_to: None,
         }
     }
 }
@@ -362,5 +381,104 @@ mod tests {
             VexPropagationMode::default(),
             VexPropagationMode::Caveated
         );
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Milestone 111 — wire-compatibility tests for the extended
+    // SourceDocumentBinding envelope (alias_from / alias_to additive
+    // fields). Per specs/111-pkg-alias-binding/research.md §2.
+    // ──────────────────────────────────────────────────────────────
+
+    fn fixture_no_alias() -> SourceDocumentBinding {
+        SourceDocumentBinding {
+            source_doc_id: SourceDocumentId {
+                sha256: "e".repeat(64),
+                iri: None,
+            },
+            hash: Some(BindingHash::from_hex("a".repeat(64)).unwrap()),
+            strength: BindingStrength::Verified,
+            reason: None,
+            algo: "v1".to_string(),
+            alias_from: None,
+            alias_to: None,
+        }
+    }
+
+    fn fixture_with_alias() -> SourceDocumentBinding {
+        use mikebom_common::types::purl::Purl;
+        SourceDocumentBinding {
+            source_doc_id: SourceDocumentId {
+                sha256: "e".repeat(64),
+                iri: None,
+            },
+            hash: Some(BindingHash::from_hex("a".repeat(64)).unwrap()),
+            strength: BindingStrength::Verified,
+            reason: None,
+            algo: "v1".to_string(),
+            alias_from: Some(Purl::new("pkg:generic/baz").unwrap()),
+            alias_to: Some(Purl::new("pkg:cargo/baz@1.0.0").unwrap()),
+        }
+    }
+
+    #[test]
+    fn envelope_without_alias_omits_alias_fields_in_serialization() {
+        // SC-004 byte-identity guarantee: when no alias is present,
+        // the serialized form MUST NOT include alias_from / alias_to
+        // keys. Pre-milestone-111 SBOM consumers see the same wire
+        // shape they always have.
+        let b = fixture_no_alias();
+        let s = serde_json::to_string(&b).unwrap();
+        assert!(
+            !s.contains("alias_from"),
+            "no-alias envelope must NOT emit alias_from; got {s}"
+        );
+        assert!(
+            !s.contains("alias_to"),
+            "no-alias envelope must NOT emit alias_to; got {s}"
+        );
+    }
+
+    #[test]
+    fn envelope_with_alias_includes_both_fields_in_serialization() {
+        let b = fixture_with_alias();
+        let s = serde_json::to_string(&b).unwrap();
+        assert!(s.contains("\"alias_from\":\"pkg:generic/baz\""));
+        assert!(s.contains("\"alias_to\":\"pkg:cargo/baz@1.0.0\""));
+    }
+
+    #[test]
+    fn envelope_round_trips_with_alias() {
+        let b = fixture_with_alias();
+        let s = serde_json::to_string(&b).unwrap();
+        let parsed: SourceDocumentBinding = serde_json::from_str(&s).unwrap();
+        assert_eq!(parsed, b, "round-trip MUST preserve alias_from/alias_to");
+    }
+
+    #[test]
+    fn envelope_round_trips_without_alias() {
+        let b = fixture_no_alias();
+        let s = serde_json::to_string(&b).unwrap();
+        let parsed: SourceDocumentBinding = serde_json::from_str(&s).unwrap();
+        assert_eq!(parsed, b);
+        assert!(parsed.alias_from.is_none());
+        assert!(parsed.alias_to.is_none());
+    }
+
+    #[test]
+    fn envelope_deserializes_pre_feature_shape_with_no_alias_fields() {
+        // Wire-compat: pre-milestone-111 SBOMs (without alias_from /
+        // alias_to keys) MUST deserialize successfully into the new
+        // struct shape, with both fields defaulting to None via
+        // #[serde(default)].
+        let pre_feature_json = format!(
+            r#"{{"source_doc_id":{{"sha256":"{}"}},"hash":"{}","strength":"verified","algo":"v1"}}"#,
+            "e".repeat(64),
+            "a".repeat(64)
+        );
+        let parsed: SourceDocumentBinding =
+            serde_json::from_str(&pre_feature_json).unwrap();
+        assert!(parsed.alias_from.is_none());
+        assert!(parsed.alias_to.is_none());
+        assert_eq!(parsed.strength, BindingStrength::Verified);
     }
 }

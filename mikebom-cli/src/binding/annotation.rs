@@ -96,6 +96,8 @@ mod tests {
             strength: BindingStrength::Verified,
             reason: None,
             algo: "v1".to_string(),
+            alias_from: None,
+            alias_to: None,
         }
     }
 

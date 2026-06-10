@@ -40,6 +40,24 @@ pub struct PythonStdlibCollapser {
 }
 
 impl PythonStdlibCollapser {
+    /// Side-effect-free twin of [`Self::try_collapse`]: would this
+    /// path route into a cpython umbrella? Used by the walker's early
+    /// build-intermediate gate to decide whether a `.o`/`.a` file
+    /// needs the full read+parse pipeline (so collapse side effects
+    /// keep firing only after a successful binary parse, exactly as
+    /// before the gate existed).
+    pub fn would_collapse(&self, path: &Path, rootfs: &Path) -> bool {
+        if detect_python_version(path, rootfs).is_some() {
+            return true;
+        }
+        if let Ok(canonical) = std::fs::canonicalize(path) {
+            if canonical != path && detect_python_version(&canonical, rootfs).is_some() {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Attempt to classify `path` as a CPython stdlib binary. Returns
     /// `true` if the path was claimed by the collapser — the caller
     /// should then skip emitting a file-level component for it.

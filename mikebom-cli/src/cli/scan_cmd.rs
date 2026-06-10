@@ -319,6 +319,33 @@ pub struct ScanArgs {
     #[arg(long, value_name = "PATH")]
     pub bind_to_source: Option<PathBuf>,
 
+    /// Milestone 111 (issue #225 Option A) — declare that the binary-
+    /// tier PURL on the left should be treated as the source-tier PURL
+    /// on the right when computing milestone-072 cross-tier binding.
+    /// Format: `LHS_PURL=RHS_PURL`. Repeatable. Both PURLs are
+    /// canonicalized; match against scan-output components is strict
+    /// canonical-equality on the LHS side.
+    ///
+    /// Use when an operator's flagship binary inside an image lands as
+    /// `pkg:generic/<name>` (no version) but the corresponding source-
+    /// tier component carries the ecosystem-specific PURL like
+    /// `pkg:cargo/<name>@<ver>` — without an alias, binding strength
+    /// stays `unknown { reason: "source-not-found-in-bind-target" }`.
+    ///
+    /// Requires `--bind-to-source` to have effect. Supplied otherwise,
+    /// mikebom emits a warning and the alias is discarded (the scan
+    /// proceeds; no alias is recorded in the emitted SBOM).
+    ///
+    /// Also settable via `MIKEBOM_PKG_ALIAS` (comma-separated entries
+    /// matching the per-flag syntax) for CI ergonomics.
+    #[arg(
+        long = "pkg-alias",
+        value_name = "LHS=RHS",
+        value_parser = mikebom::binding::alias::parse_pkg_alias,
+        action = clap::ArgAction::Append,
+    )]
+    pub pkg_alias: Vec<mikebom::binding::alias::PurlAlias>,
+
     /// Attach a `repo:` identifier — source repository identity
     /// (URL or git-style ssh URL). Manual override; if both this
     /// flag and the auto-detected `repo:` identifier (from `.git/`
@@ -1835,6 +1862,26 @@ pub async fn execute(
         }
     }
 
+    // Milestone 111 (issue #225 Option A): assemble the operator's
+    // `--pkg-alias` declarations into a deterministic AliasMap. CLI-
+    // supplied flags are concatenated with `MIKEBOM_PKG_ALIAS` env-var
+    // entries; conflicts (same LHS, different RHS) abort the scan.
+    let pkg_alias_map = build_pkg_alias_map(&args)?;
+
+    // FR-010: warn when `--pkg-alias` was supplied without
+    // `--bind-to-source`. The alias has no effect (binding is the only
+    // consumer); the warning makes the no-op explicit so operators
+    // don't silently miss the intended binding rewrite.
+    if !pkg_alias_map.is_empty() && args.bind_to_source.is_none() {
+        tracing::warn!(
+            count = pkg_alias_map.len(),
+            "--pkg-alias declared but --bind-to-source was not supplied; \
+             the aliases have no effect on this scan and will not appear \
+             in the emitted SBOM. Add --bind-to-source <SOURCE_SBOM> to \
+             enable cross-tier binding (milestone 072)."
+        );
+    }
+
     // Milestone 072 / T027: when `--bind-to-source <path>` is supplied,
     // resolve the source-tier SBOM and attach per-component
     // `mikebom:source-document-binding` annotations to image-tier
@@ -1864,7 +1911,12 @@ pub async fn execute(
         // typically `source` and we should NOT emit.
         let is_image_scan = args.image.is_some();
         if is_image_scan {
-            attach_bindings_to_components(&mut components, &ctx);
+            let consumed = attach_bindings_to_components(
+                &mut components,
+                &ctx,
+                &pkg_alias_map,
+            );
+            log_unused_pkg_aliases(&pkg_alias_map, &consumed);
         } else {
             tracing::warn!(
                 "--bind-to-source supplied with --path; binding annotations only \
@@ -2186,13 +2238,124 @@ fn scan_created_timestamp() -> chrono::DateTime<chrono::Utc> {
 /// `Annotation.statement` envelope serializers all consume that bag
 /// transparently — no per-format emission code change needed for
 /// per-component binding annotations.
+/// Milestone 111: assemble the operator's `--pkg-alias` declarations
+/// and `MIKEBOM_PKG_ALIAS` env-var entries into a single deterministic
+/// `AliasMap`. Conflicts (same LHS, different RHS) abort the scan with
+/// an actionable error per FR-008.
+///
+/// Env-var format: comma-separated `LHS=RHS` entries; whitespace
+/// trimmed; empty entries silently skipped.
+fn build_pkg_alias_map(
+    args: &ScanArgs,
+) -> anyhow::Result<mikebom::binding::alias::AliasMap> {
+    use mikebom::binding::alias::{parse_pkg_alias, AliasMap};
+
+    let mut map = AliasMap::new();
+
+    // CLI flags first (insertion order = flag order).
+    for alias in &args.pkg_alias {
+        map.insert(alias.clone())
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+    }
+
+    // Then env-var entries.
+    if let Ok(raw) = std::env::var("MIKEBOM_PKG_ALIAS") {
+        for entry in raw.split(',') {
+            let trimmed = entry.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let alias = parse_pkg_alias(trimmed)
+                .map_err(|e| anyhow::anyhow!("MIKEBOM_PKG_ALIAS entry: {}", e))?;
+            map.insert(alias)
+                .map_err(|e| anyhow::anyhow!("{}", e))?;
+        }
+    }
+
+    Ok(map)
+}
+
+/// FR-011: emit an info-level log for any alias whose LHS PURL did
+/// not match a component during the binding pass. Operator typos in
+/// the LHS are common; surfacing them as info-level diagnostics gives
+/// the operator a clear signal without escalating to warn.
+fn log_unused_pkg_aliases(
+    alias_map: &mikebom::binding::alias::AliasMap,
+    consumed: &std::collections::HashSet<String>,
+) {
+    for alias in alias_map.iter() {
+        let lhs = alias.lhs().as_str();
+        if !consumed.contains(lhs) {
+            tracing::info!(
+                lhs = %lhs,
+                rhs = %alias.rhs().as_str(),
+                "--pkg-alias LHS did not match any scan-output component; \
+                 no alias applied for this entry. (Verify the LHS PURL \
+                 matches what the scan emits for the intended component.)"
+            );
+        }
+    }
+}
+
 fn attach_bindings_to_components(
     components: &mut [mikebom_common::resolution::ResolvedComponent],
     ctx: &mikebom::binding::SourceSbomContext,
-) {
+    alias_map: &mikebom::binding::alias::AliasMap,
+) -> std::collections::HashSet<String> {
+    use mikebom::binding::BindingStrength;
+    use mikebom_common::types::purl::Purl;
+
+    // Track which alias LHSes were consumed during this pass so the
+    // FR-011 unused-alias info log can surface declared-but-unmatched
+    // entries to the operator.
+    let mut consumed_aliases: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+
     for c in components.iter_mut() {
-        let purl_str = c.purl.as_str().to_string();
-        let binding = ctx.binding_for_purl(&purl_str);
+        let component_purl_str = c.purl.as_str().to_string();
+
+        // Determine whether an alias applies to this component. Match
+        // is strict canonical-PURL equality per spec FR-001 + research
+        // §3 (Q1 clarification).
+        let alias_pair: Option<(Purl, Purl)> = Purl::new(&component_purl_str)
+            .ok()
+            .and_then(|component_purl| {
+                alias_map
+                    .get(&component_purl)
+                    .map(|rhs| (component_purl, rhs.clone()))
+            });
+
+        // Choose which PURL to look up in the source SBOM: when an
+        // alias applies, we look up the RHS; otherwise the component's
+        // own PURL.
+        let lookup_purl_str = match &alias_pair {
+            Some((_, rhs)) => rhs.as_str().to_string(),
+            None => component_purl_str.clone(),
+        };
+
+        let mut binding = ctx.binding_for_purl(&lookup_purl_str);
+
+        // FR-005 + FR-013: stamp alias_from / alias_to onto the
+        // envelope regardless of strength outcome so the operator
+        // can see the alias was applied even when the RHS is
+        // missing from the source SBOM.
+        if let Some((lhs, rhs)) = alias_pair {
+            // FR-007: when an alias was applied AND the RHS was not
+            // found in the bind-source, rewrite the failure reason
+            // from `source-not-found-in-bind-target` to the alias-
+            // specific reason so operators can debug their alias
+            // declaration separately from a missing-source-document
+            // state.
+            if binding.strength == BindingStrength::Unknown
+                && binding.reason.as_deref() == Some("source-not-found-in-bind-target")
+            {
+                binding.reason = Some("alias-target-not-found-in-bind-target".to_string());
+            }
+            consumed_aliases.insert(lhs.as_str().to_string());
+            binding.alias_from = Some(lhs);
+            binding.alias_to = Some(rhs);
+        }
+
         // Serialize via the canonical serde shape so emission is
         // byte-stable across reruns. The CDX side will JSON-encode
         // this Value to a string at emission time (the milestone-023
@@ -2205,6 +2368,7 @@ fn attach_bindings_to_components(
             );
         }
     }
+    consumed_aliases
 }
 
 /// later phases). Kept local to this CLI module so the generator crate
@@ -2671,6 +2835,8 @@ mod tests {
             // contract intact.
             fingerprints_source: vec![],
             fingerprints_source_no_default: false,
+            // Milestone 111 — default no operator-supplied PURL aliases.
+            pkg_alias: vec![],
             // Milestone 108 US5 — default runtime SHA override unset.
             fingerprints_rev: None,
         }
@@ -3111,5 +3277,384 @@ mod tests {
         let err = r.unwrap_err();
         assert!(err.contains("URL-syntax-breaking"), "got: {err}");
         assert!(err.contains("'#'"), "got: {err}");
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // Milestone 111 — pkg-alias wiring tests.
+    //
+    // Cover the algorithmic surface: build_pkg_alias_map (CLI + env
+    // composition + conflict detection) and attach_bindings_to_components
+    // (alias-rewrite behavior, FR-007 reason rewrite, FR-013 envelope
+    // population, FR-011 unused-alias tracking, SC-004 byte-identity
+    // for no-alias path). End-to-end CLI integration via a real
+    // --image fixture is deferred to a follow-on PR.
+    // ──────────────────────────────────────────────────────────────
+
+    use mikebom::binding::alias::{AliasMap, PurlAlias};
+    use mikebom::binding::{
+        BindingStrength, SourceDocumentBinding, SourceDocumentId, SourceSbomContext,
+    };
+    use mikebom_common::resolution::ResolvedComponent;
+    use mikebom_common::types::purl::Purl;
+
+    /// Shared env-mutation lock for env-var-touching tests below.
+    /// Same pattern as milestone 110's `fingerprints::test_env_lock`.
+    fn pkg_alias_env_lock() -> std::sync::MutexGuard<'static, ()> {
+        use std::sync::Mutex;
+        static LOCK: Mutex<()> = Mutex::new(());
+        LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn make_alias(lhs: &str, rhs: &str) -> PurlAlias {
+        PurlAlias::try_new(lhs, rhs).unwrap()
+    }
+
+    fn make_component(purl_str: &str) -> ResolvedComponent {
+        use mikebom_common::resolution::{ResolutionEvidence, ResolutionTechnique};
+        let purl = Purl::new(purl_str).unwrap();
+        ResolvedComponent {
+            name: purl.name().to_string(),
+            version: purl.version().unwrap_or("0.0.0").to_string(),
+            purl,
+            evidence: ResolutionEvidence {
+                technique: ResolutionTechnique::UrlPattern,
+                confidence: 0.95,
+                source_connection_ids: vec![],
+                source_file_paths: vec![],
+                deps_dev_match: None,
+            },
+            licenses: vec![],
+            concluded_licenses: vec![],
+            hashes: vec![],
+            supplier: None,
+            cpes: vec![],
+            advisories: vec![],
+            occurrences: vec![],
+            lifecycle_scope: None,
+            requirement_range: None,
+            source_type: None,
+            sbom_tier: None,
+            buildinfo_status: None,
+            evidence_kind: None,
+            binary_class: None,
+            binary_stripped: None,
+            linkage_kind: None,
+            detected_go: None,
+            confidence: None,
+            binary_packed: None,
+            npm_role: None,
+            raw_version: None,
+            parent_purl: None,
+            co_owned_by: None,
+            shade_relocation: None,
+            external_references: vec![],
+            extra_annotations: Default::default(),
+            binary_role: None,
+        }
+    }
+
+    fn make_source_ctx(
+        purls: &[(&str, Option<SourceDocumentBinding>)],
+    ) -> SourceSbomContext {
+        let mut source_purls = std::collections::BTreeSet::new();
+        let mut source_bindings_by_purl = std::collections::BTreeMap::new();
+        for (purl, binding) in purls {
+            source_purls.insert((*purl).to_string());
+            if let Some(b) = binding {
+                source_bindings_by_purl.insert((*purl).to_string(), b.clone());
+            }
+        }
+        SourceSbomContext {
+            source_doc_id: SourceDocumentId {
+                sha256: "1".repeat(64),
+                iri: None,
+            },
+            source_purls,
+            source_bindings_by_purl,
+        }
+    }
+
+    fn fixture_verified_source_binding() -> SourceDocumentBinding {
+        SourceDocumentBinding {
+            source_doc_id: SourceDocumentId {
+                sha256: "1".repeat(64),
+                iri: None,
+            },
+            hash: Some(
+                mikebom::binding::BindingHash::from_hex("a".repeat(64)).unwrap(),
+            ),
+            strength: BindingStrength::Verified,
+            reason: None,
+            algo: "v1".to_string(),
+            alias_from: None,
+            alias_to: None,
+        }
+    }
+
+    // ── build_pkg_alias_map ───────────────────────────────────────
+
+    #[test]
+    fn build_pkg_alias_map_empty_when_no_input() {
+        let _g = pkg_alias_env_lock();
+        let mut args = enrich_args(false, false, false, vec![]);
+        args.pkg_alias = vec![];
+        unsafe {
+            std::env::remove_var("MIKEBOM_PKG_ALIAS");
+        }
+        let map = build_pkg_alias_map(&args).unwrap();
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn build_pkg_alias_map_collects_cli_flags() {
+        let _g = pkg_alias_env_lock();
+        let mut args = enrich_args(false, false, false, vec![]);
+        args.pkg_alias =
+            vec![make_alias("pkg:generic/baz", "pkg:cargo/baz@1.0.0")];
+        unsafe {
+            std::env::remove_var("MIKEBOM_PKG_ALIAS");
+        }
+        let map = build_pkg_alias_map(&args).unwrap();
+        assert_eq!(map.len(), 1);
+    }
+
+    #[test]
+    fn build_pkg_alias_map_unions_cli_and_env_var_entries() {
+        let _g = pkg_alias_env_lock();
+        let mut args = enrich_args(false, false, false, vec![]);
+        args.pkg_alias =
+            vec![make_alias("pkg:generic/baz", "pkg:cargo/baz@1.0.0")];
+        unsafe {
+            std::env::set_var(
+                "MIKEBOM_PKG_ALIAS",
+                "pkg:generic/qux=pkg:npm/qux@2.0.0",
+            );
+        }
+        let map = build_pkg_alias_map(&args).unwrap();
+        unsafe {
+            std::env::remove_var("MIKEBOM_PKG_ALIAS");
+        }
+        assert_eq!(map.len(), 2);
+    }
+
+    #[test]
+    fn build_pkg_alias_map_skips_blank_env_entries() {
+        let _g = pkg_alias_env_lock();
+        let mut args = enrich_args(false, false, false, vec![]);
+        args.pkg_alias = vec![];
+        unsafe {
+            std::env::set_var(
+                "MIKEBOM_PKG_ALIAS",
+                ",,pkg:generic/baz=pkg:cargo/baz@1.0.0,,",
+            );
+        }
+        let map = build_pkg_alias_map(&args).unwrap();
+        unsafe {
+            std::env::remove_var("MIKEBOM_PKG_ALIAS");
+        }
+        assert_eq!(map.len(), 1);
+    }
+
+    #[test]
+    fn build_pkg_alias_map_rejects_conflicting_lhs_across_cli_and_env() {
+        let _g = pkg_alias_env_lock();
+        let mut args = enrich_args(false, false, false, vec![]);
+        args.pkg_alias =
+            vec![make_alias("pkg:generic/baz", "pkg:cargo/baz@1.0.0")];
+        unsafe {
+            std::env::set_var(
+                "MIKEBOM_PKG_ALIAS",
+                "pkg:generic/baz=pkg:cargo/baz@1.1.0",
+            );
+        }
+        let result = build_pkg_alias_map(&args);
+        unsafe {
+            std::env::remove_var("MIKEBOM_PKG_ALIAS");
+        }
+        let err = result.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("declared twice with conflicting RHS"),
+            "expected conflict-named error; got: {msg}"
+        );
+    }
+
+    // ── attach_bindings_to_components: alias-rewrite ──────────────
+
+    #[test]
+    fn attach_bindings_empty_alias_map_preserves_pre_feature_behavior() {
+        // SC-004 byte-identity prerequisite: with no aliases, the
+        // function MUST behave exactly as before — components with
+        // PURL in source get the source binding; components without
+        // get Unknown { reason: "source-not-found-in-bind-target" }.
+        let mut components = vec![make_component("pkg:cargo/baz@1.0.0")];
+        let ctx = make_source_ctx(&[(
+            "pkg:cargo/baz@1.0.0",
+            Some(fixture_verified_source_binding()),
+        )]);
+        let alias_map = AliasMap::new();
+
+        let consumed =
+            attach_bindings_to_components(&mut components, &ctx, &alias_map);
+
+        assert!(consumed.is_empty());
+        let envelope = components[0]
+            .extra_annotations
+            .get(mikebom::binding::BINDING_PROPERTY_NAME)
+            .expect("envelope present");
+        let binding: SourceDocumentBinding =
+            serde_json::from_value(envelope.clone()).unwrap();
+        assert_eq!(binding.strength, BindingStrength::Verified);
+        assert!(binding.alias_from.is_none());
+        assert!(binding.alias_to.is_none());
+    }
+
+    #[test]
+    fn attach_bindings_with_alias_rewrites_lookup_and_stamps_envelope() {
+        // The US1 motivating case: image-tier emits pkg:generic/baz,
+        // source-tier carries pkg:cargo/baz@1.0.0. Alias declares the
+        // synonym → binding.strength becomes Verified AND
+        // alias_from/alias_to are populated.
+        let mut components = vec![make_component("pkg:generic/baz")];
+        let ctx = make_source_ctx(&[(
+            "pkg:cargo/baz@1.0.0",
+            Some(fixture_verified_source_binding()),
+        )]);
+        let mut alias_map = AliasMap::new();
+        alias_map
+            .insert(make_alias("pkg:generic/baz", "pkg:cargo/baz@1.0.0"))
+            .unwrap();
+
+        let consumed =
+            attach_bindings_to_components(&mut components, &ctx, &alias_map);
+
+        assert_eq!(consumed.len(), 1);
+        assert!(consumed.contains("pkg:generic/baz"));
+
+        let envelope = components[0]
+            .extra_annotations
+            .get(mikebom::binding::BINDING_PROPERTY_NAME)
+            .expect("envelope present");
+        let binding: SourceDocumentBinding =
+            serde_json::from_value(envelope.clone()).unwrap();
+        assert_eq!(
+            binding.strength,
+            BindingStrength::Verified,
+            "alias-rewritten lookup should bind to source's verified entry"
+        );
+        assert_eq!(
+            binding.alias_from.as_ref().unwrap().as_str(),
+            "pkg:generic/baz"
+        );
+        assert_eq!(
+            binding.alias_to.as_ref().unwrap().as_str(),
+            "pkg:cargo/baz@1.0.0"
+        );
+    }
+
+    #[test]
+    fn attach_bindings_rewrites_reason_when_alias_target_missing() {
+        // FR-007: when an alias was applied but the RHS PURL is NOT
+        // in the bind-source SBOM, the reason rewrites from
+        // `source-not-found-in-bind-target` to
+        // `alias-target-not-found-in-bind-target` so operators can
+        // distinguish the alias-misconfiguration case from the
+        // missing-source-document case.
+        let mut components = vec![make_component("pkg:generic/baz")];
+        // Source SBOM is empty — neither LHS nor RHS exists in it.
+        let ctx = make_source_ctx(&[]);
+        let mut alias_map = AliasMap::new();
+        alias_map
+            .insert(make_alias("pkg:generic/baz", "pkg:cargo/baz@1.0.0"))
+            .unwrap();
+
+        attach_bindings_to_components(&mut components, &ctx, &alias_map);
+
+        let envelope = components[0]
+            .extra_annotations
+            .get(mikebom::binding::BINDING_PROPERTY_NAME)
+            .expect("envelope present");
+        let binding: SourceDocumentBinding =
+            serde_json::from_value(envelope.clone()).unwrap();
+        assert_eq!(binding.strength, BindingStrength::Unknown);
+        assert_eq!(
+            binding.reason.as_deref(),
+            Some("alias-target-not-found-in-bind-target")
+        );
+        // alias_from/alias_to MUST still be populated so consumers can
+        // see the alias was attempted even though it didn't resolve.
+        assert!(binding.alias_from.is_some());
+        assert!(binding.alias_to.is_some());
+    }
+
+    #[test]
+    fn attach_bindings_unused_lhs_not_in_consumed_set() {
+        // FR-011: when an alias's LHS does not match any scan-output
+        // component, the LHS is NOT marked as consumed (the caller
+        // logs it as an info-level unused-alias diagnostic).
+        let mut components = vec![make_component("pkg:cargo/other@1.0.0")];
+        let ctx = make_source_ctx(&[("pkg:cargo/other@1.0.0", None)]);
+        let mut alias_map = AliasMap::new();
+        alias_map
+            .insert(make_alias("pkg:generic/baz", "pkg:cargo/baz@1.0.0"))
+            .unwrap();
+
+        let consumed =
+            attach_bindings_to_components(&mut components, &ctx, &alias_map);
+
+        assert!(consumed.is_empty(), "no alias LHS matched any component");
+    }
+
+    #[test]
+    fn attach_bindings_supports_same_rhs_multiple_lhs_distinct_components() {
+        // U1 non-collapse invariant per /speckit-analyze: two distinct
+        // LHS aliases targeting the same RHS keep their components
+        // distinct in the output; both bind to the same source-tier
+        // counterpart with strength=Verified.
+        let mut components = vec![
+            make_component("pkg:generic/baz-cli"),
+            make_component("pkg:generic/baz-daemon"),
+        ];
+        let ctx = make_source_ctx(&[(
+            "pkg:cargo/baz@1.0.0",
+            Some(fixture_verified_source_binding()),
+        )]);
+        let mut alias_map = AliasMap::new();
+        alias_map
+            .insert(make_alias("pkg:generic/baz-cli", "pkg:cargo/baz@1.0.0"))
+            .unwrap();
+        alias_map
+            .insert(make_alias(
+                "pkg:generic/baz-daemon",
+                "pkg:cargo/baz@1.0.0",
+            ))
+            .unwrap();
+
+        let consumed =
+            attach_bindings_to_components(&mut components, &ctx, &alias_map);
+
+        assert_eq!(
+            consumed.len(),
+            2,
+            "both LHSes should be consumed independently"
+        );
+        for c in &components {
+            let envelope = c
+                .extra_annotations
+                .get(mikebom::binding::BINDING_PROPERTY_NAME)
+                .expect("envelope present on both");
+            let binding: SourceDocumentBinding =
+                serde_json::from_value(envelope.clone()).unwrap();
+            assert_eq!(binding.strength, BindingStrength::Verified);
+            assert_eq!(
+                binding.alias_to.as_ref().unwrap().as_str(),
+                "pkg:cargo/baz@1.0.0"
+            );
+        }
+        // Critical: component identities (their own purl) MUST NOT
+        // collapse — two distinct components must still be present.
+        assert_eq!(components.len(), 2);
+        assert_eq!(components[0].purl.as_str(), "pkg:generic/baz-cli");
+        assert_eq!(components[1].purl.as_str(), "pkg:generic/baz-daemon");
     }
 }

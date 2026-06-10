@@ -443,11 +443,21 @@ pub(crate) fn insert_claim_with_canonical(
 /// project's level. Indirect transitives (in go.sum, not directly
 /// imported by either prod or test source here) pass through as prod.
 ///
-/// We deliberately do NOT BFS through deps' go.mod `require` blocks:
-/// a dep can declare a module in its own go.mod purely for its tests
-/// (logrus declares testify), but that doesn't mean a downstream
-/// consumer loads it in prod. Source-import walking at the project
-/// boundary is the trustworthy signal.
+/// We deliberately do NOT BFS through deps' go.mod `require` blocks
+/// to EXPAND the tag set: a dep can declare a module in its own
+/// go.mod purely for its tests (logrus declares testify), but that
+/// doesn't mean a downstream consumer loads it in prod. Source-import
+/// walking at the project boundary is the trustworthy signal.
+///
+/// What we DO propagate (kusari-cli scope-annotation gap, 2026-06)
+/// is the inverse, conservative direction: a module reachable in the
+/// resolved module graph ONLY through test-only roots — never from
+/// any production root — provably cannot be linked into a production
+/// build, so it inherits `Test` scope (testify's go-spew/go-difflib
+/// closure). Any production path at all keeps a module untagged, so
+/// the logrus→testify concern above never over-tags: a prod dep
+/// declaring testify makes testify (and its closure) prod-reachable.
+/// See `compute_go_test_only_closure`.
 ///
 /// The filter no-ops when `production_imports` is empty (pure-binary
 /// scans with no .go source to parse) — G3 alone already handles
@@ -461,7 +471,10 @@ fn apply_go_production_set_filter(
     if production_imports.is_empty() && test_only_imports.is_empty() {
         return;
     }
+    let test_closure =
+        compute_go_test_only_closure(entries, production_imports, test_only_imports);
     let mut tagged_test_only = 0usize;
+    let mut tagged_test_transitive = 0usize;
     for e in entries.iter_mut() {
         if e.purl.ecosystem() != "golang" {
             continue;
@@ -480,6 +493,19 @@ fn apply_go_production_set_filter(
             // `scope: "excluded"` + `mikebom:lifecycle-scope: "test"`.
             e.lifecycle_scope = Some(mikebom_common::resolution::LifecycleScope::Test);
             tagged_test_only += 1;
+        } else if test_closure.contains(&e.name) {
+            // Transitive test-only closure: reachable from a test-only
+            // root, unreachable from every production root. Carries a
+            // provenance discriminator so operators can distinguish
+            // graph-derived scope from the direct `_test.go`
+            // import-walk signal (Constitution Principle X, mirroring
+            // milestone 091's `mikebom:resolver-step`).
+            e.lifecycle_scope = Some(mikebom_common::resolution::LifecycleScope::Test);
+            e.extra_annotations.insert(
+                "mikebom:lifecycle-scope-derivation".to_string(),
+                serde_json::Value::String("test-only-closure".to_string()),
+            );
+            tagged_test_transitive += 1;
         }
     }
 
@@ -499,15 +525,102 @@ fn apply_go_production_set_filter(
         dropped = before.saturating_sub(entries.len());
     }
 
-    if tagged_test_only + dropped > 0 {
+    if tagged_test_only + tagged_test_transitive + dropped > 0 {
         tracing::info!(
             tagged_test_only,
+            tagged_test_transitive,
             dropped_when_no_include_dev = dropped,
             production_imports = production_imports.len(),
             include_dev,
             "G4 classifier: tagged Go test-only modules; dropped tagged entries when --include-dev=off",
         );
     }
+}
+
+/// Compute the set of Go module paths reachable in the resolved
+/// module graph ONLY through test-only roots — i.e. modules that
+/// provably cannot participate in a production build.
+///
+/// Roots:
+/// - test roots = `test_only_imports` (milestone 049's
+///   `_test.go`-imports-minus-prod-imports set);
+/// - production roots = every main-module entry's `depends` (the
+///   non-`// indirect` go.mod requires, plus milestone 091's go.sum
+///   flat-attach and issue #251's orphan backfill) minus the test
+///   roots, unioned with `production_imports` as a fallback when no
+///   synthetic main-module entry is present.
+///
+/// Because the go.sum flat-attach edges keep every go.sum-only module
+/// production-rooted, this never tags a module whose build inclusion
+/// is merely *unknown* — only modules the graph proves are reachable
+/// exclusively through test code (e.g. testify's go-spew/go-difflib).
+/// A module reachable from BOTH sides stays untagged (conservative;
+/// matches milestone-049 R3's logrus→testify rationale).
+///
+/// Edges are taken from golang source-tier entries' `depends` lists,
+/// which hold module paths matching `PackageDbEntry.name`.
+fn compute_go_test_only_closure(
+    entries: &[PackageDbEntry],
+    production_imports: &std::collections::HashSet<String>,
+    test_only_imports: &std::collections::HashSet<String>,
+) -> std::collections::HashSet<String> {
+    use std::collections::{HashMap, HashSet, VecDeque};
+
+    if test_only_imports.is_empty() {
+        return HashSet::new();
+    }
+
+    let mut edges: HashMap<&str, &[String]> = HashMap::new();
+    let mut prod_roots: HashSet<&str> = HashSet::new();
+    for e in entries {
+        if e.purl.ecosystem() != "golang" || e.sbom_tier.as_deref() != Some("source") {
+            continue;
+        }
+        edges.insert(e.name.as_str(), e.depends.as_slice());
+        let is_main_module = e
+            .extra_annotations
+            .get("mikebom:component-role")
+            .and_then(|v| v.as_str())
+            == Some("main-module");
+        if is_main_module {
+            for dep in &e.depends {
+                if !test_only_imports.contains(dep) {
+                    prod_roots.insert(dep.as_str());
+                }
+            }
+        }
+    }
+    for p in production_imports {
+        prod_roots.insert(p.as_str());
+    }
+
+    let bfs = |roots: Vec<&str>| -> HashSet<String> {
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut queue: VecDeque<&str> = VecDeque::new();
+        for r in roots {
+            if seen.insert(r.to_string()) {
+                queue.push_back(r);
+            }
+        }
+        while let Some(node) = queue.pop_front() {
+            if let Some(deps) = edges.get(node) {
+                for d in deps.iter() {
+                    if seen.insert(d.clone()) {
+                        queue.push_back(d.as_str());
+                    }
+                }
+            }
+        }
+        seen
+    };
+
+    let prod_reachable = bfs(prod_roots.into_iter().collect());
+    let test_reachable = bfs(test_only_imports.iter().map(String::as_str).collect());
+
+    test_reachable
+        .into_iter()
+        .filter(|m| !prod_reachable.contains(m))
+        .collect()
 }
 
 /// G5 (feature 007 US3): drop `pkg:golang` entries whose module path
@@ -1184,6 +1297,204 @@ Architecture: arm64
             extra_annotations: Default::default(),
             binary_role: None,
         }
+    }
+
+    // --- G4: test-only closure propagation ------------------------------
+
+    fn make_go_entry(name: &str, depends: &[&str]) -> PackageDbEntry {
+        let mut e = make_entry(
+            &format!("pkg:golang/{name}@v1.0.0"),
+            name,
+            "v1.0.0",
+            Some("source"),
+        );
+        e.depends = depends.iter().map(|s| s.to_string()).collect();
+        e
+    }
+
+    fn make_go_main_module_entry(name: &str, depends: &[&str]) -> PackageDbEntry {
+        let mut e = make_go_entry(name, depends);
+        e.extra_annotations.insert(
+            "mikebom:component-role".to_string(),
+            serde_json::Value::String("main-module".to_string()),
+        );
+        e
+    }
+
+    fn scope_of<'a>(
+        entries: &'a [PackageDbEntry],
+        name: &str,
+    ) -> &'a Option<mikebom_common::resolution::LifecycleScope> {
+        &entries
+            .iter()
+            .find(|e| e.name == name)
+            .expect("entry present")
+            .lifecycle_scope
+    }
+
+    /// Modules reachable ONLY through a test-only root inherit Test
+    /// scope (the testify → go-spew/go-difflib case from the
+    /// kusari-cli scope-gap report). Modules with any production path
+    /// stay untagged, and graph-derived tags carry the
+    /// `mikebom:lifecycle-scope-derivation` discriminator while the
+    /// direct `_test.go`-walk tag does not (back-compat).
+    #[test]
+    fn g4_propagates_test_scope_through_test_only_closure() {
+        use mikebom_common::resolution::LifecycleScope;
+        let mut entries = vec![
+            // Main module: depends = non-indirect requires (a, testify)
+            // plus a go.sum flat-attached module (x) per milestone 091.
+            make_go_main_module_entry(
+                "example.com/proj",
+                &[
+                    "example.com/a",
+                    "github.com/stretchr/testify",
+                    "example.com/gosum-only-x",
+                ],
+            ),
+            make_go_entry("example.com/a", &["gopkg.in/yaml.v3"]),
+            make_go_entry(
+                "github.com/stretchr/testify",
+                &[
+                    "github.com/davecgh/go-spew",
+                    "github.com/pmezard/go-difflib",
+                    "gopkg.in/yaml.v3",
+                ],
+            ),
+            make_go_entry("github.com/davecgh/go-spew", &[]),
+            make_go_entry("github.com/pmezard/go-difflib", &[]),
+            make_go_entry("gopkg.in/yaml.v3", &[]),
+            make_go_entry("example.com/gosum-only-x", &[]),
+        ];
+        let prod: std::collections::HashSet<String> =
+            ["example.com/a".to_string()].into_iter().collect();
+        let test_only: std::collections::HashSet<String> =
+            ["github.com/stretchr/testify".to_string()]
+                .into_iter()
+                .collect();
+
+        apply_go_production_set_filter(&mut entries, &prod, &test_only, true);
+
+        // Direct test-only import: tagged, NO derivation annotation.
+        assert_eq!(
+            scope_of(&entries, "github.com/stretchr/testify"),
+            &Some(LifecycleScope::Test)
+        );
+        let testify = entries
+            .iter()
+            .find(|e| e.name == "github.com/stretchr/testify")
+            .expect("testify present");
+        assert!(
+            !testify
+                .extra_annotations
+                .contains_key("mikebom:lifecycle-scope-derivation"),
+            "direct test-only tag must stay byte-identical to milestone-049 output"
+        );
+
+        // Transitive test-only closure: tagged + derivation marker.
+        for name in ["github.com/davecgh/go-spew", "github.com/pmezard/go-difflib"] {
+            assert_eq!(
+                scope_of(&entries, name),
+                &Some(LifecycleScope::Test),
+                "{name} is reachable only via testify and must inherit Test scope"
+            );
+            let e = entries.iter().find(|e| e.name == name).expect("present");
+            assert_eq!(
+                e.extra_annotations
+                    .get("mikebom:lifecycle-scope-derivation")
+                    .and_then(|v| v.as_str()),
+                Some("test-only-closure"),
+                "{name} must carry the graph-derivation discriminator"
+            );
+        }
+
+        // Reachable from prod (via a) AND test (via testify): untagged.
+        assert_eq!(scope_of(&entries, "gopkg.in/yaml.v3"), &None);
+        // Plain prod dep: untagged.
+        assert_eq!(scope_of(&entries, "example.com/a"), &None);
+        // go.sum flat-attached module with unknown build inclusion:
+        // prod-rooted via the main-module edge, must stay untagged.
+        assert_eq!(scope_of(&entries, "example.com/gosum-only-x"), &None);
+        // The main module itself: untagged.
+        assert_eq!(scope_of(&entries, "example.com/proj"), &None);
+    }
+
+    /// Milestone-049 R3 guard: a PROD dep declaring testify in its own
+    /// go.mod (logrus does) makes testify — and its whole closure —
+    /// prod-reachable, so the closure pass tags nothing. Only the
+    /// project's own `_test.go` walk may tag the direct import.
+    #[test]
+    fn g4_closure_never_tags_prod_reachable_modules() {
+        use mikebom_common::resolution::LifecycleScope;
+        let mut entries = vec![
+            make_go_main_module_entry(
+                "example.com/proj",
+                &["github.com/sirupsen/logrus", "github.com/stretchr/testify"],
+            ),
+            make_go_entry(
+                "github.com/sirupsen/logrus",
+                &["github.com/stretchr/testify"],
+            ),
+            make_go_entry(
+                "github.com/stretchr/testify",
+                &["github.com/davecgh/go-spew"],
+            ),
+            make_go_entry("github.com/davecgh/go-spew", &[]),
+        ];
+        let prod: std::collections::HashSet<String> =
+            ["github.com/sirupsen/logrus".to_string()]
+                .into_iter()
+                .collect();
+        let test_only: std::collections::HashSet<String> =
+            ["github.com/stretchr/testify".to_string()]
+                .into_iter()
+                .collect();
+
+        apply_go_production_set_filter(&mut entries, &prod, &test_only, true);
+
+        // Direct `_test.go` signal still wins for testify itself …
+        assert_eq!(
+            scope_of(&entries, "github.com/stretchr/testify"),
+            &Some(LifecycleScope::Test)
+        );
+        // … but go-spew is prod-reachable (logrus → testify → go-spew)
+        // so the closure pass must NOT tag it.
+        assert_eq!(scope_of(&entries, "github.com/davecgh/go-spew"), &None);
+    }
+
+    /// `--include-dev=off` drops graph-derived test-only entries the
+    /// same way it drops direct ones.
+    #[test]
+    fn g4_include_dev_off_drops_closure_tagged_entries() {
+        let mut entries = vec![
+            make_go_main_module_entry(
+                "example.com/proj",
+                &["example.com/a", "github.com/stretchr/testify"],
+            ),
+            make_go_entry("example.com/a", &[]),
+            make_go_entry(
+                "github.com/stretchr/testify",
+                &["github.com/davecgh/go-spew"],
+            ),
+            make_go_entry("github.com/davecgh/go-spew", &[]),
+        ];
+        let prod: std::collections::HashSet<String> =
+            ["example.com/a".to_string()].into_iter().collect();
+        let test_only: std::collections::HashSet<String> =
+            ["github.com/stretchr/testify".to_string()]
+                .into_iter()
+                .collect();
+
+        apply_go_production_set_filter(&mut entries, &prod, &test_only, false);
+
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(!names.contains(&"github.com/stretchr/testify"));
+        assert!(
+            !names.contains(&"github.com/davecgh/go-spew"),
+            "closure-tagged entries must honor --include-dev=off"
+        );
+        assert!(names.contains(&"example.com/a"));
+        assert!(names.contains(&"example.com/proj"));
     }
 
     #[test]

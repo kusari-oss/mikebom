@@ -50,6 +50,12 @@ pub struct JdkCollapser {
 }
 
 impl JdkCollapser {
+    /// Side-effect-free twin of [`Self::try_collapse`] — see the
+    /// python collapser's `would_collapse` for the rationale.
+    pub fn would_collapse(&self, path: &Path, rootfs: &Path) -> bool {
+        detect_jdk_version(path, rootfs).is_some()
+    }
+
     /// Attempt to classify `path` as a JDK/JRE binary. Returns `true`
     /// if the collapser claimed it (caller should skip file-level +
     /// linkage emission for it).

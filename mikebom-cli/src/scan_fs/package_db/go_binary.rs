@@ -131,6 +131,9 @@ pub enum GoBinaryError {
 pub enum DetectResult {
     Found { buildinfo_offset: usize },
     NotGoBinary,
+    // Only the path-based `detect_is_go` wrapper (test-only since the
+    // production path moved to `detect_is_go_bytes`) constructs this.
+    #[cfg_attr(not(test), allow(dead_code))]
     AmbiguousError,
 }
 
@@ -138,6 +141,7 @@ pub enum DetectResult {
 /// lookup (fast, precise), then falls back to a memmem scan for the
 /// magic bytes (handles stripped binaries where the section name is
 /// gone). Size-bounded by [`MAX_BINARY_SIZE_BYTES`].
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn detect_is_go(path: &Path) -> DetectResult {
     let Ok(meta) = std::fs::metadata(path) else {
         return DetectResult::AmbiguousError;
@@ -149,9 +153,15 @@ pub fn detect_is_go(path: &Path) -> DetectResult {
     let Ok(bytes) = std::fs::read(path) else {
         return DetectResult::AmbiguousError;
     };
+    detect_is_go_bytes(&bytes)
+}
 
+/// Bytes-based core of [`detect_is_go`]. Lets callers that already
+/// hold the file contents (e.g. [`read_binary`]) avoid a second full
+/// read of the same file from disk.
+pub fn detect_is_go_bytes(bytes: &[u8]) -> DetectResult {
     // Tier 1: named-section lookup via `object`.
-    if let Some(offset) = find_buildinfo_section(&bytes) {
+    if let Some(offset) = find_buildinfo_section(bytes) {
         return DetectResult::Found {
             buildinfo_offset: offset,
         };
@@ -160,7 +170,7 @@ pub fn detect_is_go(path: &Path) -> DetectResult {
     // Tier 2: memmem scan for the magic prefix. Handles stripped
     // binaries (section header gone) and anything the object crate
     // can't classify.
-    if let Some(offset) = memmem(&bytes, BUILDINFO_MAGIC) {
+    if let Some(offset) = memmem(bytes, BUILDINFO_MAGIC) {
         return DetectResult::Found {
             buildinfo_offset: offset,
         };
@@ -441,7 +451,11 @@ pub fn read_binary(path: &Path) -> (BuildInfoStatus, Option<GoBinaryInfo>) {
         Ok(b) => b,
         Err(_) => return (BuildInfoStatus::NotGoBinary, None),
     };
-    let offset = match detect_is_go(path) {
+    // Detection runs over the buffer we already read — calling the
+    // path-based `detect_is_go` here would read the whole file from
+    // disk a second time, which dominated scan wall-time on large
+    // build trees.
+    let offset = match detect_is_go_bytes(&bytes) {
         DetectResult::Found { buildinfo_offset } => buildinfo_offset,
         DetectResult::NotGoBinary => return (BuildInfoStatus::NotGoBinary, None),
         DetectResult::AmbiguousError => return (BuildInfoStatus::Missing, None),
@@ -572,6 +586,17 @@ fn walk_for_binaries(
             continue;
         }
         if !meta.is_file() || meta.len() < MIN_BINARY_SIZE_BYTES {
+            continue;
+        }
+        // Go binaries never carry compiler/linker intermediate
+        // extensions. Skipping them here avoids full-file probe reads
+        // across e.g. a Rust `target/` tree, where hundreds of
+        // thousands of `.o`/`.rlib` files otherwise dominate scan
+        // wall-time.
+        if matches!(
+            path.extension().and_then(|e| e.to_str()),
+            Some("o") | Some("a") | Some("rlib") | Some("rmeta")
+        ) {
             continue;
         }
 
@@ -1096,6 +1121,33 @@ mod tests {
         assert!(entries.iter().any(|e| e.name == "example.com/app"));
         assert!(entries.iter().any(|e| e.name == "gh/x/y"));
         assert!(entries.iter().all(|e| e.source_type.as_deref() != Some("go-buildinfo-missing")));
+    }
+
+    #[test]
+    fn build_intermediate_extensions_are_not_probed() {
+        // A file whose bytes look exactly like a Go binary but whose
+        // extension marks it as a compiler/linker intermediate must be
+        // skipped by the walker — Go binaries never ship as
+        // .o/.a/.rlib/.rmeta, and probing them dominated scan time on
+        // large build trees.
+        let dir = tempfile::tempdir().unwrap();
+        let mut bin = vec![0u8; 4096];
+        bin.extend_from_slice(&build_inline_buildinfo(
+            "path\texample.com/fake\nmod\texample.com/fake\tv0.0.0\t\n",
+            "",
+        ));
+        for name in ["fake.o", "fake.a", "fake.rlib", "fake.rmeta"] {
+            std::fs::write(dir.path().join(name), &bin).unwrap();
+        }
+
+        let (entries, _) = read(
+            dir.path(),
+            false,
+            &std::collections::HashSet::new(),
+            #[cfg(unix)]
+            &std::collections::HashSet::new(),
+        );
+        assert!(entries.is_empty(), "intermediates must not emit entries: {entries:?}");
     }
 
     #[test]

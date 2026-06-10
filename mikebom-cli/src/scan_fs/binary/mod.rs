@@ -201,24 +201,70 @@ pub fn read(
     };
 
     for path in discover_binaries(rootfs) {
+        // Size bounds via metadata BEFORE the full-file read. A
+        // multi-GB file that exceeds MAX_BINARY_SIZE_BYTES used to be
+        // slurped into memory in its entirety just to be rejected by
+        // the bounds check below.
+        let file_len = match std::fs::metadata(&path) {
+            Ok(m) => m.len(),
+            Err(_) => {
+                if walker_debug {
+                    eprintln!("WALKER {}: DROPPED reason=read-error", path.display());
+                }
+                continue;
+            }
+        };
+        if !(elf::MIN_BINARY_SIZE_BYTES..=elf::MAX_BINARY_SIZE_BYTES).contains(&file_len) {
+            if walker_debug {
+                eprintln!(
+                    "WALKER {}: DROPPED reason=size-out-of-bounds bytes={}",
+                    path.display(),
+                    file_len
+                );
+            }
+            continue;
+        }
+
+        // Early build-intermediate gate. `.o` / `.a` files used to be
+        // fully read AND fully introspected by `scan_binary` before
+        // the post-scan build-intermediate check threw the result
+        // away — on a Rust `target/` directory that meant reading +
+        // parsing hundreds of thousands of Mach-O objects (tens of
+        // GB) for nothing.
+        //
+        // Drop them here, BEFORE the read, with one carve-out: paths
+        // that could route into a cpython/openjdk umbrella fall
+        // through to the unchanged full pipeline, so collapse side
+        // effects keep firing only after a successful binary parse
+        // (exactly the pre-gate ordering). Every other `.o`/`.a`
+        // outcome in the old pipeline — parse failure, format
+        // mismatch, claimed path, rpm-dir heuristic, the
+        // build-intermediate drop itself — ended in a side-effect-free
+        // skip, so dropping unconditionally is observably identical.
+        let is_o_or_a_extension = matches!(
+            path.extension().and_then(|e| e.to_str()),
+            Some("o") | Some("a")
+        );
+        if is_o_or_a_extension
+            && !python_collapser.would_collapse(&path, rootfs)
+            && !jdk_collapser.would_collapse(&path, rootfs)
+        {
+            if walker_debug {
+                eprintln!(
+                    "WALKER {}: DROPPED reason=build-intermediate ext={:?}",
+                    path.display(),
+                    path.extension().and_then(|e| e.to_str())
+                );
+            }
+            continue;
+        }
+
         let Ok(bytes) = std::fs::read(&path) else {
             if walker_debug {
                 eprintln!("WALKER {}: DROPPED reason=read-error", path.display());
             }
             continue;
         };
-        if bytes.len() < elf::MIN_BINARY_SIZE_BYTES as usize
-            || bytes.len() > elf::MAX_BINARY_SIZE_BYTES as usize
-        {
-            if walker_debug {
-                eprintln!(
-                    "WALKER {}: DROPPED reason=size-out-of-bounds bytes={}",
-                    path.display(),
-                    bytes.len()
-                );
-            }
-            continue;
-        }
         let Some(scan) = scan_binary(&path, &bytes) else {
             if walker_debug {
                 eprintln!(
@@ -707,6 +753,80 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("script.sh"), b"#!/bin/sh\necho hi").unwrap();
         std::fs::write(dir.path().join("data.txt"), b"hello world").unwrap();
+        assert!(read(
+            dir.path(),
+            &Default::default(),
+            #[cfg(unix)]
+            &Default::default()
+        )
+        .is_empty());
+    }
+
+    /// Minimal parseable ELF64 little-endian header (no program/
+    /// section headers), padded past MIN_BINARY_SIZE_BYTES.
+    fn minimal_elf64_bytes(total_len: usize) -> Vec<u8> {
+        let mut b = vec![0u8; total_len.max(64)];
+        b[..4].copy_from_slice(&[0x7F, b'E', b'L', b'F']);
+        b[4] = 2; // ELFCLASS64
+        b[5] = 1; // little-endian
+        b[6] = 1; // EV_CURRENT
+        b[16] = 2; // e_type = ET_EXEC
+        b[18] = 0x3E; // e_machine = EM_X86_64
+        b[20] = 1; // e_version
+        b[52] = 64; // e_ehsize
+        b
+    }
+
+    /// Build intermediates (`.o` / `.a`) are dropped by the early gate
+    /// before the full-file read — they must never surface as
+    /// components, regardless of carrying a valid binary magic.
+    #[test]
+    fn object_files_are_dropped_as_build_intermediates() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("foo.o"), minimal_elf64_bytes(2048)).unwrap();
+        std::fs::write(dir.path().join("libbar.a"), minimal_elf64_bytes(2048)).unwrap();
+        assert!(read(
+            dir.path(),
+            &Default::default(),
+            #[cfg(unix)]
+            &Default::default()
+        )
+        .is_empty());
+    }
+
+    /// A `.o` under a `Python-<X.Y.Z>/` source tree still routes into
+    /// the cpython umbrella — the early build-intermediate gate must
+    /// not starve the python collapser (regression guard for the
+    /// fall-through carve-out).
+    #[test]
+    fn python_source_tree_object_file_still_collapses() {
+        let dir = tempfile::tempdir().unwrap();
+        let tree = dir.path().join("Python-3.11.4/Modules");
+        std::fs::create_dir_all(&tree).unwrap();
+        std::fs::write(tree.join("foo.o"), minimal_elf64_bytes(2048)).unwrap();
+        let entries = read(
+            dir.path(),
+            &Default::default(),
+            #[cfg(unix)]
+            &Default::default(),
+        );
+        assert_eq!(entries.len(), 1, "expected exactly the cpython umbrella");
+        assert!(
+            entries[0].purl.as_str().contains("cpython@3.11"),
+            "got {}",
+            entries[0].purl.as_str()
+        );
+    }
+
+    /// Files beyond MAX_BINARY_SIZE_BYTES are rejected via metadata
+    /// before any read (the sparse file here would be 500MB+ of
+    /// zeroes if it were slurped).
+    #[test]
+    fn oversized_file_is_skipped_via_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("huge");
+        let f = std::fs::File::create(&path).unwrap();
+        f.set_len(elf::MAX_BINARY_SIZE_BYTES + 1).unwrap();
         assert!(read(
             dir.path(),
             &Default::default(),

@@ -2035,12 +2035,16 @@ fn should_skip_descent(path: &std::path::Path) -> bool {
     let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
         return true;
     };
-    if name.starts_with('.') {
+    // Per `go help packages`: "Directory and file names that begin
+    // with '.' or '_' are ignored by the go tool, as are directories
+    // named 'testdata'." We mirror the same three rules so mikebom's
+    // workspace discovery sees exactly what `go list ./...` would.
+    if name.starts_with('.') || name.starts_with('_') {
         return true;
     }
     if matches!(
         name,
-        "vendor" | "node_modules" | "target" | "dist" | "build" | "__pycache__"
+        "vendor" | "node_modules" | "target" | "dist" | "build" | "__pycache__" | "testdata"
     ) {
         return true;
     }
@@ -2955,6 +2959,55 @@ tool (
         assert!(
             entries.is_empty(),
             "walker must skip /workspace/go/pkg/mod cache tree: {entries:?}",
+        );
+    }
+
+    #[test]
+    fn walker_skips_testdata_subtree() {
+        // Per `go help packages`: directories named `testdata` are
+        // ignored by the Go tool. A `go.mod` under `testdata/` is a
+        // fixture for testing SBOM/build tooling, not a real workspace
+        // — it would silently invert dependency edges in the emitted
+        // SBOM (parent looks like it depends on the fixture). Match
+        // Go's own behavior and skip the subtree.
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("app");
+        write_go_project(&real, "example.com/app", &[("github.com/real/dep", "v1.0.0")]);
+        let fixture = real.join("pkg/sbomgen/testdata/gofixture");
+        write_go_project(
+            &fixture,
+            "example.com/fixture",
+            &[("example.com/app", "v0.0.0-fake")],
+        );
+        let (entries, _) = read(dir.path(), false);
+        assert!(
+            entries.iter().any(|e| e.name == "example.com/app"),
+            "real workspace must still emit: {entries:?}",
+        );
+        assert!(
+            !entries.iter().any(|e| e.name == "example.com/fixture"),
+            "testdata/ go.mod must NOT become a main-module: {entries:?}",
+        );
+    }
+
+    #[test]
+    fn walker_skips_underscore_prefixed_subtree() {
+        // Per `go help packages`: directories whose name starts with
+        // `_` are ignored by the Go tool. Common patterns: `_fork/`,
+        // `_archive/`, `_examples/`. Match Go and skip.
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("app");
+        write_go_project(&real, "example.com/app", &[("github.com/real/dep", "v1.0.0")]);
+        let archived = real.join("_archive/oldproject");
+        write_go_project(&archived, "example.com/archived", &[]);
+        let (entries, _) = read(dir.path(), false);
+        assert!(
+            entries.iter().any(|e| e.name == "example.com/app"),
+            "real workspace must still emit: {entries:?}",
+        );
+        assert!(
+            !entries.iter().any(|e| e.name == "example.com/archived"),
+            "_-prefixed dir go.mod must NOT become a main-module: {entries:?}",
         );
     }
 

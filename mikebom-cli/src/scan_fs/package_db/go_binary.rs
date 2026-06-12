@@ -654,12 +654,16 @@ fn should_skip_binary_descent(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
         return true;
     };
-    if name.starts_with('.') {
+    // Mirror the Go source walker's skip rules (`go help packages`:
+    // dot- and underscore-prefixed dirs and the literal `testdata`
+    // are reserved/ignored by the go tool). Binaries living under
+    // those dirs are fixture artifacts, not runtime artifacts.
+    if name.starts_with('.') || name.starts_with('_') {
         return true;
     }
     if matches!(
         name,
-        "vendor" | "node_modules" | "target" | "__pycache__" | "proc" | "sys"
+        "vendor" | "node_modules" | "target" | "__pycache__" | "proc" | "sys" | "testdata"
     ) {
         return true;
     }

@@ -473,6 +473,11 @@ spdx23_anno!(c58_spdx23, "mikebom:fingerprint-corpus-sha",   component);
 // Co-gated with C58; preserves SC-003 byte-identity for non-opt-in.
 spdx23_anno!(c59_spdx23, "mikebom:fingerprint-confidence",   component);
 
+// C60 — `mikebom:exclude-path` (milestone 113 FR-014 / SC-007).
+// Envelope-level transparency annotation. Document-scope, mirrors
+// CDX `metadata.properties[].mikebom:exclude-path`.
+spdx23_anno!(c60_spdx23, "mikebom:exclude-path",             document);
+
 // ============================================================
 // Sections D-G — custom SPDX 2.3 extractors
 // ============================================================

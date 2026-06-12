@@ -1217,7 +1217,11 @@ pub struct GoScanSignals {
     pub graph_completeness_reasons: Vec<String>,
 }
 
-pub fn read(rootfs: &Path, _include_dev: bool) -> (Vec<PackageDbEntry>, GoScanSignals) {
+pub fn read(
+    rootfs: &Path,
+    _include_dev: bool,
+    exclude_set: &super::super::exclude_path::ExclusionSet,
+) -> (Vec<PackageDbEntry>, GoScanSignals) {
     let mut out: Vec<PackageDbEntry> = Vec::new();
     let mut seen_purls: HashSet<String> = HashSet::new();
     let mut signals = GoScanSignals::default();
@@ -1236,7 +1240,7 @@ pub fn read(rootfs: &Path, _include_dev: bool) -> (Vec<PackageDbEntry>, GoScanSi
     // build the union of known module paths BEFORE the import-scan
     // pass. The production-import filter (G4) needs to longest-
     // prefix-match import strings against this union.
-    let project_roots = candidate_project_roots(rootfs);
+    let project_roots = candidate_project_roots(rootfs, exclude_set);
     let mut parsed_roots: Vec<(PathBuf, GoModDocument, Vec<GoSumEntry>)> = Vec::new();
     let mut known_modules: Vec<String> = Vec::new();
     for project_root in &project_roots {
@@ -1976,10 +1980,13 @@ fn parse_import_line(line: &str) -> Option<String> {
     Some(after[..quote_end].to_string())
 }
 
-fn candidate_project_roots(rootfs: &Path) -> Vec<PathBuf> {
+fn candidate_project_roots(
+    rootfs: &Path,
+    exclude_set: &super::super::exclude_path::ExclusionSet,
+) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut visited: HashSet<PathBuf> = HashSet::new();
-    walk_for_go_roots(rootfs, 0, &mut out, &mut visited);
+    walk_for_go_roots(rootfs, rootfs, 0, &mut out, &mut visited, exclude_set);
     out
 }
 
@@ -1991,9 +1998,11 @@ fn candidate_project_roots(rootfs: &Path) -> Vec<PathBuf> {
 /// after (rpm_file, binary, cargo, gem, go_binary, maven).
 fn walk_for_go_roots(
     dir: &Path,
+    rootfs: &Path,
     depth: usize,
     out: &mut Vec<PathBuf>,
     visited: &mut HashSet<PathBuf>,
+    exclude_set: &super::super::exclude_path::ExclusionSet,
 ) {
     let key = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
     if !visited.insert(key) {
@@ -2019,7 +2028,15 @@ fn walk_for_go_roots(
         if should_skip_descent(&path) {
             continue;
         }
-        walk_for_go_roots(&path, depth + 1, out, visited);
+        // Milestone 113 — user-supplied directory exclusion.
+        if !exclude_set.is_empty() {
+            if let Ok(rel) = path.strip_prefix(rootfs) {
+                if exclude_set.matches(&rel.to_string_lossy()) {
+                    continue;
+                }
+            }
+        }
+        walk_for_go_roots(&path, rootfs, depth + 1, out, visited, exclude_set);
     }
 }
 
@@ -2765,7 +2782,7 @@ tool (
     #[test]
     fn read_empty_rootfs_returns_zero() {
         let dir = tempfile::tempdir().unwrap();
-        let (entries, _signals) = read(dir.path(), false);
+        let (entries, _signals) = read(dir.path(), false, &Default::default());
         assert!(entries.is_empty());
     }
 
@@ -2795,7 +2812,7 @@ tool (
         )
         .unwrap();
 
-        let (entries, _) = read(dir.path(), false);
+        let (entries, _) = read(dir.path(), false, &Default::default());
 
         // The tool's enclosing module is emitted as a component
         // (from go.sum).
@@ -2862,7 +2879,7 @@ tool (
         .unwrap();
         std::fs::write(svc.join("go.sum"), "github.com/x/y v1.0.0 h1:ok=\n")
             .unwrap();
-        let (entries, _) = read(dir.path(), false);
+        let (entries, _) = read(dir.path(), false, &Default::default());
         // Milestone 053: the workspace root IS now emitted as a
         // synthetic main-module component (per FR-001), tagged with
         // `mikebom:component-role: main-module`. Pre-053 the
@@ -2912,7 +2929,7 @@ tool (
         let cache =
             dir.path().join("root/go/pkg/mod/github.com/foo/bar@v1.0.0");
         write_go_project(&cache, "github.com/foo/bar", &[("github.com/x/y", "v2.0.0")]);
-        let (entries, _) = read(dir.path(), false);
+        let (entries, _) = read(dir.path(), false, &Default::default());
         assert!(
             entries.is_empty(),
             "walker must skip /root/go/pkg/mod cache tree: {entries:?}",
@@ -2925,7 +2942,7 @@ tool (
         let cache =
             dir.path().join("home/alice/go/pkg/mod/github.com/foo/bar@v1.0.0");
         write_go_project(&cache, "github.com/foo/bar", &[("github.com/x/y", "v2.0.0")]);
-        let (entries, _) = read(dir.path(), false);
+        let (entries, _) = read(dir.path(), false, &Default::default());
         assert!(
             entries.is_empty(),
             "walker must skip $HOME/go/pkg/mod cache tree: {entries:?}",
@@ -2939,7 +2956,7 @@ tool (
         let dir = tempfile::tempdir().unwrap();
         let app = dir.path().join("app");
         write_go_project(&app, "example.com/app", &[("github.com/real/dep", "v1.2.3")]);
-        let (entries, _) = read(dir.path(), false);
+        let (entries, _) = read(dir.path(), false, &Default::default());
         assert!(
             entries.iter().any(|e| e.name == "github.com/real/dep"),
             "legitimate project root must still emit: {entries:?}",
@@ -2955,7 +2972,7 @@ tool (
             .path()
             .join("workspace/go/pkg/mod/github.com/foo/bar@v1.0.0");
         write_go_project(&cache, "github.com/foo/bar", &[("github.com/x/y", "v2.0.0")]);
-        let (entries, _) = read(dir.path(), false);
+        let (entries, _) = read(dir.path(), false, &Default::default());
         assert!(
             entries.is_empty(),
             "walker must skip /workspace/go/pkg/mod cache tree: {entries:?}",
@@ -2979,7 +2996,7 @@ tool (
             "example.com/fixture",
             &[("example.com/app", "v0.0.0-fake")],
         );
-        let (entries, _) = read(dir.path(), false);
+        let (entries, _) = read(dir.path(), false, &Default::default());
         assert!(
             entries.iter().any(|e| e.name == "example.com/app"),
             "real workspace must still emit: {entries:?}",
@@ -3000,7 +3017,7 @@ tool (
         write_go_project(&real, "example.com/app", &[("github.com/real/dep", "v1.0.0")]);
         let archived = real.join("_archive/oldproject");
         write_go_project(&archived, "example.com/archived", &[]);
-        let (entries, _) = read(dir.path(), false);
+        let (entries, _) = read(dir.path(), false, &Default::default());
         assert!(
             entries.iter().any(|e| e.name == "example.com/app"),
             "real workspace must still emit: {entries:?}",

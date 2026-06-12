@@ -655,6 +655,13 @@ cdx_anno!(c58_cdx, "mikebom:fingerprint-corpus-sha",    component);
 // no value-space collision. Simple property — uses the standard macro.
 cdx_anno!(c59_cdx, "mikebom:fingerprint-confidence",    component);
 
+// C60 — `mikebom:exclude-path` (milestone 113 FR-014 / SC-007).
+// Envelope-level transparency annotation listing every user-supplied
+// directory-exclusion entry that was in effect for the scan. Emitted
+// only when at least one entry was supplied; absent (+ byte-identical
+// pre-feature output) when no exclusions in effect.
+cdx_anno!(c60_cdx, "mikebom:exclude-path",              document);
+
 // ============================================================
 // Section D — Evidence (D1, D2 — CDX-native shape)
 // ============================================================

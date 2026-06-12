@@ -1,6 +1,6 @@
 # mikebom Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-06-09
+Auto-generated from all feature plans. Last updated: 2026-06-12
 
 ## Active Technologies
 - Rust stable (user-space only; no eBPF touched in this milestone) (002-python-npm-ecosystem)
@@ -117,6 +117,8 @@ Auto-generated from all feature plans. Last updated: 2026-06-09
 - Per-host cache at `~/.cache/mikebom/fingerprints/<source-id>/<pinned-sha>/` where `<source-id>` is a stable hash of the source URL (so multiple sources coexist without filename collisions) and `<pinned-sha>` is the archive's content SHA (matching the milestone-090 + milestone-108 pattern). The 24-hour TTL is implemented as a `last_used.touch` sidecar file whose mtime is checked at scan startup; expiry triggers re-fetch but does NOT delete the cache directory (re-fetch may write the same SHA back, in which case the existing dir is reused). (110-pluggable-corpus-v2)
 - Rust stable (workspace toolchain inherited from milestones 001–110; no nightly required for this user-space-only feature). + Existing only — `clap` (the new flag via `ArgAction::Append` derive), `serde`/`serde_json` (additive envelope round-trip), `Purl` newtype from `mikebom-common` (milestone 005 — canonicalization + equality), milestone-072 `SourceDocumentBinding` (the envelope this extends), `tracing` (warn/info logs), `anyhow` (error propagation), `thiserror` (alias-parse error variants). **No new Cargo dependencies.** (111-pkg-alias-binding)
 - N/A — alias declarations are in-process per scan; persisted only inside the emitted SBOM via the extended envelope. No caches, no databases. (111-pkg-alias-binding)
+- Rust stable (workspace toolchain inherited from milestones 001–113; no nightly required for this user-space-only work). + existing only EXCEPT one new direct dep — `globset = "0.4"` (pure Rust, pulls `regex` + `regex-syntax` which are already in the workspace dependency closure). Existing crates reused: `clap` (the new flag via `ArgAction::Append` derive + `value_parser` validation), `serde`/`serde_json` (transparency annotation emission), `tracing` (debug logs for matched directories), `anyhow`/`thiserror` (parse-error class for malformed patterns), `walkdir`/`std::fs::canonicalize` (existing descent helpers — unchanged). `url` (workspace) for env-var-list separator handling on Windows is not needed; we use `std::env::var` + `std::env::join_paths`-style splitting. (113-exclude-path-flag)
+- N/A — exclusion entries are in-process per scan; no caches, no persistence. (113-exclude-path-flag)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -179,9 +181,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 113-exclude-path-flag: Added Rust stable (workspace toolchain inherited from milestones 001–113; no nightly required for this user-space-only work). + existing only EXCEPT one new direct dep — `globset = "0.4"` (pure Rust, pulls `regex` + `regex-syntax` which are already in the workspace dependency closure). Existing crates reused: `clap` (the new flag via `ArgAction::Append` derive + `value_parser` validation), `serde`/`serde_json` (transparency annotation emission), `tracing` (debug logs for matched directories), `anyhow`/`thiserror` (parse-error class for malformed patterns), `walkdir`/`std::fs::canonicalize` (existing descent helpers — unchanged). `url` (workspace) for env-var-list separator handling on Windows is not needed; we use `std::env::var` + `std::env::join_paths`-style splitting.
 - 111-pkg-alias-binding: Added Rust stable (workspace toolchain inherited from milestones 001–110; no nightly required for this user-space-only feature). + Existing only — `clap` (the new flag via `ArgAction::Append` derive), `serde`/`serde_json` (additive envelope round-trip), `Purl` newtype from `mikebom-common` (milestone 005 — canonicalization + equality), milestone-072 `SourceDocumentBinding` (the envelope this extends), `tracing` (warn/info logs), `anyhow` (error propagation), `thiserror` (alias-parse error variants). **No new Cargo dependencies.**
 - 110-pluggable-corpus-v2: Added Rust stable (workspace toolchain inherited from milestones 001–109; no nightly required for this user-space-only work).
-- 109-binary-source-purl-binding: Added Rust stable (workspace toolchain inherited from milestones 001–108; no nightly required for this user-space-only attribution layer). + existing only — `std::fs::canonicalize` / `std::fs::read_dir` (build-dir walking), the milestone-102/103 cmake reader's existing parsed-declaration output (`PackageDbEntry` instances tagged with `mikebom:source-mechanism = cmake-fetchcontent-{git,url}`), and the milestone-099/108 fingerprint matcher's existing `SymbolFingerprintMatch` records. The milestone-105 dedup pipeline (`SourceMechanism` enum + `mikebom:also-detected-via` collision handling) merges the cmake source-tier component with the post-attribution binary-tier component into ONE final component via shared PURL.
 
 
 <!-- MANUAL ADDITIONS START -->

@@ -543,6 +543,11 @@ spdx3_anno!(c58_spdx3, "mikebom:fingerprint-corpus-sha",   component);
 // Numeric "X.XX" fused-confidence string.
 spdx3_anno!(c59_spdx3, "mikebom:fingerprint-confidence",   component);
 
+// C60 — `mikebom:exclude-path` (milestone 113 FR-014 / SC-007).
+// Envelope-level transparency annotation. Document-scope, mirrors
+// CDX `metadata.properties[].mikebom:exclude-path`.
+spdx3_anno!(c60_spdx3, "mikebom:exclude-path",             document);
+
 // C47 — document-level user-defined identifiers (milestone 073).
 // Per `contracts/identifiers-annotation.md` C-1 SPDX 3 and C-2
 // SPDX 3: user-defined identifiers ride `Element.externalIdentifier[]`

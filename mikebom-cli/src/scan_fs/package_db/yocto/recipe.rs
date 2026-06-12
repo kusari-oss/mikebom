@@ -145,6 +145,7 @@ fn process_recipe(path: &Path, filename: &str, regex: &Regex) -> Option<PackageD
     }
 
     Some(PackageDbEntry {
+        build_inclusion: None,
         purl,
         name,
         version,

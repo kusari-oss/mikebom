@@ -655,12 +655,33 @@ cdx_anno!(c58_cdx, "mikebom:fingerprint-corpus-sha",    component);
 // no value-space collision. Simple property — uses the standard macro.
 cdx_anno!(c59_cdx, "mikebom:fingerprint-confidence",    component);
 
-// C60 — `mikebom:exclude-path` (milestone 113 FR-014 / SC-007).
+// C60 — `mikebom:build-inclusion` (milestone 112). Open-enum
+// `unknown` / `not-needed` build-participation marker on Go
+// components discovered via the lower-fidelity fallback paths
+// (C48 go-sum-fallback / C45 flat-attached-fallback) or proven
+// not-needed by `go mod why -m`. Simple property — the native CDX
+// `scope: "excluded"` companion (not-needed only) rides the native
+// field and is NOT part of this row's parity payload.
+cdx_anno!(c60_cdx, "mikebom:build-inclusion",           component);
+
+// C61 — `mikebom:build-inclusion-derivation` (milestone 112).
+// Provenance discriminator naming the evidence source for a C60
+// `not-needed` verdict (value this milestone: `go-mod-why`). NOT
+// emitted alongside `unknown`. Simple property — standard macro.
+cdx_anno!(c61_cdx, "mikebom:build-inclusion-derivation", component);
+
+// C62 — `mikebom:lifecycle-scope-derivation` (test-closure
+// propagation fix + milestone 112). Open-enum `test-only-closure` /
+// `go-mod-why` on graph-derived test-scoped components; absent on
+// direct-import-walk test tags. Simple property — standard macro.
+cdx_anno!(c62_cdx, "mikebom:lifecycle-scope-derivation", component);
+
+// C63 — `mikebom:exclude-path` (milestone 113 FR-014 / SC-007).
 // Envelope-level transparency annotation listing every user-supplied
 // directory-exclusion entry that was in effect for the scan. Emitted
 // only when at least one entry was supplied; absent (+ byte-identical
 // pre-feature output) when no exclusions in effect.
-cdx_anno!(c60_cdx, "mikebom:exclude-path",              document);
+cdx_anno!(c63_cdx, "mikebom:exclude-path",              document);
 
 // ============================================================
 // Section D — Evidence (D1, D2 — CDX-native shape)

@@ -877,6 +877,7 @@ mod tests {
         use mikebom_common::types::purl::Purl;
 
         let mk = |purl: &str, tier: &str| ResolvedComponent {
+            build_inclusion: None,
             purl: Purl::new(purl).expect("valid purl"),
             name: "x".to_string(),
             version: "1.0".to_string(),
@@ -961,6 +962,7 @@ mod tests {
         use mikebom_common::types::purl::Purl;
 
         let c = ResolvedComponent {
+            build_inclusion: None,
             purl: Purl::new("pkg:generic/weird@1.0").expect("valid purl"),
             name: "weird".to_string(),
             version: "1.0".to_string(),

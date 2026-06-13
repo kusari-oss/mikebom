@@ -1982,64 +1982,28 @@ fn parse_import_line(line: &str) -> Option<String> {
     Some(after[..quote_end].to_string())
 }
 
+/// Milestone 114: delegates to `scan_fs::walk::safe_walk`. The Go
+/// walker preserves the milestone-113 unconditional `testdata/`/`_`-
+/// prefix skips via `should_skip_descent` (which takes `&Path`,
+/// already path-shaped post-113).
 fn candidate_project_roots(
     rootfs: &Path,
     exclude_set: &super::super::exclude_path::ExclusionSet,
 ) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let mut visited: HashSet<PathBuf> = HashSet::new();
-    walk_for_go_roots(rootfs, rootfs, 0, &mut out, &mut visited, exclude_set);
-    out
-}
-
-/// Milestone 054 audit (verify-only — no patch needed):
-/// `walk_for_go_roots` already has the canonicalize-keyed visited
-/// set + depth bound (`MAX_PROJECT_ROOT_DEPTH`) per the contract's
-/// FR-001/FR-002/FR-003 invariants. This walker is the reference
-/// implementation that the per-walker hardening passes patterned
-/// after (rpm_file, binary, cargo, gem, go_binary, maven).
-fn walk_for_go_roots(
-    dir: &Path,
-    rootfs: &Path,
-    depth: usize,
-    out: &mut Vec<PathBuf>,
-    visited: &mut HashSet<PathBuf>,
-    exclude_set: &super::super::exclude_path::ExclusionSet,
-) {
-    let key = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
-    if !visited.insert(key) {
-        return;
-    }
-
-    if dir.join("go.mod").is_file() {
-        out.push(dir.to_path_buf());
-    }
-
-    if depth >= MAX_PROJECT_ROOT_DEPTH {
-        return;
-    }
-
-    let Ok(read_dir) = std::fs::read_dir(dir) else {
-        return;
+    let cfg = crate::scan_fs::walk::WalkConfig {
+        max_depth: MAX_PROJECT_ROOT_DEPTH,
+        should_skip: &|candidate: &Path, _rootfs: &Path| -> bool {
+            should_skip_descent(candidate)
+        },
+        exclude_set,
     };
-    for entry in read_dir.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
+    crate::scan_fs::walk::safe_walk(rootfs, &cfg, |path| {
+        if path.is_dir() && path.join("go.mod").is_file() {
+            out.push(path.to_path_buf());
         }
-        if should_skip_descent(&path) {
-            continue;
-        }
-        // Milestone 113 — user-supplied directory exclusion.
-        if !exclude_set.is_empty() {
-            if let Ok(rel) = path.strip_prefix(rootfs) {
-                if exclude_set.matches(&rel.to_string_lossy()) {
-                    continue;
-                }
-            }
-        }
-        walk_for_go_roots(&path, rootfs, depth + 1, out, visited, exclude_set);
-    }
+    });
+    out
 }
 
 /// Skip descent into directories that can't legitimately hold a

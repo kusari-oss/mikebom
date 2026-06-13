@@ -279,22 +279,27 @@ fn candidate_python_project_roots(
     rootfs: &Path,
     exclude_set: &super::exclude_path::ExclusionSet,
 ) -> Vec<PathBuf> {
-    use super::project_roots::{
-        should_skip_default_descent, walk_for_project_roots, WalkConfig,
-    };
-    walk_for_project_roots(
-        rootfs,
-        &WalkConfig {
-            max_depth: MAX_PROJECT_ROOT_DEPTH,
-            is_project_root: &has_python_project_marker,
+    use super::project_roots::should_skip_default_descent;
+    let mut out = Vec::new();
+    let cfg = crate::scan_fs::walk::WalkConfig {
+        max_depth: MAX_PROJECT_ROOT_DEPTH,
+        should_skip: &|candidate: &Path, _rootfs: &Path| -> bool {
             // Default skip set + python's `site-packages` (handled
             // separately by `read_venv_dist_info`).
-            should_skip: &|name| {
-                should_skip_default_descent(name) || name == "site-packages"
-            },
-            exclude_set,
+            candidate
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(|name| should_skip_default_descent(name) || name == "site-packages")
+                .unwrap_or(true)
         },
-    )
+        exclude_set,
+    };
+    crate::scan_fs::walk::safe_walk(rootfs, &cfg, |path| {
+        if path.is_dir() && has_python_project_marker(path) {
+            out.push(path.to_path_buf());
+        }
+    });
+    out
 }
 
 /// True when `dir` holds any Python project-root marker. Installed

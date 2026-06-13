@@ -4,7 +4,6 @@
 //! match a known binary magic (ELF / Mach-O / PE). Skips hidden
 //! and build directories; ignores files outside the size envelope.
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// Milestone 054 FR-003: max recursion depth for the `walk_dir`
@@ -26,55 +25,25 @@ pub(super) fn discover_binaries(root: &Path) -> Vec<PathBuf> {
         }
         return out;
     }
-    let mut visited: HashSet<PathBuf> = HashSet::new();
-    walk_dir(root, 0, &mut visited, &mut out);
-    out
-}
-
-/// Milestone 054 FR-001/FR-002/FR-003: canonicalize-keyed visited
-/// set + max-depth backstop prevents unbounded recursion on symlink
-/// loops (same shape as the rpm_file::walk_dir bug — knative/func
-/// reproducer).
-fn walk_dir(
-    dir: &Path,
-    depth: usize,
-    visited: &mut HashSet<PathBuf>,
-    acc: &mut Vec<PathBuf>,
-) {
-    if depth >= MAX_WALK_DEPTH {
-        tracing::debug!(
-            depth,
-            path = %dir.display(),
-            "walker: max-depth reached",
-        );
-        return;
-    }
-    let key = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
-    if !visited.insert(key) {
-        tracing::debug!(
-            path = %dir.display(),
-            "walker: cycle/visited skip",
-        );
-        return;
-    }
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if matches!(
+    // Milestone 114: delegates to scan_fs::walk::safe_walk.
+    let empty = crate::scan_fs::package_db::exclude_path::ExclusionSet::default();
+    let cfg = crate::scan_fs::walk::WalkConfig {
+        max_depth: MAX_WALK_DEPTH,
+        should_skip: &|candidate: &Path, _rootfs: &Path| -> bool {
+            let name = candidate.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            matches!(
                 name,
                 ".git" | "target" | "node_modules" | ".cargo" | "__pycache__" | ".venv"
-            ) {
-                continue;
-            }
-            walk_dir(&path, depth + 1, visited, acc);
-        } else if path.is_file() && is_supported_binary(&path) {
-            acc.push(path);
+            )
+        },
+        exclude_set: &empty,
+    };
+    crate::scan_fs::walk::safe_walk(root, &cfg, |path| {
+        if path.is_file() && is_supported_binary(path) {
+            out.push(path.to_path_buf());
         }
-    }
+    });
+    out
 }
 
 fn is_supported_binary(path: &Path) -> bool {

@@ -3167,83 +3167,44 @@ pub fn read_with_claims(
     (out, scan_target_coord)
 }
 
+/// Milestone 114: delegates to `scan_fs::walk::safe_walk`.
+///
+/// Yields two output Vecs (poms + jars) via the same descent. The
+/// visit callback dispatches on file extension/name; the helper's
+/// max_depth governs both.
 fn find_maven_artifacts(
     rootfs: &Path,
     exclude_set: &super::exclude_path::ExclusionSet,
 ) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let mut poms = Vec::new();
     let mut jars = Vec::new();
-    let mut visited: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
-    walk_for_maven(
-        rootfs, rootfs, 0, &mut visited, &mut poms, &mut jars, exclude_set,
-    );
-    (poms, jars)
-}
-
-/// Milestone 054 FR-001/FR-002/FR-003: canonicalize-keyed visited
-/// set + max-depth backstop prevents unbounded recursion on symlink
-/// loops.
-fn walk_for_maven(
-    dir: &Path,
-    rootfs: &Path,
-    depth: usize,
-    visited: &mut std::collections::HashSet<PathBuf>,
-    poms: &mut Vec<PathBuf>,
-    jars: &mut Vec<PathBuf>,
-    exclude_set: &super::exclude_path::ExclusionSet,
-) {
-    if depth >= MAX_PROJECT_ROOT_DEPTH {
-        // Even past the depth cap, still scan for archives in the
-        // current dir — JARs can be anywhere.
-    }
-    let key = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
-    if !visited.insert(key) {
-        tracing::debug!(
-            path = %dir.display(),
-            "walker: cycle/visited skip",
-        );
-        return;
-    }
-    let Ok(read_dir) = std::fs::read_dir(dir) else {
-        return;
+    let cfg = crate::scan_fs::walk::WalkConfig {
+        max_depth: MAX_PROJECT_ROOT_DEPTH,
+        should_skip: &|candidate: &Path, _rootfs: &Path| -> bool {
+            candidate
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(should_skip_descent)
+                .unwrap_or(true)
+        },
+        exclude_set,
     };
-    for entry in read_dir.flatten() {
-        let path = entry.path();
-        if let Ok(meta) = entry.metadata() {
-            if meta.is_file() {
-                if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-                    let name_lower = name.to_ascii_lowercase();
-                    if name_lower == "pom.xml" {
-                        poms.push(path.clone());
-                    } else if name_lower.ends_with(".jar")
-                        || name_lower.ends_with(".war")
-                        || name_lower.ends_with(".ear")
-                    {
-                        jars.push(path.clone());
-                    }
-                }
-                continue;
-            }
-            if meta.is_dir() {
-                if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-                    if should_skip_descent(name) {
-                        continue;
-                    }
-                }
-                // Milestone 113 — user-supplied directory exclusion.
-                if !exclude_set.is_empty() {
-                    if let Ok(rel) = path.strip_prefix(rootfs) {
-                        if exclude_set.matches(&rel.to_string_lossy()) {
-                            continue;
-                        }
-                    }
-                }
-                if depth < MAX_PROJECT_ROOT_DEPTH {
-                    walk_for_maven(&path, rootfs, depth + 1, visited, poms, jars, exclude_set);
+    crate::scan_fs::walk::safe_walk(rootfs, &cfg, |path| {
+        if path.is_file() {
+            if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+                let name_lower = name.to_ascii_lowercase();
+                if name_lower == "pom.xml" {
+                    poms.push(path.to_path_buf());
+                } else if name_lower.ends_with(".jar")
+                    || name_lower.ends_with(".war")
+                    || name_lower.ends_with(".ear")
+                {
+                    jars.push(path.to_path_buf());
                 }
             }
         }
-    }
+    });
+    (poms, jars)
 }
 
 fn should_skip_descent(name: &str) -> bool {
@@ -3285,66 +3246,32 @@ enum PropertyResolution {
 /// install-state paths (`target/`, `.m2/`, `node_modules/`,
 /// `vendor/`) per FR-003. Output is alphabetically sorted for
 /// cross-host determinism.
+/// Milestone 114: delegates to `scan_fs::walk::safe_walk`. Output is
+/// sorted lex by path to preserve pre-114 deterministic discovery
+/// order.
 fn find_top_level_poms(
     rootfs: &Path,
     exclude_set: &super::exclude_path::ExclusionSet,
 ) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let mut visited: HashSet<PathBuf> = HashSet::new();
-    walk_for_top_level_poms(rootfs, rootfs, 0, &mut visited, &mut out, exclude_set);
-    out
-}
-
-fn walk_for_top_level_poms(
-    dir: &Path,
-    rootfs: &Path,
-    depth: usize,
-    visited: &mut HashSet<PathBuf>,
-    out: &mut Vec<PathBuf>,
-    exclude_set: &super::exclude_path::ExclusionSet,
-) {
-    if depth >= MAX_PROJECT_ROOT_DEPTH {
-        return;
-    }
-    let key = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
-    if !visited.insert(key) {
-        return;
-    }
-    let Ok(read_dir) = std::fs::read_dir(dir) else {
-        return;
-    };
-    let mut entries: Vec<_> = read_dir.flatten().collect();
-    entries.sort_by_key(|e| e.file_name());
-    for entry in entries {
-        let path = entry.path();
-        if path.is_file() {
-            if path.file_name().and_then(|s| s.to_str()) == Some("pom.xml") {
-                out.push(path);
-            }
-        } else if path.is_dir() {
-            let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
-                continue;
+    let cfg = crate::scan_fs::walk::WalkConfig {
+        max_depth: MAX_PROJECT_ROOT_DEPTH,
+        should_skip: &|candidate: &Path, _rootfs: &Path| -> bool {
+            let Some(name) = candidate.file_name().and_then(|s| s.to_str()) else {
+                return true;
             };
-            // Standard skip set + maven install-state paths per FR-003.
-            if should_skip_descent(name)
-                || matches!(
-                    name,
-                    "target" | ".m2" | "node_modules" | "vendor"
-                )
-            {
-                continue;
-            }
-            // Milestone 113 — user-supplied directory exclusion.
-            if !exclude_set.is_empty() {
-                if let Ok(rel) = path.strip_prefix(rootfs) {
-                    if exclude_set.matches(&rel.to_string_lossy()) {
-                        continue;
-                    }
-                }
-            }
-            walk_for_top_level_poms(&path, rootfs, depth + 1, visited, out, exclude_set);
+            should_skip_descent(name)
+                || matches!(name, "target" | ".m2" | "node_modules" | "vendor")
+        },
+        exclude_set,
+    };
+    crate::scan_fs::walk::safe_walk(rootfs, &cfg, |path| {
+        if path.is_file() && path.file_name().and_then(|s| s.to_str()) == Some("pom.xml") {
+            out.push(path.to_path_buf());
         }
-    }
+    });
+    out.sort();
+    out
 }
 
 /// Pre-parsed POMs keyed by absolute path (for `doc_for_path`

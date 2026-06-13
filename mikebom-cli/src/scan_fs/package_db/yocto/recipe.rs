@@ -31,6 +31,7 @@ const RECIPE_FILENAME_REGEX: &str =
 /// `PackageDbEntry` per recipe. Bounded to depth 8 (matches the
 /// established source-tree-walker convention) to avoid runaway
 /// traversal in deep monorepos.
+/// Milestone 114: delegates to `scan_fs::walk::safe_walk`.
 pub fn read(
     rootfs: &Path,
     exclude_set: &super::super::exclude_path::ExclusionSet,
@@ -39,58 +40,32 @@ pub fn read(
         return Vec::new();
     };
     let mut out = Vec::new();
-    walk(rootfs, rootfs, 0, 8, &regex, &mut out, exclude_set);
-    out
-}
-
-fn walk(
-    dir: &Path,
-    rootfs: &Path,
-    depth: usize,
-    max_depth: usize,
-    regex: &Regex,
-    out: &mut Vec<PackageDbEntry>,
-    exclude_set: &super::super::exclude_path::ExclusionSet,
-) {
-    if depth > max_depth {
-        return;
-    }
-    let Ok(read_dir) = std::fs::read_dir(dir) else {
-        return;
+    let cfg = crate::scan_fs::walk::WalkConfig {
+        max_depth: 8,
+        should_skip: &|candidate: &Path, _rootfs: &Path| -> bool {
+            candidate
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(super::super::project_roots::should_skip_default_descent)
+                .unwrap_or(true)
+        },
+        exclude_set,
     };
-    for entry in read_dir.flatten() {
-        let path = entry.path();
-        let Ok(ft) = entry.file_type() else {
-            continue;
-        };
-        if ft.is_dir() {
-            let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            if super::super::project_roots::should_skip_default_descent(name) {
-                continue;
-            }
-            // Milestone 113 — user-supplied directory exclusion.
-            if !exclude_set.is_empty() {
-                if let Ok(rel) = path.strip_prefix(rootfs) {
-                    if exclude_set.matches(&rel.to_string_lossy()) {
-                        continue;
-                    }
-                }
-            }
-            walk(&path, rootfs, depth + 1, max_depth, regex, out, exclude_set);
-        } else if ft.is_file() {
-            let Some(filename) = path.file_name().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            if !filename.ends_with(".bb") {
-                continue;
-            }
-            if let Some(entry) = process_recipe(&path, filename, regex) {
-                out.push(entry);
-            }
+    crate::scan_fs::walk::safe_walk(rootfs, &cfg, |path| {
+        if !path.is_file() {
+            return;
         }
-    }
+        let Some(filename) = path.file_name().and_then(|s| s.to_str()) else {
+            return;
+        };
+        if !filename.ends_with(".bb") {
+            return;
+        }
+        if let Some(entry) = process_recipe(path, filename, &regex) {
+            out.push(entry);
+        }
+    });
+    out
 }
 
 fn process_recipe(path: &Path, filename: &str, regex: &Regex) -> Option<PackageDbEntry> {

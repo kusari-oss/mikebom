@@ -817,63 +817,45 @@ pub(crate) struct GemDroppedDuplicate {
 ///
 /// Output is in deterministic walk order (alphabetical via
 /// `read_dir`-then-sort) so the dedup-by-PURL pass is host-agnostic.
+/// Milestone 114: delegates to `scan_fs::walk::safe_walk`. Output is
+/// sorted lex by path to preserve pre-114 cross-platform deterministic
+/// discovery order (the pre-114 walker explicitly sorted children
+/// before iterating).
 fn find_top_level_gemspecs(rootfs: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let mut visited: HashSet<PathBuf> = HashSet::new();
-    walk_for_top_level_gemspecs(rootfs, 0, &mut visited, &mut out);
-    out
-}
-
-fn walk_for_top_level_gemspecs(
-    dir: &Path,
-    depth: usize,
-    visited: &mut HashSet<PathBuf>,
-    out: &mut Vec<PathBuf>,
-) {
-    if depth >= MAX_GEMSPEC_WALK_DEPTH {
-        return;
-    }
-    let key = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
-    if !visited.insert(key) {
-        tracing::debug!(
-            path = %dir.display(),
-            "walker: cycle/visited skip (top-level gemspec discovery)",
-        );
-        return;
-    }
-    let Ok(read_dir) = std::fs::read_dir(dir) else {
-        return;
-    };
-    let mut entries: Vec<_> = read_dir.flatten().collect();
-    entries.sort_by_key(|e| e.file_name());
-    for entry in entries {
-        let path = entry.path();
-        if path.is_file() {
-            // Match any `*.gemspec` at this level.
-            if path
-                .extension()
-                .and_then(|s| s.to_str())
-                .map(|ext| ext.eq_ignore_ascii_case("gemspec"))
-                .unwrap_or(false)
-            {
-                out.push(path);
-            }
-        } else if path.is_dir() {
-            let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
-                continue;
+    // top_level_gemspecs uses a richer skip set than the other gem
+    // walkers (also skips `vendor`, `gems`, `specifications`, `.bundle`
+    // per FR-003). This walker does NOT use the milestone-113 user
+    // exclusion set (it's used internally for main-module discovery,
+    // not at the user-visible scan boundary).
+    let empty = super::exclude_path::ExclusionSet::default();
+    let cfg = crate::scan_fs::walk::WalkConfig {
+        max_depth: MAX_GEMSPEC_WALK_DEPTH,
+        should_skip: &|candidate: &Path, _rootfs: &Path| -> bool {
+            let Some(name) = candidate.file_name().and_then(|s| s.to_str()) else {
+                return true;
             };
-            // Standard skip set + install-state-specific paths per FR-003.
-            if should_skip_descent(name)
+            should_skip_descent(name)
                 || matches!(
                     name,
                     "vendor" | "gems" | "specifications" | ".bundle"
                 )
-            {
-                continue;
-            }
-            walk_for_top_level_gemspecs(&path, depth + 1, visited, out);
+        },
+        exclude_set: &empty,
+    };
+    crate::scan_fs::walk::safe_walk(rootfs, &cfg, |path| {
+        if path.is_file()
+            && path
+                .extension()
+                .and_then(|s| s.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("gemspec"))
+                .unwrap_or(false)
+        {
+            out.push(path.to_path_buf());
         }
-    }
+    });
+    out.sort();
+    out
 }
 
 /// Build the gem main-module entry for a single top-level `*.gemspec`.
@@ -1021,66 +1003,32 @@ fn merge_groups(
     }
 }
 
+/// Milestone 114: delegates to `scan_fs::walk::safe_walk`.
 fn find_gemfile_locks(
     rootfs: &Path,
     exclude_set: &super::exclude_path::ExclusionSet,
 ) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let mut visited: HashSet<PathBuf> = HashSet::new();
-    walk_for_gemfile_locks(rootfs, rootfs, 0, &mut visited, &mut out, exclude_set);
-    out
-}
-
-/// Milestone 054 FR-001/FR-002/FR-003: canonicalize-keyed visited
-/// set + max-depth backstop prevents unbounded recursion on symlink
-/// loops.
-fn walk_for_gemfile_locks(
-    dir: &Path,
-    rootfs: &Path,
-    depth: usize,
-    visited: &mut HashSet<PathBuf>,
-    out: &mut Vec<PathBuf>,
-    exclude_set: &super::exclude_path::ExclusionSet,
-) {
-    let lock = dir.join("Gemfile.lock");
-    if lock.is_file() {
-        out.push(lock);
-    }
-    if depth >= MAX_PROJECT_ROOT_DEPTH {
-        return;
-    }
-    let key = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
-    if !visited.insert(key) {
-        tracing::debug!(
-            path = %dir.display(),
-            "walker: cycle/visited skip",
-        );
-        return;
-    }
-    let Ok(read_dir) = std::fs::read_dir(dir) else {
-        return;
+    let cfg = crate::scan_fs::walk::WalkConfig {
+        max_depth: MAX_PROJECT_ROOT_DEPTH,
+        should_skip: &|candidate: &Path, _rootfs: &Path| -> bool {
+            candidate
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(should_skip_descent)
+                .unwrap_or(true)
+        },
+        exclude_set,
     };
-    for entry in read_dir.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        if should_skip_descent(name) {
-            continue;
-        }
-        // Milestone 113 — user-supplied directory exclusion.
-        if !exclude_set.is_empty() {
-            if let Ok(rel) = path.strip_prefix(rootfs) {
-                if exclude_set.matches(&rel.to_string_lossy()) {
-                    continue;
-                }
+    crate::scan_fs::walk::safe_walk(rootfs, &cfg, |path| {
+        if path.is_dir() {
+            let lock = path.join("Gemfile.lock");
+            if lock.is_file() {
+                out.push(lock);
             }
         }
-        walk_for_gemfile_locks(&path, rootfs, depth + 1, visited, out, exclude_set);
-    }
+    });
+    out
 }
 
 fn should_skip_descent(name: &str) -> bool {
@@ -1108,76 +1056,52 @@ fn should_skip_descent(name: &str) -> bool {
 /// files. Cheap, covers all Ruby install layouts (distro packages,
 /// rbenv, rvm, asdf, ruby-install), and doesn't depend on environment
 /// variables.
-fn find_gemspecs(
-    rootfs: &Path,
-    exclude_set: &super::exclude_path::ExclusionSet,
-) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let mut visited: HashSet<PathBuf> = HashSet::new();
-    walk_for_gemspecs(rootfs, rootfs, 0, &mut visited, &mut out, exclude_set);
-    out
-}
-
 // Gemspec scans walk install-tree paths like `/usr/lib/ruby/gems/
 // <ruby-ver>/specifications/`; 10 levels covers depth from any
 // realistic rootfs. Defense-in-depth backstop for the canonicalize-
 // keyed visited-set primary mechanism. Per milestone-054 FR-003.
 const MAX_GEMSPEC_WALK_DEPTH: usize = 10;
 
-/// Milestone 054 FR-001/FR-002/FR-003: canonicalize-keyed visited
-/// set + max-depth backstop prevents unbounded recursion on symlink
-/// loops.
-fn walk_for_gemspecs(
-    dir: &Path,
+/// Milestone 114: delegates to `scan_fs::walk::safe_walk`.
+///
+/// The pre-114 walker had a special semantic: when descent hit a
+/// `specifications` directory, it harvested gemspecs from it AND did
+/// NOT recurse further. Post-114 the visit callback detects when we
+/// *visit* a `specifications` dir and invokes `harvest_gemspecs_in_dir`
+/// on its contents — which handles the `default/` one-level
+/// recursion internally. We let `safe_walk` descend naturally past
+/// the specifications dir (a minor perf cost on systems with deep
+/// per-gem source trees, but functionally byte-identical since
+/// neither psych.gemspec NOR default/json.gemspec ever names a
+/// nested `specifications` dir; only the harvest call pushes into
+/// `out`, and the natural-descent visits ignore files).
+fn find_gemspecs(
     rootfs: &Path,
-    depth: usize,
-    visited: &mut HashSet<PathBuf>,
-    out: &mut Vec<PathBuf>,
     exclude_set: &super::exclude_path::ExclusionSet,
-) {
-    if depth >= MAX_GEMSPEC_WALK_DEPTH {
-        return;
-    }
-    let key = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
-    if !visited.insert(key) {
-        tracing::debug!(
-            path = %dir.display(),
-            "walker: cycle/visited skip",
-        );
-        return;
-    }
-    let Ok(read_dir) = std::fs::read_dir(dir) else {
-        return;
+) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let cfg = crate::scan_fs::walk::WalkConfig {
+        max_depth: MAX_GEMSPEC_WALK_DEPTH,
+        should_skip: &|candidate: &Path, _rootfs: &Path| -> bool {
+            candidate
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(should_skip_descent)
+                .unwrap_or(true)
+        },
+        exclude_set,
     };
-    for entry in read_dir.flatten() {
-        let path = entry.path();
-        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        if path.is_dir() {
-            if should_skip_descent(name) {
-                continue;
-            }
-            // Milestone 113 — user-supplied directory exclusion.
-            if !exclude_set.is_empty() {
-                if let Ok(rel) = path.strip_prefix(rootfs) {
-                    if exclude_set.matches(&rel.to_string_lossy()) {
-                        continue;
-                    }
-                }
-            }
-            // When we hit a `specifications` directory, harvest its
-            // .gemspec files (plus any nested `default/` subdirectory
-            // that Ruby uses for stdlib gems) and do NOT descend
-            // further. Saves walking per-gem source trees under
-            // neighboring `gems/` directories.
-            if name == "specifications" {
-                harvest_gemspecs_in_dir(&path, out);
-                continue;
-            }
-            walk_for_gemspecs(&path, rootfs, depth + 1, visited, out, exclude_set);
+    crate::scan_fs::walk::safe_walk(rootfs, &cfg, |path| {
+        if path.is_dir()
+            && path
+                .file_name()
+                .and_then(|s| s.to_str())
+                == Some("specifications")
+        {
+            harvest_gemspecs_in_dir(path, &mut out);
         }
-    }
+    });
+    out
 }
 
 fn harvest_gemspecs_in_dir(dir: &Path, out: &mut Vec<PathBuf>) {

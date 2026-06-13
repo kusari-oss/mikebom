@@ -16,7 +16,6 @@
 //! 2. `/etc/os-release::ID` via the milestone-003 `rpm_vendor_from_id`.
 //! 3. Hardcoded `"rpm"` fallback.
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use mikebom_common::types::license::SpdxExpression;
@@ -137,6 +136,11 @@ pub fn read(rootfs: &Path, distro_version: Option<&str>) -> Vec<PackageDbEntry> 
 /// AND whose first four bytes match the lead-block magic per FR-011.
 /// Extension match alone is not sufficient — someone may rename a
 /// file — so every candidate passes through the magic probe.
+///
+/// Milestone 114: delegates to `scan_fs::walk::safe_walk`. The
+/// rpm-file walker doesn't consume the milestone-113 user exclusion
+/// set (it's typically invoked at the artifact-discovery layer, not
+/// the user-visible scan boundary).
 fn discover_rpm_files(root: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
     if root.is_file() {
@@ -149,62 +153,24 @@ fn discover_rpm_files(root: &Path) -> Vec<PathBuf> {
     if !root.is_dir() {
         return found;
     }
-    let mut visited: HashSet<PathBuf> = HashSet::new();
-    walk_dir(root, 0, &mut visited, &mut found);
-    found
-}
-
-/// Milestone 054 FR-001/FR-002/FR-003: canonicalize-keyed visited
-/// set + max-depth backstop prevents unbounded recursion on symlink
-/// loops (e.g., the knative/func reproducer's
-/// `pkg/oci/testdata/test-links/linkToRoot -> .` shape).
-fn walk_dir(
-    dir: &Path,
-    depth: usize,
-    visited: &mut HashSet<PathBuf>,
-    acc: &mut Vec<PathBuf>,
-) {
-    if depth >= MAX_WALK_DEPTH {
-        tracing::debug!(
-            depth,
-            path = %dir.display(),
-            "walker: max-depth reached",
-        );
-        return;
-    }
-    // Canonicalize-keyed visited set: dedup by on-disk identity, so a
-    // directory reached via two symlinks is processed once. Fall back
-    // to lexical path on canonicalize failure (broken symlink, EACCES
-    // on a parent component) — preserves dedup correctness on the
-    // happy path without blocking the walker on transient failures.
-    let key = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
-    if !visited.insert(key) {
-        tracing::debug!(
-            path = %dir.display(),
-            "walker: cycle/visited skip",
-        );
-        return;
-    }
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        // Skip typical build-artefact / version-control directories.
-        // Keeps the walk bounded on large checkouts.
-        if path.is_dir() {
-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if matches!(
+    let empty = super::exclude_path::ExclusionSet::default();
+    let cfg = crate::scan_fs::walk::WalkConfig {
+        max_depth: MAX_WALK_DEPTH,
+        should_skip: &|candidate: &Path, _rootfs: &Path| -> bool {
+            let name = candidate.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            matches!(
                 name,
                 ".git" | "target" | "node_modules" | ".cargo" | "__pycache__" | ".venv"
-            ) {
-                continue;
-            }
-            walk_dir(&path, depth + 1, visited, acc);
-        } else if path.is_file() && is_rpm_candidate(&path) {
-            acc.push(path);
+            )
+        },
+        exclude_set: &empty,
+    };
+    crate::scan_fs::walk::safe_walk(root, &cfg, |path| {
+        if path.is_file() && is_rpm_candidate(path) {
+            found.push(path.to_path_buf());
         }
-    }
+    });
+    found
 }
 
 fn is_rpm_candidate(path: &Path) -> bool {

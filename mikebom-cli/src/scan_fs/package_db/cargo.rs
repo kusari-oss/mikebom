@@ -1059,13 +1059,41 @@ fn parse_lockfile_doc(path: &Path) -> Result<Option<CargoLock>, CargoError> {
     }
 }
 
+/// Milestone 114: delegates to the shared `scan_fs::walk::safe_walk`
+/// helper. Pre-114 this was a hand-rolled recursive walker; the
+/// canonicalize-keyed visited-set + depth bound + milestone-113
+/// ExclusionSet check now all live in the helper.
 fn find_cargo_lockfiles(
     rootfs: &Path,
     exclude_set: &super::exclude_path::ExclusionSet,
 ) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let mut visited: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
-    walk_for_cargo_lockfiles(rootfs, rootfs, 0, &mut visited, &mut out, exclude_set);
+    let cfg = crate::scan_fs::walk::WalkConfig {
+        max_depth: MAX_PROJECT_ROOT_DEPTH,
+        should_skip: &|candidate: &Path, _rootfs: &Path| -> bool {
+            candidate
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(should_skip_descent)
+                .unwrap_or(true)
+        },
+        exclude_set,
+    };
+    crate::scan_fs::walk::safe_walk(rootfs, &cfg, |path| {
+        if path.is_dir() {
+            let lock = path.join("Cargo.lock");
+            if lock.is_file() {
+                out.push(lock);
+            }
+        }
+    });
+    // Pre-114 walker sorted children by name before iterating to
+    // ensure cross-platform deterministic walk order (the dedup-by-
+    // PURL convention relies on first-discovered-wins per FR-001).
+    // Post-114 we preserve that by sorting the output Vec — the lex
+    // order of full paths matches the pre-order DFS sorted-children
+    // order for any plausible monorepo layout.
+    out.sort();
     out
 }
 
@@ -1073,125 +1101,37 @@ fn find_cargo_lockfiles(
 /// `should_skip_descent` — `vendor/`, `target/`, etc. are pruned).
 /// Used by milestone 064 main-module emission, which is NOT gated on
 /// `Cargo.lock` presence: library crates with no committed lockfile
-/// must still emit a project-self component per FR-001. Output is in
-/// deterministic walk order (alphabetical-like via `read_dir` for a
-/// given platform — preserved for golden cross-host stability via the
-/// dedup-by-PURL convention).
+/// must still emit a project-self component per FR-001.
+///
+/// Milestone 114: delegates to `scan_fs::walk::safe_walk`. Output is
+/// sorted lex by path for cross-platform determinism (matches pre-114
+/// pre-order DFS sorted-children order).
 fn find_cargo_manifests(
     rootfs: &Path,
     exclude_set: &super::exclude_path::ExclusionSet,
 ) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let mut visited: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
-    walk_for_cargo_manifests(rootfs, rootfs, 0, &mut visited, &mut out, exclude_set);
+    let cfg = crate::scan_fs::walk::WalkConfig {
+        max_depth: MAX_PROJECT_ROOT_DEPTH,
+        should_skip: &|candidate: &Path, _rootfs: &Path| -> bool {
+            candidate
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(should_skip_descent)
+                .unwrap_or(true)
+        },
+        exclude_set,
+    };
+    crate::scan_fs::walk::safe_walk(rootfs, &cfg, |path| {
+        if path.is_dir() {
+            let manifest = path.join("Cargo.toml");
+            if manifest.is_file() {
+                out.push(manifest);
+            }
+        }
+    });
+    out.sort();
     out
-}
-
-fn walk_for_cargo_manifests(
-    dir: &Path,
-    rootfs: &Path,
-    depth: usize,
-    visited: &mut std::collections::HashSet<PathBuf>,
-    out: &mut Vec<PathBuf>,
-    exclude_set: &super::exclude_path::ExclusionSet,
-) {
-    let manifest = dir.join("Cargo.toml");
-    if manifest.is_file() {
-        out.push(manifest);
-    }
-    if depth >= MAX_PROJECT_ROOT_DEPTH {
-        return;
-    }
-    let key = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
-    if !visited.insert(key) {
-        tracing::debug!(
-            path = %dir.display(),
-            "walker: cycle/visited skip (manifest discovery)",
-        );
-        return;
-    }
-    let Ok(read_dir) = std::fs::read_dir(dir) else {
-        return;
-    };
-    let mut entries: Vec<_> = read_dir.flatten().collect();
-    // Sort by file name so the walk order is deterministic across
-    // platforms (read_dir order is filesystem-dependent on macOS vs
-    // Linux). The dedup-by-PURL pass relies on first-discovered-wins
-    // determinism per FR-001.
-    entries.sort_by_key(|e| e.file_name());
-    for entry in entries {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        if should_skip_descent(name) {
-            continue;
-        }
-        // Milestone 113 — user-supplied directory exclusion.
-        if !exclude_set.is_empty() {
-            if let Ok(rel) = path.strip_prefix(rootfs) {
-                if exclude_set.matches(&rel.to_string_lossy()) {
-                    continue;
-                }
-            }
-        }
-        walk_for_cargo_manifests(&path, rootfs, depth + 1, visited, out, exclude_set);
-    }
-}
-
-/// Milestone 054 FR-001/FR-002/FR-003: canonicalize-keyed visited
-/// set + max-depth backstop prevents unbounded recursion on symlink
-/// loops (e.g., `linkToRoot -> .` test fixtures).
-fn walk_for_cargo_lockfiles(
-    dir: &Path,
-    rootfs: &Path,
-    depth: usize,
-    visited: &mut std::collections::HashSet<PathBuf>,
-    out: &mut Vec<PathBuf>,
-    exclude_set: &super::exclude_path::ExclusionSet,
-) {
-    let lock = dir.join("Cargo.lock");
-    if lock.is_file() {
-        out.push(lock);
-    }
-    if depth >= MAX_PROJECT_ROOT_DEPTH {
-        return;
-    }
-    let key = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
-    if !visited.insert(key) {
-        tracing::debug!(
-            path = %dir.display(),
-            "walker: cycle/visited skip",
-        );
-        return;
-    }
-    let Ok(read_dir) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in read_dir.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        if should_skip_descent(name) {
-            continue;
-        }
-        // Milestone 113 — user-supplied directory exclusion.
-        if !exclude_set.is_empty() {
-            if let Ok(rel) = path.strip_prefix(rootfs) {
-                if exclude_set.matches(&rel.to_string_lossy()) {
-                    continue;
-                }
-            }
-        }
-        walk_for_cargo_lockfiles(&path, rootfs, depth + 1, visited, out, exclude_set);
-    }
 }
 
 fn should_skip_descent(name: &str) -> bool {

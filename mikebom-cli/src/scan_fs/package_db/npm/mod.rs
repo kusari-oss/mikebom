@@ -454,18 +454,25 @@ fn candidate_project_roots(
     rootfs: &Path,
     exclude_set: &super::exclude_path::ExclusionSet,
 ) -> Vec<PathBuf> {
-    use super::project_roots::{
-        should_skip_default_descent, walk_for_project_roots, WalkConfig,
-    };
-    walk_for_project_roots(
-        rootfs,
-        &WalkConfig {
-            max_depth: MAX_PROJECT_ROOT_DEPTH,
-            is_project_root: &has_npm_signal,
-            should_skip: &should_skip_default_descent,
-            exclude_set,
+    use super::project_roots::should_skip_default_descent;
+    let mut out = Vec::new();
+    let cfg = crate::scan_fs::walk::WalkConfig {
+        max_depth: MAX_PROJECT_ROOT_DEPTH,
+        should_skip: &|candidate: &Path, _rootfs: &Path| -> bool {
+            candidate
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(should_skip_default_descent)
+                .unwrap_or(true)
         },
-    )
+        exclude_set,
+    };
+    crate::scan_fs::walk::safe_walk(rootfs, &cfg, |path| {
+        if path.is_dir() && has_npm_signal(path) {
+            out.push(path.to_path_buf());
+        }
+    });
+    out
 }
 
 /// True when `dir` holds any of the four npm project signals. Used to

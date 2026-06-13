@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### Changed
+
+- **Internal cleanup: every ecosystem-reader filesystem walker migrated to a shared `safe_walk` helper** (milestone 114; closes #108). Pre-114, 15 hand-rolled `fn walk_*` recursions across `mikebom-cli/src/scan_fs/` each carried their own canonicalize-keyed visited-set + depth-bound + milestone-113 directory-exclusion + skip-cause logging code. Post-114 a single `scan_fs::walk::safe_walk` helper centralizes all four invariants; each per-ecosystem reader configures a `WalkConfig` + visit callback and the helper handles descent. Four documented known exceptions (`walker.rs` whole-FS deep-hash, `npm/walk.rs` `@scope`-aware, `cmake_observer.rs` stop-at-match descent, `maven_sidecar.rs` lstat-style M2 cache walker) stay hand-rolled with explicit one-sentence reasons in the helper module's comment block. No user-visible behavior change — byte-identical SBOMs across all 33 committed goldens. The audit pattern `grep -rEn 'fn walk[_(]' mikebom-cli/src/scan_fs/` is the durability mechanism documented in `docs/design-notes.md`.
+
 ### Removed (BREAKING)
 
 - **`--include-dev` CLI flag removed** (closes #101). Deprecated since milestone 052/part-3 (alpha.20, PR #100) when the scan default flipped to emit ALL lifecycle scopes natively tagged. The post-052 shim only logged a deprecation warning and was otherwise a no-op; the soak window has elapsed (>20 weeks since the warning landed). Operators wanting the pre-052 strict deployed-runtime view should use `--exclude-scope dev,build,test`. Shell scripts and CI configs still passing `--include-dev` will now fail with clap's standard "unexpected argument" message — the operator-visible fix is a one-token swap.

@@ -194,6 +194,49 @@ Full-suite regression: `cargo test --workspace` — 871 passing, 0 failed as of 
 
 ---
 
+## Filesystem walking pattern (milestone 114)
+
+All ecosystem-reader filesystem walkers under `mikebom-cli/src/scan_fs/` go through the shared `scan_fs::walk::safe_walk` helper (introduced in milestone 114; closes issue #108). The helper centralizes canonicalize-keyed visited-set + depth-bound + milestone-113 directory-exclusion + skip-cause `tracing::debug!` emission in one place. Per the milestone-054 audit history, drift between per-walker implementations was a known hazard — every new ecosystem reader copy-pasted the closest existing walker and risked dropping a loop-protection invariant.
+
+### Adding a new ecosystem reader
+
+```rust
+use crate::scan_fs::walk::{safe_walk, WalkConfig};
+use crate::scan_fs::package_db::project_roots::should_skip_default_descent;
+
+fn read(rootfs: &Path, exclude_set: &ExclusionSet) -> Vec<PackageDbEntry> {
+    let mut out = Vec::new();
+    let cfg = WalkConfig {
+        max_depth: 6,
+        should_skip: &|p, _| p.file_name()
+            .and_then(|s| s.to_str())
+            .map(should_skip_default_descent)
+            .unwrap_or(true),
+        exclude_set,
+    };
+    safe_walk(rootfs, &cfg, |path| {
+        // Filter for your ecosystem's manifest file and emit entries.
+        if path.file_name() == Some(OsStr::new("Cargo.toml")) {
+            out.push(/* ... */);
+        }
+    });
+    out
+}
+```
+
+### Audit pattern
+
+Run `grep -rEn 'fn walk[_(]' mikebom-cli/src/scan_fs/`. Acceptable matches fall into two categories documented in `mikebom-cli/src/scan_fs/walk.rs`'s comment block:
+
+- **Filesystem ecosystem-discovery walkers** that delegate to `safe_walk` plus the documented known exceptions (`walker.rs` whole-FS deep-hash; `npm/walk.rs` `@scope`-aware; `cmake_observer.rs` stop-at-match descent; `maven_sidecar.rs` lstat-style M2 cache walker).
+- **Non-filesystem-walker false positives** that catch the regex but aren't walkers (`maven::walk_m2_jars`, `maven::walk_jar_maven_meta`, `MavenRepoCache::walk_rootfs_poms`, `rpmdb_sqlite::walk_schema_page`, and test functions named `walks_*` / `walk_jar_*` / `walk_fat_jar_*` / `walk_rootfs_poms_*`).
+
+Any match outside the union of those two lists is a regression: the contributor introduced a new hand-rolled filesystem walker bypassing `safe_walk`. Reviewer action: reject the PR or push back to either migrate the new walker to `safe_walk` OR add a new entry to the comment block at the top of `scan_fs/walk.rs` with a one-sentence reason. The exception list MUST stay short — five entries is the current state; ten is the abstraction failing and we should rethink.
+
+See `mikebom-cli/src/scan_fs/walk.rs`'s module-level doc-comment for the authoritative audit-pattern + known-exception list. The milestone-114 spec lives at `specs/114-safe-walk-migration/`.
+
+---
+
 ## Key code landmarks
 
 ### Maven (most complex)

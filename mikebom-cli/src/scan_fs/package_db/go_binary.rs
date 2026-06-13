@@ -503,21 +503,75 @@ pub fn read(
     let mut seen_purls: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut main_modules: std::collections::HashSet<String> =
         std::collections::HashSet::new();
-    let mut visited: std::collections::HashSet<std::path::PathBuf> =
-        std::collections::HashSet::new();
-    walk_for_binaries(
-        rootfs,
-        rootfs,
-        0,
-        &mut visited,
-        &mut out,
-        &mut seen_purls,
-        &mut main_modules,
-        claimed_paths,
-        #[cfg(unix)]
-        claimed_inodes,
+    // Milestone 114: delegates to scan_fs::walk::safe_walk. The
+    // closure captures the mutable accumulators + the claimed-path
+    // refs by reference.
+    let cfg = crate::scan_fs::walk::WalkConfig {
+        max_depth: MAX_BINARY_WALK_DEPTH,
+        should_skip: &|candidate: &Path, _rootfs: &Path| -> bool {
+            should_skip_binary_descent(candidate)
+        },
         exclude_set,
-    );
+    };
+    crate::scan_fs::walk::safe_walk(rootfs, &cfg, |path| {
+        // Only act on files large enough to plausibly be Go binaries.
+        let Ok(meta) = std::fs::metadata(path) else {
+            return;
+        };
+        if !meta.is_file() || meta.len() < MIN_BINARY_SIZE_BYTES {
+            return;
+        }
+        // Go binaries never carry compiler/linker intermediate
+        // extensions. Skipping them here avoids full-file probe reads
+        // across e.g. a Rust `target/` tree, where hundreds of
+        // thousands of `.o`/`.rlib` files otherwise dominate scan
+        // wall-time.
+        if matches!(
+            path.extension().and_then(|e| e.to_str()),
+            Some("o") | Some("a") | Some("rlib") | Some("rmeta")
+        ) {
+            return;
+        }
+
+        let (status, info) = read_binary(path);
+        match status {
+            BuildInfoStatus::Ok => {
+                if let Some(info) = info {
+                    if let Some((ref main_path, _, _)) = info.main_module {
+                        main_modules.insert(main_path.clone());
+                    }
+                    emit_entries_from_info(&info, &mut out, &mut seen_purls);
+                }
+            }
+            BuildInfoStatus::Unsupported | BuildInfoStatus::Missing => {
+                let status_str = match status {
+                    BuildInfoStatus::Unsupported => "unsupported",
+                    BuildInfoStatus::Missing => "missing",
+                    _ => unreachable!(),
+                };
+                if crate::scan_fs::binary::is_path_claimed(
+                    path,
+                    claimed_paths,
+                    #[cfg(unix)]
+                    claimed_inodes,
+                ) {
+                    tracing::debug!(
+                        binary = %path.display(),
+                        status = status_str,
+                        "go binary is package-claimed — suppressing diagnostic",
+                    );
+                    return;
+                }
+                tracing::warn!(
+                    binary = %path.display(),
+                    status = status_str,
+                    "go binary has no readable BuildInfo",
+                );
+                emit_file_level_diagnostic(path, status_str, &mut out);
+            }
+            BuildInfoStatus::NotGoBinary => {}
+        }
+    });
     if !out.is_empty() {
         tracing::info!(
             rootfs = %rootfs.display(),
@@ -537,133 +591,6 @@ pub fn read(
 // canonicalize-keyed visited-set primary mechanism. Per
 // milestone-054 FR-003.
 const MAX_BINARY_WALK_DEPTH: usize = 10;
-
-/// Milestone 054 FR-001/FR-002/FR-003: canonicalize-keyed visited
-/// set + max-depth backstop prevents unbounded recursion on symlink
-/// loops.
-#[allow(clippy::too_many_arguments)]
-fn walk_for_binaries(
-    dir: &Path,
-    rootfs: &Path,
-    depth: usize,
-    visited: &mut std::collections::HashSet<std::path::PathBuf>,
-    out: &mut Vec<PackageDbEntry>,
-    seen_purls: &mut std::collections::HashSet<String>,
-    main_modules: &mut std::collections::HashSet<String>,
-    claimed_paths: &std::collections::HashSet<std::path::PathBuf>,
-    #[cfg(unix)] claimed_inodes: &std::collections::HashSet<(u64, u64)>,
-    exclude_set: &super::exclude_path::ExclusionSet,
-) {
-    if depth >= MAX_BINARY_WALK_DEPTH {
-        return;
-    }
-    let key = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
-    if !visited.insert(key) {
-        tracing::debug!(
-            path = %dir.display(),
-            "walker: cycle/visited skip",
-        );
-        return;
-    }
-    let Ok(read_dir) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in read_dir.flatten() {
-        let path = entry.path();
-        let Ok(meta) = entry.metadata() else {
-            continue;
-        };
-        if meta.is_dir() {
-            if should_skip_binary_descent(&path) {
-                continue;
-            }
-            // Milestone 113 — user-supplied directory exclusion.
-            if !exclude_set.is_empty() {
-                if let Ok(rel) = path.strip_prefix(rootfs) {
-                    if exclude_set.matches(&rel.to_string_lossy()) {
-                        continue;
-                    }
-                }
-            }
-            walk_for_binaries(
-                &path,
-                rootfs,
-                depth + 1,
-                visited,
-                out,
-                seen_purls,
-                main_modules,
-                claimed_paths,
-                #[cfg(unix)]
-                claimed_inodes,
-                exclude_set,
-            );
-            continue;
-        }
-        if !meta.is_file() || meta.len() < MIN_BINARY_SIZE_BYTES {
-            continue;
-        }
-        // Go binaries never carry compiler/linker intermediate
-        // extensions. Skipping them here avoids full-file probe reads
-        // across e.g. a Rust `target/` tree, where hundreds of
-        // thousands of `.o`/`.rlib` files otherwise dominate scan
-        // wall-time.
-        if matches!(
-            path.extension().and_then(|e| e.to_str()),
-            Some("o") | Some("a") | Some("rlib") | Some("rmeta")
-        ) {
-            continue;
-        }
-
-        let (status, info) = read_binary(&path);
-        match status {
-            BuildInfoStatus::Ok => {
-                // Successful BuildInfo parse — emit regardless of
-                // claim status, since real module information beats
-                // a package-db claim that lacks module granularity.
-                if let Some(info) = info {
-                    if let Some((ref main_path, _, _)) = info.main_module {
-                        main_modules.insert(main_path.clone());
-                    }
-                    emit_entries_from_info(&info, out, seen_purls);
-                }
-            }
-            BuildInfoStatus::Unsupported | BuildInfoStatus::Missing => {
-                // v9 Phase O: skip the file-level diagnostic when the
-                // binary is already owned by a package manager
-                // (typically golang RPM or apt golang-go's toolchain
-                // tools). The diagnostic PURL `pkg:generic/<basename>`
-                // carries no module info — suppressing it for claimed
-                // binaries removes a class of conformance FPs.
-                let status_str = match status {
-                    BuildInfoStatus::Unsupported => "unsupported",
-                    BuildInfoStatus::Missing => "missing",
-                    _ => unreachable!(),
-                };
-                if crate::scan_fs::binary::is_path_claimed(
-                    &path,
-                    claimed_paths,
-                    #[cfg(unix)]
-                    claimed_inodes,
-                ) {
-                    tracing::debug!(
-                        binary = %path.display(),
-                        status = status_str,
-                        "go binary is package-claimed — suppressing diagnostic",
-                    );
-                    continue;
-                }
-                tracing::warn!(
-                    binary = %path.display(),
-                    status = status_str,
-                    "go binary has no readable BuildInfo",
-                );
-                emit_file_level_diagnostic(&path, status_str, out);
-            }
-            BuildInfoStatus::NotGoBinary => {}
-        }
-    }
-}
 
 fn should_skip_binary_descent(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|s| s.to_str()) else {

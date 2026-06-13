@@ -30,17 +30,22 @@ pub fn read(
     rootfs: &Path,
     exclude_set: &super::exclude_path::ExclusionSet,
 ) -> Vec<PackageDbEntry> {
-    let cfg = super::project_roots::WalkConfig {
+    let cfg = crate::scan_fs::walk::WalkConfig {
         max_depth: 6,
-        is_project_root: &|dir: &Path| {
-            dir.join("gradle.lockfile").is_file()
-                || dir.join("buildscript-gradle.lockfile").is_file()
+        should_skip: &|candidate: &Path, _rootfs: &Path| -> bool {
+            candidate
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(super::project_roots::should_skip_default_descent)
+                .unwrap_or(true)
         },
-        should_skip: &|name: &str| super::project_roots::should_skip_default_descent(name),
         exclude_set,
     };
     let mut out = Vec::new();
-    for project_dir in super::project_roots::walk_for_project_roots(rootfs, &cfg) {
+    crate::scan_fs::walk::safe_walk(rootfs, &cfg, |project_dir| {
+        if !project_dir.is_dir() {
+            return;
+        }
         for filename in ["gradle.lockfile", "buildscript-gradle.lockfile"] {
             let path = project_dir.join(filename);
             if !path.is_file() {
@@ -48,6 +53,6 @@ pub fn read(
             }
             out.extend(lockfile::read_gradle_lockfile(&path));
         }
-    }
+    });
     out
 }

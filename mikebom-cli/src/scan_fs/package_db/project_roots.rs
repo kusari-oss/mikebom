@@ -1,120 +1,21 @@
-//! Shared project-root walker used by ecosystem readers that scan
-//! arbitrary filesystem layouts (single project, container image,
-//! monorepo, etc.) for ecosystem-specific project markers.
+//! Shared `should_skip_default_descent` helper used by every
+//! ecosystem reader's `scan_fs::walk::WalkConfig` skip predicate.
 //!
-//! pip and npm both use this today via per-ecosystem closures; future
-//! readers (cargo workspace member discovery, gem multi-app, …) can
-//! drop in the same way without re-implementing the symlink-safe
-//! canonicalize-then-recurse machinery.
+//! Pre-milestone-114, this file also hosted a `walk_for_project_roots`
+//! recursive descent function + a per-call `WalkConfig` adapter
+//! struct that mediated between per-ecosystem `Fn(&str) -> bool`
+//! closures and the descent loop. Post-milestone-114 (PR 5) all of
+//! that machinery moved to `crate::scan_fs::walk::safe_walk` + its
+//! own `WalkConfig`; this file shrinks to the shared skip-set
+//! helper. Issue #108.
 //!
-//! Pre-shared, both readers carried a near-identical
-//! `walk_for_*_roots` recursive function plus a per-ecosystem skip
-//! predicate. The skip predicates also overlapped almost entirely —
+//! The skip predicates across pip / npm / gradle / nuget / yocto / the
+//! per-walker `should_skip_descent` callsites overlap almost entirely —
 //! they all want to skip installed-tree subtrees, hidden / VCS /
 //! tooling dirs, and common build/cache outputs. The
-//! [`should_skip_default_descent`] helper centralises that set;
-//! each reader's closure can compose it with ecosystem-specific
+//! [`should_skip_default_descent`] helper centralises that set; each
+//! reader's `should_skip` closure composes it with ecosystem-specific
 //! additions (pip's `site-packages` for example).
-
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
-
-/// Per-call configuration for [`walk_for_project_roots`].
-pub(crate) struct WalkConfig<'a> {
-    /// Max recursion depth. Readers typically pass `6` — enough for
-    /// realistic monorepo + image layouts (`/usr/src/app/services/api/` =
-    /// 4 levels) without running away into deep source trees.
-    pub max_depth: usize,
-    /// Predicate that returns true when `dir` looks like a project
-    /// root for this ecosystem (e.g. has `pyproject.toml`, has
-    /// `package.json`, etc.). The walker pushes `dir` to the output
-    /// list when this returns true, but still recurses into
-    /// children — a parent project + nested workspace package both
-    /// qualify in their own right.
-    pub is_project_root: &'a dyn Fn(&Path) -> bool,
-    /// Predicate that returns true when the walker should NOT descend
-    /// into a directory named `name`. Compose [`should_skip_default_descent`]
-    /// with ecosystem-specific additions.
-    pub should_skip: &'a dyn Fn(&str) -> bool,
-    /// Milestone 113 — user-supplied directory-exclusion set. The
-    /// walker consults this AFTER `should_skip` so user entries are
-    /// additive on top of built-in skips (FR-004). An empty set
-    /// (default) preserves pre-feature behavior (FR-003).
-    pub exclude_set: &'a super::exclude_path::ExclusionSet,
-}
-
-/// Find every directory under `rootfs` (depth-limited) that
-/// `cfg.is_project_root` accepts. Always includes `rootfs` itself
-/// when it qualifies.
-///
-/// Symlink-safe via a canonicalize-keyed visited set; tolerant of
-/// unreadable dirs (silently skips, rather than erroring out — a
-/// scan of a partially-restricted filesystem still produces what
-/// it can).
-pub(crate) fn walk_for_project_roots(rootfs: &Path, cfg: &WalkConfig) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let mut visited: HashSet<PathBuf> = HashSet::new();
-    walk_inner(rootfs, rootfs, 0, cfg, &mut out, &mut visited);
-    out
-}
-
-fn walk_inner(
-    dir: &Path,
-    rootfs: &Path,
-    depth: usize,
-    cfg: &WalkConfig,
-    out: &mut Vec<PathBuf>,
-    visited: &mut HashSet<PathBuf>,
-) {
-    // Guard against symlink loops and duplicate enumeration. Use the
-    // canonical path when available; fall back to `dir` as-is so a
-    // missing dir doesn't silently swallow the scan.
-    let key = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
-    if !visited.insert(key) {
-        return;
-    }
-
-    if (cfg.is_project_root)(dir) {
-        out.push(dir.to_path_buf());
-    }
-
-    if depth >= cfg.max_depth {
-        return;
-    }
-
-    let Ok(read_dir) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in read_dir.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        if (cfg.should_skip)(name) {
-            continue;
-        }
-        // Milestone 113 — user-supplied directory exclusion. Match
-        // against the candidate's path relative to rootfs so literal
-        // entries anchored at scan root and `**`-style pattern
-        // entries both work.
-        if !cfg.exclude_set.is_empty() {
-            if let Ok(rel) = path.strip_prefix(rootfs) {
-                let rel_str = rel.to_string_lossy();
-                if cfg.exclude_set.matches(&rel_str) {
-                    tracing::debug!(
-                        candidate = %rel.display(),
-                        "exclude-path: skipping directory matched by user-supplied entry"
-                    );
-                    continue;
-                }
-            }
-        }
-        walk_inner(&path, rootfs, depth + 1, cfg, out, visited);
-    }
-}
 
 /// Default skip-set: directory names that no ecosystem should
 /// descend into when looking for project roots. Three reasons:

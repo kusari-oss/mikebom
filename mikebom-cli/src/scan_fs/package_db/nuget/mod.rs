@@ -44,7 +44,7 @@ pub fn read(
     rootfs: &Path,
     exclude_set: &super::exclude_path::ExclusionSet,
 ) -> Vec<PackageDbEntry> {
-    let project_files = walk_project_files(rootfs, exclude_set);
+    let project_files = collect_project_files(rootfs, exclude_set);
     if project_files.is_empty() {
         return Vec::new();
     }
@@ -55,51 +55,26 @@ pub fn read(
     out
 }
 
-fn walk_project_files(
+/// Milestone 114: delegates to `scan_fs::walk::safe_walk`.
+fn collect_project_files(
     rootfs: &Path,
     exclude_set: &super::exclude_path::ExclusionSet,
 ) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    walk_inner(rootfs, rootfs, &mut out, 0, exclude_set);
-    out
-}
-
-fn walk_inner(
-    dir: &Path,
-    rootfs: &Path,
-    out: &mut Vec<PathBuf>,
-    depth: usize,
-    exclude_set: &super::exclude_path::ExclusionSet,
-) {
-    if depth > 8 {
-        return;
-    }
-    let Ok(read_dir) = std::fs::read_dir(dir) else {
-        return;
+    let cfg = crate::scan_fs::walk::WalkConfig {
+        max_depth: 8,
+        should_skip: &|candidate: &Path, _rootfs: &Path| -> bool {
+            candidate
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(super::project_roots::should_skip_default_descent)
+                .unwrap_or(true)
+        },
+        exclude_set,
     };
-    for entry in read_dir.flatten() {
-        let path = entry.path();
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        if file_type.is_dir() {
-            let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            if super::project_roots::should_skip_default_descent(name) {
-                continue;
-            }
-            // Milestone 113 — user-supplied directory exclusion.
-            if !exclude_set.is_empty() {
-                if let Ok(rel) = path.strip_prefix(rootfs) {
-                    if exclude_set.matches(&rel.to_string_lossy()) {
-                        continue;
-                    }
-                }
-            }
-            walk_inner(&path, rootfs, out, depth + 1, exclude_set);
-        } else if file_type.is_file() {
-            let is_project = path
+    crate::scan_fs::walk::safe_walk(rootfs, &cfg, |path| {
+        if path.is_file()
+            && path
                 .extension()
                 .and_then(|s| s.to_str())
                 .map(|e| {
@@ -107,12 +82,12 @@ fn walk_inner(
                         .iter()
                         .any(|target| e.eq_ignore_ascii_case(target))
                 })
-                .unwrap_or(false);
-            if is_project {
-                out.push(path);
-            }
+                .unwrap_or(false)
+        {
+            out.push(path.to_path_buf());
         }
-    }
+    });
+    out
 }
 
 fn read_one_project(scan_root: &Path, project_path: &Path) -> Vec<PackageDbEntry> {

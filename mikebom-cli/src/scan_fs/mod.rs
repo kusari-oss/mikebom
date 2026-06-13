@@ -18,6 +18,7 @@ pub mod oci_pull;
 pub mod os_release;
 pub mod package_db;
 pub mod sbom_path;
+pub(crate) mod walk;
 pub mod walker;
 
 use std::path::Path;

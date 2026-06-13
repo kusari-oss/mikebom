@@ -225,6 +225,13 @@ fn walk_inner<F: FnMut(&Path)>(
             if let Ok(rel) = path.strip_prefix(rootfs) {
                 let rel_str = rel.to_string_lossy();
                 if cfg.exclude_set.matches(&rel_str) {
+                    // Milestone 118 (#343 / FR-010) — counter feeds the
+                    // scan-end `tracing::info!` summary at scan_cmd.rs.
+                    // `Relaxed` ordering per research.md § Decision 1.
+                    cfg.exclude_set.suppressed_dirs.fetch_add(
+                        1,
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
                     tracing::debug!(
                         candidate = %rel.display(),
                         cause = "exclude-path",

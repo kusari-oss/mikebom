@@ -104,7 +104,7 @@ impl ExclusionEntry {
 /// The active set of user-supplied exclusion entries threaded
 /// read-only through every walker. Default-constructed (empty) is
 /// the no-op state preserving pre-feature behavior.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct ExclusionSet {
     /// All entries in source order so the Principle-X transparency
     /// annotation emits deterministically.
@@ -118,6 +118,27 @@ pub struct ExclusionSet {
     /// Literal entries projected to forward-slash form for direct
     /// equality / `starts_with` checks at match time.
     literal_paths: Vec<String>,
+
+    /// Milestone 118 (issue #343) — counter incremented by `safe_walk`
+    /// each time a candidate directory matches one of the entries.
+    /// Read at scan end by the `tracing::info!` summary line in
+    /// `scan_cmd.rs` to populate the FR-010 `suppressed_dirs` field.
+    /// `Relaxed` ordering per research.md § Decision 1 — the counter
+    /// has no read/write dependency on other memory.
+    pub(crate) suppressed_dirs: std::sync::atomic::AtomicUsize,
+}
+
+impl Clone for ExclusionSet {
+    fn clone(&self) -> Self {
+        Self {
+            entries: self.entries.clone(),
+            pattern_set: self.pattern_set.clone(),
+            literal_paths: self.literal_paths.clone(),
+            // Clones start fresh — the counter is per-scan-instance
+            // state, not a property of the entry set.
+            suppressed_dirs: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
 }
 
 impl ExclusionSet {
@@ -172,6 +193,7 @@ impl ExclusionSet {
             entries,
             pattern_set,
             literal_paths,
+            suppressed_dirs: std::sync::atomic::AtomicUsize::new(0),
         })
     }
 
@@ -221,9 +243,24 @@ impl ExclusionSet {
 
     /// Borrow into the source-order entry list for callers that
     /// need structural access (e.g. parity-extractor introspection).
-    #[allow(dead_code)] // Reserved for milestone-113 follow-up parity-catalog work.
     pub fn entries(&self) -> &[ExclusionEntry] {
         &self.entries
+    }
+
+    /// Milestone 118 — count of LITERAL entries (`tests/fixtures` form)
+    /// in the set. Used by FR-010 tracing summary in `scan_cmd.rs` to
+    /// surface the entry breakdown.
+    pub fn count_literals(&self) -> usize {
+        self.literal_paths.len()
+    }
+
+    /// Milestone 118 — count of PATTERN entries (`**/testdata` form)
+    /// in the set. Filters `self.entries` for `Pattern` variants.
+    pub fn count_patterns(&self) -> usize {
+        self.entries
+            .iter()
+            .filter(|e| matches!(e, ExclusionEntry::Pattern(_)))
+            .count()
     }
 }
 

@@ -249,6 +249,7 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
             &claimed_paths,
             #[cfg(unix)]
             &claimed_inodes,
+            exclude_set,
         ));
 
         // Record which ecosystems actually had a populated db — each

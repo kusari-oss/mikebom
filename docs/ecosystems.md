@@ -26,6 +26,40 @@ concluded licenses apply to the ecosystem. Both honour the global
 
 ---
 
+## Directory exclusion (--exclude-path)
+
+Every ecosystem reader below honors operator-supplied directory exclusion via
+`--exclude-path` (milestone 113, issue #108). The flag is cross-cutting —
+literal paths or glob patterns suppress descent into matching directories
+across every filesystem walker (Cargo, Maven, npm, pip, gem, Gradle, NuGet,
+Yocto recipes, Go source modules, AND binary discovery).
+
+Two entry forms:
+
+- **Literal**: `--exclude-path tests/fixtures` — suppresses descent into
+  any directory whose path matches the literal exactly OR starts with the
+  literal followed by `/`. Path separators normalize to forward-slash at
+  parse time, so backslash-separated literals (`tests\fixtures`) work
+  identically.
+- **Pattern**: `--exclude-path '**/testdata'` — `globset` semantics; `**`
+  spans path separators. Patterns combine by union when the flag is
+  repeated.
+
+Set via the CLI flag (repeatable) OR the `MIKEBOM_EXCLUDE_PATH` env-var
+(platform path-list separator). When at least one entry is in effect,
+emitted SBOMs carry a `mikebom:exclude-path` transparency annotation
+listing every entry, and a scan-end `tracing::info!` line surfaces
+`excluded_entries=N excluded_literals=N excluded_patterns=N
+suppressed_dirs=N` for operator inspection (milestone 118 / #343).
+
+Built-in skip-list precedence: mikebom-internal skips (`.git`, `target`,
+`node_modules`, `.cargo`, `__pycache__`, `.venv`) take precedence; an
+operator cannot re-include them via `--exclude-path`. See
+[`docs/user-guide/cli-reference.md` § `--exclude-path`](user-guide/cli-reference.md#--exclude-path-path_or_pattern)
+for the full troubleshooting matrix + worked examples.
+
+---
+
 ## apk
 
 **Module:** `mikebom-cli/src/scan_fs/package_db/apk.rs`
@@ -56,6 +90,8 @@ hashes mikebom can use.
 ---
 
 ## cargo
+
+**Path exclusion**: see [Directory exclusion (--exclude-path)](#directory-exclusion---exclude-path).
 
 **Module:** `mikebom-cli/src/scan_fs/package_db/cargo.rs`
 
@@ -151,6 +187,8 @@ base libs that ship license grants verbatim).
 
 ## gem
 
+**Path exclusion**: see [Directory exclusion (--exclude-path)](#directory-exclusion---exclude-path).
+
 **Module:** `mikebom-cli/src/scan_fs/package_db/gem.rs`
 
 **Detection:** `Gemfile.lock` indent-structure parser + walker over
@@ -187,6 +225,8 @@ work — see the sbomqs-score-lift items in
 ---
 
 ## golang
+
+**Path exclusion**: see [Directory exclusion (--exclude-path)](#directory-exclusion---exclude-path).
 
 **Modules:** `mikebom-cli/src/scan_fs/package_db/golang.rs` (source scans),
 `mikebom-cli/src/scan_fs/package_db/go_binary.rs` (binary scans).
@@ -303,6 +343,8 @@ a VCS worktree emit no `mikebom:go-vcs-*` annotations.
 
 ## maven
 
+**Path exclusion**: see [Directory exclusion (--exclude-path)](#directory-exclusion---exclude-path).
+
 **Module:** `mikebom-cli/src/scan_fs/package_db/maven.rs`
 
 Maven is the most complex ecosystem. Transitive versions can live in
@@ -404,6 +446,8 @@ edges; each row is an already-resolved coord.
 ---
 
 ## npm
+
+**Path exclusion**: see [Directory exclusion (--exclude-path)](#directory-exclusion---exclude-path).
 
 **Module:** `mikebom-cli/src/scan_fs/package_db/npm.rs`
 
@@ -511,6 +555,8 @@ yet — tracked as a follow-up.
 
 ## pip
 
+**Path exclusion**: see [Directory exclusion (--exclude-path)](#directory-exclusion---exclude-path).
+
 **Module:** `mikebom-cli/src/scan_fs/package_db/pip.rs`
 
 **Detection:** three parallel paths:
@@ -569,6 +615,8 @@ name (lowercase, runs of non-alphanum collapsed to `-`).
 ---
 
 ## nuget
+
+**Path exclusion**: see [Directory exclusion (--exclude-path)](#directory-exclusion---exclude-path).
 
 **Module:** `mikebom-cli/src/scan_fs/package_db/nuget/`
 
@@ -675,6 +723,8 @@ mikebom can use. This is why rpm scans score 6.1/10 on sbomqs (Integrity
 ---
 
 ## yocto
+
+**Path exclusion**: see [Directory exclusion (--exclude-path)](#directory-exclusion---exclude-path).
 
 **Module:** `mikebom-cli/src/scan_fs/package_db/opkg.rs`
 + `mikebom-cli/src/scan_fs/package_db/yocto/{context,manifest,recipe}.rs`

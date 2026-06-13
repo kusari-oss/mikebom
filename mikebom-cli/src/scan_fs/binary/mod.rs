@@ -111,6 +111,7 @@ pub fn read(
     rootfs: &Path,
     claimed_paths: &std::collections::HashSet<std::path::PathBuf>,
     #[cfg(unix)] claimed_inodes: &std::collections::HashSet<(u64, u64)>,
+    exclude_set: &crate::scan_fs::package_db::exclude_path::ExclusionSet,
 ) -> Vec<PackageDbEntry> {
     let mut out = Vec::new();
     let mut linkage_agg = linkage::LinkageAggregator::new();
@@ -200,7 +201,7 @@ pub fn read(
         source_binding::BuildAttributionRegistry::from_observations(Vec::new())
     };
 
-    for path in discover_binaries(rootfs) {
+    for path in discover_binaries(rootfs, exclude_set) {
         // Size bounds via metadata BEFORE the full-file read. A
         // multi-GB file that exceeds MAX_BINARY_SIZE_BYTES used to be
         // slurped into memory in its entirety just to be rejected by
@@ -743,7 +744,8 @@ mod tests {
             dir.path(),
             &Default::default(),
             #[cfg(unix)]
-            &Default::default()
+            &Default::default(),
+            &crate::scan_fs::package_db::exclude_path::ExclusionSet::default()
         )
         .is_empty());
     }
@@ -757,7 +759,8 @@ mod tests {
             dir.path(),
             &Default::default(),
             #[cfg(unix)]
-            &Default::default()
+            &Default::default(),
+            &crate::scan_fs::package_db::exclude_path::ExclusionSet::default()
         )
         .is_empty());
     }
@@ -789,7 +792,8 @@ mod tests {
             dir.path(),
             &Default::default(),
             #[cfg(unix)]
-            &Default::default()
+            &Default::default(),
+            &crate::scan_fs::package_db::exclude_path::ExclusionSet::default()
         )
         .is_empty());
     }
@@ -809,6 +813,7 @@ mod tests {
             &Default::default(),
             #[cfg(unix)]
             &Default::default(),
+            &crate::scan_fs::package_db::exclude_path::ExclusionSet::default()
         );
         assert_eq!(entries.len(), 1, "expected exactly the cpython umbrella");
         assert!(
@@ -831,7 +836,8 @@ mod tests {
             dir.path(),
             &Default::default(),
             #[cfg(unix)]
-            &Default::default()
+            &Default::default(),
+            &crate::scan_fs::package_db::exclude_path::ExclusionSet::default()
         )
         .is_empty());
     }

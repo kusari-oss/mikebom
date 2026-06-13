@@ -17,7 +17,10 @@ const MAX_WALK_DEPTH: usize = 16;
 /// Walk `rootfs` for regular files, probing the first 16 bytes of
 /// each for a known binary magic. Skips hidden / build dirs. Ignores
 /// files <1 KB or >500 MB (defense-in-depth).
-pub(super) fn discover_binaries(root: &Path) -> Vec<PathBuf> {
+pub(super) fn discover_binaries(
+    root: &Path,
+    exclude_set: &crate::scan_fs::package_db::exclude_path::ExclusionSet,
+) -> Vec<PathBuf> {
     let mut out = Vec::new();
     if root.is_file() {
         if is_supported_binary(root) {
@@ -26,7 +29,9 @@ pub(super) fn discover_binaries(root: &Path) -> Vec<PathBuf> {
         return out;
     }
     // Milestone 114: delegates to scan_fs::walk::safe_walk.
-    let empty = crate::scan_fs::package_db::exclude_path::ExclusionSet::default();
+    // Milestone 118 (issue #343 / FR-002): thread the operator's
+    // ExclusionSet through so binary-tier discovery honors
+    // `--exclude-path` the same way ecosystem-tier walkers do.
     let cfg = crate::scan_fs::walk::WalkConfig {
         max_depth: MAX_WALK_DEPTH,
         should_skip: &|candidate: &Path, _rootfs: &Path| -> bool {
@@ -36,7 +41,7 @@ pub(super) fn discover_binaries(root: &Path) -> Vec<PathBuf> {
                 ".git" | "target" | "node_modules" | ".cargo" | "__pycache__" | ".venv"
             )
         },
-        exclude_set: &empty,
+        exclude_set,
     };
     crate::scan_fs::walk::safe_walk(root, &cfg, |path| {
         if path.is_file() && is_supported_binary(path) {
@@ -113,7 +118,10 @@ mod tests {
         let loop_dir = tmp.path().join("loop");
         std::fs::create_dir_all(&loop_dir).unwrap();
         std::os::unix::fs::symlink(&loop_dir, loop_dir.join("link")).unwrap();
-        let result = discover_binaries(tmp.path());
+        let result = discover_binaries(
+            tmp.path(),
+            &crate::scan_fs::package_db::exclude_path::ExclusionSet::default(),
+        );
         assert!(result.is_empty());
     }
 }

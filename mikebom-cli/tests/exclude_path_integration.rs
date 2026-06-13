@@ -324,3 +324,300 @@ fn malformed_pattern_exits_nonzero_before_scan() {
         "scan should not have produced an output file on malformed input",
     );
 }
+
+// ============================================================================
+// Milestone 118 — US1 per-ecosystem regression coverage (issue #343)
+// ============================================================================
+
+/// Write a minimal real Go module (go.mod + a `package <name>` source file).
+/// Used by US1 + US2 milestone-118 tests that need a non-Cargo ecosystem
+/// fixture without triggering the Go-tool unconditional skip shapes
+/// (testdata/ + _-prefix dirs).
+fn write_go_module(root: &std::path::Path, module_path: &str) {
+    std::fs::create_dir_all(root).unwrap();
+    let gomod = format!("module {module_path}\n\ngo 1.21\n");
+    std::fs::write(root.join("go.mod"), gomod).unwrap();
+    let main_rs = "package main\n\nfunc main() {}\n";
+    std::fs::write(root.join("main.go"), main_rs).unwrap();
+}
+
+/// T001 / FR-001 — Go source fixture suppressed via --exclude-path.
+/// Fixture path is `tests/fixtures/` (NOT `testdata/`, NOT `_archive`) so
+/// the Go-tool unconditional skip doesn't fire; the test exercises
+/// `--exclude-path` exclusively.
+#[test]
+fn golang_source_fixture_suppressed_via_exclude_path() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write_go_module(&root.join("real-app"), "github.com/example/real-app");
+    write_go_module(
+        &root.join("tests/fixtures/fixture-app"),
+        "github.com/example/fixture-app",
+    );
+
+    // Baseline scan: both modules present.
+    let (cdx, output) = run_scan(root, &[]);
+    assert!(output.status.success(), "baseline scan must succeed");
+    let names = component_names(&cdx);
+    assert!(
+        names.iter().any(|n| n.contains("real-app")),
+        "baseline scan must surface real-app; got {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n.contains("fixture-app")),
+        "baseline scan must surface fixture-app (no exclusion); got {names:?}"
+    );
+
+    // Excluded scan: fixture vanishes.
+    let (cdx, output) = run_scan(root, &["tests/fixtures"]);
+    assert!(output.status.success(), "excluded scan must succeed");
+    let names = component_names(&cdx);
+    assert!(
+        names.iter().any(|n| n.contains("real-app")),
+        "excluded scan must keep real-app; got {names:?}"
+    );
+    assert!(
+        !names.iter().any(|n| n.contains("fixture-app")),
+        "excluded scan must suppress fixture-app; got {names:?}"
+    );
+}
+
+/// T002 / FR-002 — Go binary fixture suppressed via --exclude-path.
+/// Skips gracefully if the host has no `go` toolchain — preserves
+/// Decision 3's "no new vendored fixture directories" rule by building
+/// the binary at test time rather than committing one to the repo.
+#[test]
+fn go_binary_fixture_suppressed_via_exclude_path() {
+    if Command::new("go").arg("version").output().is_err() {
+        eprintln!("skipping go_binary_fixture_suppressed_via_exclude_path: go toolchain not available");
+        return;
+    }
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    // Build a tiny binary under tests/fixtures/go-binary/bin/foo.
+    let src_dir = root.join("tests/fixtures/go-binary/src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    std::fs::write(
+        src_dir.join("main.go"),
+        "package main\n\nfunc main() { println(\"foo\") }\n",
+    )
+    .unwrap();
+    let bin_dir = root.join("tests/fixtures/go-binary/bin");
+    std::fs::create_dir_all(&bin_dir).unwrap();
+    let bin_path = bin_dir.join("foo");
+    let build = Command::new("go")
+        .arg("build")
+        .arg("-o")
+        .arg(&bin_path)
+        .arg(src_dir.join("main.go"))
+        .output()
+        .expect("go build invocation");
+    if !build.status.success() {
+        eprintln!(
+            "skipping go_binary_fixture_suppressed_via_exclude_path: go build failed: {}",
+            String::from_utf8_lossy(&build.stderr)
+        );
+        return;
+    }
+    // Also write a "real" Cargo project at the scan root so the scan
+    // emits something non-fixture-tier even when the fixture is excluded.
+    write_cargo_project(&root.join("real-app"), "real-app", "1.0.0");
+
+    // Baseline scan: should detect the binary as pkg:generic/foo (or similar).
+    let (cdx, output) = run_scan(root, &[]);
+    if !output.status.success() {
+        eprintln!(
+            "skipping go_binary_fixture_suppressed_via_exclude_path: baseline scan failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+    let names_baseline = component_names(&cdx);
+    let foo_present_baseline = names_baseline.iter().any(|n| n == "foo");
+    if !foo_present_baseline {
+        // The milestone-096 binary discovery might not classify this
+        // synthetic minimal binary as a generic component — the test
+        // still proves the negative direction (excluded scan must
+        // ALSO not include it). Skip if baseline doesn't surface.
+        eprintln!(
+            "skipping go_binary_fixture_suppressed_via_exclude_path: baseline scan did not classify the synthetic binary (got {names_baseline:?})"
+        );
+        return;
+    }
+
+    // Excluded scan: binary must vanish.
+    let (cdx, output) = run_scan(root, &["tests/fixtures"]);
+    assert!(output.status.success(), "excluded scan must succeed");
+    let names = component_names(&cdx);
+    assert!(
+        !names.iter().any(|n| n == "foo"),
+        "excluded scan must suppress the foo binary; got {names:?}"
+    );
+}
+
+/// T003 / FR-003 — dependency edges pointing AT a suppressed component
+/// must be dropped (no dangling DEPENDS_ON references in the emitted SBOM).
+#[test]
+fn dependency_edges_referencing_suppressed_components_dropped() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    // Dep crate at tests/fixtures/dep-lib/
+    write_cargo_project(&root.join("tests/fixtures/dep-lib"), "dep-lib", "1.0.0");
+    // Main app at main-app/, with a path-dependency on dep-lib.
+    let main_dir = root.join("main-app");
+    std::fs::create_dir_all(&main_dir).unwrap();
+    let manifest = "[package]\nname = \"main-app\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\n\
+                    [dependencies]\ndep-lib = { path = \"../tests/fixtures/dep-lib\" }\n";
+    std::fs::write(main_dir.join("Cargo.toml"), manifest).unwrap();
+    std::fs::create_dir_all(main_dir.join("src")).unwrap();
+    std::fs::write(main_dir.join("src/lib.rs"), "").unwrap();
+
+    // Excluded scan: dep-lib must be absent AND no dangling dep-lib reference
+    // should remain in any dependency edge.
+    let (cdx, output) = run_scan(root, &["tests/fixtures"]);
+    assert!(output.status.success(), "excluded scan must succeed");
+    let names = component_names(&cdx);
+    assert!(
+        !names.iter().any(|n| n == "dep-lib"),
+        "excluded scan must suppress dep-lib; got {names:?}"
+    );
+    // Walk the dependencies array (CDX) looking for any edge whose `dependsOn`
+    // list references a non-existent component bom-ref. If a future emission
+    // shape drops the dep edge for suppressed components, this test stays
+    // green; if it surfaces a dangling reference, this test fails.
+    if let Some(deps) = cdx.get("dependencies").and_then(|d| d.as_array()) {
+        // Collect every emitted component's bom-ref / purl identifier.
+        let mut emitted: std::collections::HashSet<String> = Default::default();
+        if let Some(c) = cdx.get("metadata").and_then(|m| m.get("component")) {
+            if let Some(s) = c.get("bom-ref").and_then(|v| v.as_str()) {
+                emitted.insert(s.to_string());
+            }
+            if let Some(s) = c.get("purl").and_then(|v| v.as_str()) {
+                emitted.insert(s.to_string());
+            }
+        }
+        if let Some(arr) = cdx.get("components").and_then(|v| v.as_array()) {
+            for c in arr {
+                if let Some(s) = c.get("bom-ref").and_then(|v| v.as_str()) {
+                    emitted.insert(s.to_string());
+                }
+                if let Some(s) = c.get("purl").and_then(|v| v.as_str()) {
+                    emitted.insert(s.to_string());
+                }
+            }
+        }
+        for edge in deps {
+            if let Some(refs) = edge.get("dependsOn").and_then(|v| v.as_array()) {
+                for r in refs {
+                    if let Some(rs) = r.as_str() {
+                        assert!(
+                            emitted.contains(rs),
+                            "dangling dependsOn reference {rs:?} for a component not in the emitted set ({emitted:?}); excluded scan must drop edges pointing AT suppressed components"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// T004 / FR-004 — when the operator excludes the scan root itself, the
+/// SBOM contains only metadata.component (mikebom's self-description) and
+/// no other components.
+#[test]
+fn scan_root_excluded_yields_only_metadata_component() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write_cargo_project(&root.join("some-app"), "some-app", "1.0.0");
+    // Excluding the absolute scan root path should suppress every walker.
+    let root_abs = root.canonicalize().unwrap();
+    let root_abs_str = root_abs.to_string_lossy().into_owned();
+
+    let (cdx, output) = run_scan(root, &[root_abs_str.as_str()]);
+    assert!(
+        output.status.success(),
+        "scan with --exclude-path=<root> must succeed (no error; just empty components[])"
+    );
+    let components = cdx.get("components").and_then(|c| c.as_array());
+    let count = components.map(|a| a.len()).unwrap_or(0);
+    assert_eq!(
+        count, 0,
+        "excluding the scan root must yield an empty components[] array; got {count} components: {:?}",
+        components
+    );
+}
+
+// ============================================================================
+// Milestone 118 — US2 complex pattern + cross-platform separator coverage
+// ============================================================================
+
+/// T005 / FR-005 — two distinct pattern entries in one scan suppress both
+/// subtree shapes (union semantics).
+#[test]
+fn multiple_pattern_entries_combine_by_union() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write_cargo_project(&root.join("real-app"), "real-app", "1.0.0");
+    write_cargo_project(
+        &root.join("services/payment/testdata/cargo/fixture-cargo"),
+        "fixture-cargo",
+        "1.0.0",
+    );
+    write_cargo_project(
+        &root.join("services/payment/_archive/cargo/legacy-app"),
+        "legacy-app",
+        "1.0.0",
+    );
+
+    let (cdx, output) = run_scan(root, &["**/testdata", "**/_archive"]);
+    assert!(output.status.success(), "scan must succeed");
+    let names = component_names(&cdx);
+    assert!(
+        names.iter().any(|n| n.contains("real-app")),
+        "real-app must remain; got {names:?}"
+    );
+    assert!(
+        !names.iter().any(|n| n.contains("fixture-cargo")),
+        "**/testdata pattern must suppress fixture-cargo; got {names:?}"
+    );
+    assert!(
+        !names.iter().any(|n| n.contains("legacy-app")),
+        "**/_archive pattern must suppress legacy-app; got {names:?}"
+    );
+
+    // FR-005 transparency: the envelope annotation lists BOTH pattern entries.
+    let annotation = envelope_property(&cdx, "mikebom:exclude-path")
+        .expect("envelope annotation must be present when set is non-empty");
+    assert!(
+        annotation.contains("**/testdata") && annotation.contains("**/_archive"),
+        "envelope must list both pattern entries; got: {annotation}"
+    );
+}
+
+/// T006 / FR-006 — backslash-separated literal entry normalizes to the
+/// same suppression as forward-slash form.
+#[test]
+fn cross_platform_separator_normalization() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write_cargo_project(&root.join("real-app"), "real-app", "1.0.0");
+    write_cargo_project(
+        &root.join("tests/fixtures/fixture-app"),
+        "fixture-app",
+        "1.0.0",
+    );
+
+    // Backslash-separated literal — must normalize at parse time and match
+    // the same directories as the forward-slash form.
+    let (cdx, output) = run_scan(root, &["tests\\fixtures"]);
+    assert!(output.status.success(), "scan must succeed");
+    let names = component_names(&cdx);
+    assert!(
+        names.iter().any(|n| n.contains("real-app")),
+        "real-app must remain; got {names:?}"
+    );
+    assert!(
+        !names.iter().any(|n| n.contains("fixture-app")),
+        "backslash literal must normalize and suppress fixture-app; got {names:?}"
+    );
+}

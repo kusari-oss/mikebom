@@ -50,6 +50,84 @@ jobs:
           # CICD-SEC-1 + Kusari Inspector hardening guidance.
           persist-credentials: false
 
+      # Milestone 115 — walker-audit allow-list gate (closes #342).
+      # Codifies the milestone-114 `safe_walk` no-hand-rolled-walker
+      # invariant as a CI check. The audit grep enumerates every
+      # `fn walk[_(]` match under `mikebom-cli/src/scan_fs/`; the
+      # committed allow-list at `mikebom-cli/src/scan_fs/walk.audit-allowlist.txt`
+      # is the single source of truth for "intentional matches."
+      # Drift in either direction (new walker without intent, or
+      # stale exception left behind) fails the build.
+      #
+      # Slotted before `Install stable Rust` so a failure short-
+      # circuits the toolchain install, cargo cache restore,
+      # clippy, and `cargo test --workspace`. The step uses only
+      # POSIX shell (`grep` / `sort` / `diff`) — preinstalled on
+      # every GitHub Actions runner; no `apt-get install`. Per
+      # specs/115-walker-audit-ci/contracts/ci-step.md.
+      - name: Walker-audit allow-list check
+        shell: bash
+        run: |
+          set -u
+          ALLOWLIST="mikebom-cli/src/scan_fs/walk.audit-allowlist.txt"
+          FAIL_HEADLINE="[FAIL] Walker-audit allow-list mismatch — see mikebom-cli/src/scan_fs/walk.rs's module-level comment for the exception policy."
+          FAIL_POINTER_NEW="If your PR intentionally adds a new walker exception, see CONTRIBUTING.md § Walker-audit CI gate."
+          FAIL_POINTER_BAD="If your PR did NOT intend to add a walker, remove the new fn walk_* function and use scan_fs::walk::safe_walk instead."
+
+          # Precheck: missing or empty allow-list → fail closed per
+          # FR-010 strict-enforcement bootstrap. A future PR that
+          # accidentally or maliciously deletes the file gets the
+          # same red CI as an unauthorized walker addition.
+          if [ ! -f "$ALLOWLIST" ]; then
+            echo "$FAIL_HEADLINE" >&2
+            echo "" >&2
+            echo "ERROR: $ALLOWLIST is missing." >&2
+            echo "" >&2
+            echo "This file is the bootstrap baseline for the walker-audit CI gate (feature 115)." >&2
+            echo "If you intentionally removed it, restore from the previous commit:" >&2
+            echo "    git show HEAD~1:$ALLOWLIST > $ALLOWLIST" >&2
+            echo "" >&2
+            echo "See CONTRIBUTING.md § Walker-audit CI gate for the file's purpose." >&2
+            exit 1
+          fi
+          EXPECTED=$(grep -v '^#' "$ALLOWLIST" | grep -v '^$' | LC_ALL=C sort -u)
+          if [ -z "$EXPECTED" ]; then
+            echo "$FAIL_HEADLINE" >&2
+            echo "" >&2
+            echo "ERROR: $ALLOWLIST is empty (zero non-blank, non-comment lines)." >&2
+            echo "" >&2
+            echo "This file is the bootstrap baseline for the walker-audit CI gate (feature 115)." >&2
+            echo "Empty is not a valid state per FR-010 strict-enforcement bootstrap." >&2
+            echo "" >&2
+            echo "See CONTRIBUTING.md § Walker-audit CI gate for the file's purpose." >&2
+            exit 1
+          fi
+
+          # Live audit pattern. LC_ALL=C pins lex order across runners.
+          # `--include='*.rs'` scopes to Rust source so the audit doesn't
+          # match its own allow-list file (`walk.audit-allowlist.txt`
+          # lives under scan_fs/ for adjacency per SC-005, and every
+          # entry inside it contains the substring `fn walk_`).
+          LIVE=$(LC_ALL=C grep -rEn --include='*.rs' 'fn walk[_(]' mikebom-cli/src/scan_fs/ | LC_ALL=C sort -u)
+
+          START_NS=$(date +%s%N 2>/dev/null || echo 0)
+          if DIFF_OUT=$(diff -u <(printf '%s\n' "$EXPECTED") <(printf '%s\n' "$LIVE")); then
+            END_NS=$(date +%s%N 2>/dev/null || echo 0)
+            ELAPSED_MS=$(( (END_NS - START_NS) / 1000000 ))
+            ENTRY_COUNT=$(printf '%s\n' "$EXPECTED" | wc -l | tr -d ' ')
+            echo "Walker-audit allow-list check: OK (${ENTRY_COUNT} entries; ${ELAPSED_MS} ms)"
+          else
+            echo "$FAIL_HEADLINE" >&2
+            echo "" >&2
+            echo "--- mikebom-cli/src/scan_fs/walk.audit-allowlist.txt (expected)" >&2
+            echo "+++ live: grep -rEn 'fn walk[_(]' mikebom-cli/src/scan_fs/ | sort -u (actual)" >&2
+            printf '%s\n' "$DIFF_OUT" | tail -n +3 >&2
+            echo "" >&2
+            echo "$FAIL_POINTER_NEW" >&2
+            echo "$FAIL_POINTER_BAD" >&2
+            exit 1
+          fi
+
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable (2026-04-25)
         with:

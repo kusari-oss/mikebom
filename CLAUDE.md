@@ -123,6 +123,8 @@ Auto-generated from all feature plans. Last updated: 2026-06-12
 - N/A — exclusion entries are in-process per scan; no caches, no persistence. (113-exclude-path-flag)
 - Rust stable (workspace toolchain inherited from milestones 001–113; no nightly required for this user-space-only refactor). + existing only — `std::fs::{canonicalize, read_dir}`, `std::path::{Path, PathBuf}`, `std::collections::HashSet`, `tracing` (for debug-skip logs). Reuses milestone-113's `ExclusionSet` at `mikebom-cli/src/scan_fs/package_db/exclude_path.rs`. **Zero new Cargo dependencies** per FR-011 (no `walkdir`, no `ignore`, no `globwalk`). (114-safe-walk-migration)
 - N/A — visited-set is per-call in-memory state; cleared at each `safe_walk` invocation. No persistence. (114-safe-walk-migration)
+- POSIX shell (bash) inside GitHub Actions YAML; no Rust code change. + existing tools — `grep` (GNU/BSD; the `-rEn` flags are POSIX-compatible), `sort` (POSIX), `diff` (POSIX). All preinstalled on every GitHub Actions runner image. **Zero new tool installations.** (115-walker-audit-ci)
+- A single source-tree-committed plain-text file: `mikebom-cli/src/scan_fs/walk.audit-allowlist.txt`. Sorted lex; one `<file>:<line>:<content>` entry per line; LF line endings. (115-walker-audit-ci)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -185,9 +187,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 115-walker-audit-ci: Added POSIX shell (bash) inside GitHub Actions YAML; no Rust code change. + existing tools — `grep` (GNU/BSD; the `-rEn` flags are POSIX-compatible), `sort` (POSIX), `diff` (POSIX). All preinstalled on every GitHub Actions runner image. **Zero new tool installations.**
 - 114-safe-walk-migration: Added Rust stable (workspace toolchain inherited from milestones 001–113; no nightly required for this user-space-only refactor). + existing only — `std::fs::{canonicalize, read_dir}`, `std::path::{Path, PathBuf}`, `std::collections::HashSet`, `tracing` (for debug-skip logs). Reuses milestone-113's `ExclusionSet` at `mikebom-cli/src/scan_fs/package_db/exclude_path.rs`. **Zero new Cargo dependencies** per FR-011 (no `walkdir`, no `ignore`, no `globwalk`).
 - 113-exclude-path-flag: Added Rust stable (workspace toolchain inherited from milestones 001–113; no nightly required for this user-space-only work). + existing only EXCEPT one new direct dep — `globset = "0.4"` (pure Rust, pulls `regex` + `regex-syntax` which are already in the workspace dependency closure). Existing crates reused: `clap` (the new flag via `ArgAction::Append` derive + `value_parser` validation), `serde`/`serde_json` (transparency annotation emission), `tracing` (debug logs for matched directories), `anyhow`/`thiserror` (parse-error class for malformed patterns), `walkdir`/`std::fs::canonicalize` (existing descent helpers — unchanged). `url` (workspace) for env-var-list separator handling on Windows is not needed; we use `std::env::var` + `std::env::join_paths`-style splitting.
-- 112-go-build-inclusion: Added Rust stable (workspace toolchain inherited from milestones 001–111; no nightly required for this user-space-only feature) + Existing only — `std::process::Command` + `std::sync::mpsc` (subprocess with timeout, pattern at `golang/go_mod_graph.rs:81–158`), `clap` (new boolean flag via derive), `serde`/`serde_json` (annotation values), `tracing` (FR-013 logs), `anyhow`/`thiserror` (error classes). **No new Cargo dependencies.** Child-process tool: the host's `go` binary (optional; absence degrades).
 
 
 <!-- MANUAL ADDITIONS START -->

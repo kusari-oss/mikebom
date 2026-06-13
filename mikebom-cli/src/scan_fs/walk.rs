@@ -267,6 +267,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn canonicalize_keyed_dedup_breaks_symlink_loop() {
         let dir = tempfile::tempdir().unwrap();
         let sub = dir.path().join("loop");

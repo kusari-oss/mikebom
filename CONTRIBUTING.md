@@ -75,6 +75,113 @@ This requires the JPEWdev `spdx3-validate` Python package pinned in
 the gate skips silently — but CI runs it strictly on release branches,
 so test locally before release-bump PRs.
 
+## Walker-audit CI gate
+
+If your PR adds code under `mikebom-cli/src/scan_fs/`, read this section
+**before** writing the new filesystem-walking logic. The walker-audit gate
+fails fast (under one second) when an unauthorized `fn walk_*` shows up
+outside the shared helper or the documented exception list.
+
+### What the gate enforces
+
+The post-milestone-114 invariant is that every ecosystem-discovery
+filesystem walker under `mikebom-cli/src/scan_fs/` goes through the
+shared `scan_fs::walk::safe_walk` helper. Hand-rolled `read_dir`
+recursion bypasses the canonicalize-keyed visited-set + depth-bound +
+exclusion-set + skip-debug-log machinery that lives in one place for
+auditability.
+
+The CI step (in `.github/workflows/ci.yml`'s `Lint + test (linux-x86_64)`
+job, between `actions/checkout` and `Install stable Rust`) runs:
+
+```bash
+grep -rEn --include='*.rs' 'fn walk[_(]' mikebom-cli/src/scan_fs/ \
+  | LC_ALL=C sort -u
+```
+
+and `diff`s the result against the committed allow-list at
+`mikebom-cli/src/scan_fs/walk.audit-allowlist.txt`. Either-direction
+drift (new walker without an allow-list entry, OR stale entry pointing
+at deleted code) fails the build.
+
+### What to do when your PR turns red on `Walker-audit allow-list check`
+
+The CI log shows you a unified-diff hunk. Two paths from there:
+
+**Scenario A — you added a walker by accident.** You wrote a one-off
+`read_dir` recursion when `safe_walk` would have worked. Refactor the
+new code to call `safe_walk`:
+
+```rust
+use crate::scan_fs::walk::{safe_walk, WalkConfig};
+
+let cfg = WalkConfig {
+    max_depth: 6,
+    should_skip: &|p, _| {
+        // your skip predicate
+        false
+    },
+    exclude_set,
+};
+safe_walk(rootfs, &cfg, |path| {
+    // your per-path visit logic
+});
+```
+
+See `mikebom-cli/src/scan_fs/walk.rs`'s module-level comment block for
+the full API + the documented exceptions that already exist. The
+five-minute walkthrough in
+[`specs/114-safe-walk-migration/quickstart.md`](specs/114-safe-walk-migration/quickstart.md)
+covers `max_depth` / `should_skip` / callback shape choices.
+
+**Scenario B — your walker legitimately can't fit `safe_walk`.** Rare,
+but possible (per-descent stateful pruning, parent-name-aware recursion,
+…). In the SAME PR, do two edits:
+
+1. Append the new grep-output line to
+   `mikebom-cli/src/scan_fs/walk.audit-allowlist.txt`, sorted with
+   `LC_ALL=C sort -u`. The easiest path is to regenerate the whole
+   file:
+   ```bash
+   grep -rEn --include='*.rs' 'fn walk[_(]' mikebom-cli/src/scan_fs/ \
+     | LC_ALL=C sort -u \
+     > mikebom-cli/src/scan_fs/walk.audit-allowlist.txt
+   ```
+   `git diff` should show **exactly one** added line. More than one
+   means either upstream drift (rebase first) or you added more than
+   one walker.
+2. Add a one-sentence reason in the comment block at the top of
+   `mikebom-cli/src/scan_fs/walk.rs`'s "Documented known exceptions"
+   subsection naming the new walker + why it can't delegate.
+
+The gate enforces step 1 mechanically; step 2 is reviewer-policed. The
+reviewer will see both the allow-list change AND the code change in
+one diff and evaluate the new exception's justification at the same
+time as the code change.
+
+### When NOT to interact with the gate
+
+- Refactoring inside an existing walker file (renames, helper
+  extractions): as long as no NEW `fn walk_*` appears, the gate
+  stays quiet.
+- Adding a function named `fn walker_*` or `fn walking_*`: the regex
+  `'fn walk[_(]'` only matches `fn walk_` or `fn walk(` exactly; longer
+  prefixes don't match.
+- Working in a different directory (`mikebom-common/`, `mikebom-ebpf/`):
+  the gate is scoped to `mikebom-cli/src/scan_fs/` only.
+
+### Why this is a CI gate and not a clippy lint
+
+The gate is a single-line POSIX shell pipeline that runs in <500 ms on
+the existing Linux CI runner. A clippy lint would be more "Rusty" but
+would also require a Cargo build to fail. The shell gate fails before
+any toolchain is installed, short-circuiting clippy + `cargo test` on
+the way to maintainer review. The flat-text allow-list is human-
+editable in any editor without schema knowledge.
+
+For the design rationale, see
+[`docs/design-notes.md` § "Filesystem walking pattern (milestone 114)"](docs/design-notes.md#filesystem-walking-pattern-milestone-114).
+
 ### Performance benchmarks (opt-in)
 
 Wall-clock perf benchmarks (`triple_format_perf.rs`, `dual_format_perf.rs`)

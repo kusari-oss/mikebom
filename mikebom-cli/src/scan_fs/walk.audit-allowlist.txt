@@ -1,0 +1,28 @@
+mikebom-cli/src/scan_fs/binary/source_binding/cmake_observer.rs:113:fn walk_for_cmake_build_dirs(
+mikebom-cli/src/scan_fs/package_db/maven.rs:1249:fn walk_m2_jars(repo_cache: &MavenRepoCache) -> Vec<PathBuf> {
+mikebom-cli/src/scan_fs/package_db/maven.rs:1714:pub(crate) fn walk_jar_maven_meta(archive_path: &Path) -> Vec<EmbeddedMavenMeta> {
+mikebom-cli/src/scan_fs/package_db/maven.rs:350:    pub(crate) fn walk_rootfs_poms(
+mikebom-cli/src/scan_fs/package_db/maven.rs:3928:    fn walk_jar_collects_coord_and_embedded_deps() {
+mikebom-cli/src/scan_fs/package_db/maven.rs:3957:    fn walk_jar_attaches_sidecar_hash_when_present() {
+mikebom-cli/src/scan_fs/package_db/maven.rs:3981:    fn walk_jar_no_sidecar_still_computes_archive_sha256() {
+mikebom-cli/src/scan_fs/package_db/maven.rs:4009:    fn walk_jar_with_sha1_sidecar_also_gets_sha256() {
+mikebom-cli/src/scan_fs/package_db/maven.rs:4035:    fn walk_fat_jar_only_primary_coord_gets_archive_sha256() {
+mikebom-cli/src/scan_fs/package_db/maven.rs:4070:    fn walk_jar_without_pom_xml_returns_empty_deps() {
+mikebom-cli/src/scan_fs/package_db/maven.rs:4088:    fn walk_fat_jar_collects_one_meta_per_vendored_artifact() {
+mikebom-cli/src/scan_fs/package_db/maven.rs:6078:    fn walk_rootfs_poms_finds_multiple_cached_artifacts() {
+mikebom-cli/src/scan_fs/package_db/maven.rs:6113:    fn walk_rootfs_poms_skips_host_scoped_roots() {
+mikebom-cli/src/scan_fs/package_db/maven.rs:6145:    fn walk_rootfs_poms_ignores_sibling_non_pom_files() {
+mikebom-cli/src/scan_fs/package_db/maven.rs:6174:    fn walk_rootfs_poms_truncates_at_cap() {
+mikebom-cli/src/scan_fs/package_db/maven.rs:6194:    fn walk_rootfs_poms_handles_deep_group_paths() {
+mikebom-cli/src/scan_fs/package_db/maven.rs:6214:    fn walk_rootfs_poms_empty_cache_returns_nothing() {
+mikebom-cli/src/scan_fs/package_db/maven_sidecar.rs:166:    fn walk(dir: &Path, depth: usize, out: &mut HashMap<String, PathBuf>) {
+mikebom-cli/src/scan_fs/package_db/npm/mod.rs:793:    fn walk_skips_node_modules_subtrees() {
+mikebom-cli/src/scan_fs/package_db/npm/package_lock.rs:792:    fn walk_up_resolution_picks_hoisted_when_parent_lacks_nested() {
+mikebom-cli/src/scan_fs/package_db/npm/walk.rs:60:fn walk_node_modules(
+mikebom-cli/src/scan_fs/package_db/nuget/directory_packages_props.rs:158:    fn walk_up_finds_props_in_ancestor() {
+mikebom-cli/src/scan_fs/package_db/nuget/directory_packages_props.rs:170:    fn walk_up_stops_at_scan_root() {
+mikebom-cli/src/scan_fs/package_db/rpmdb_sqlite/schema.rs:53:fn walk_schema_page<F>(
+mikebom-cli/src/scan_fs/walk.rs:179:fn walk_inner<F: FnMut(&Path)>(
+mikebom-cli/src/scan_fs/walk.rs:8://! `fn walk_*` recursion implementing the same canonicalize-keyed
+mikebom-cli/src/scan_fs/walker.rs:109:fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+mikebom-cli/src/scan_fs/walker.rs:47:pub fn walk_and_hash(

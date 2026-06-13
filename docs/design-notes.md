@@ -226,12 +226,14 @@ fn read(rootfs: &Path, exclude_set: &ExclusionSet) -> Vec<PackageDbEntry> {
 
 ### Audit pattern
 
-Run `grep -rEn 'fn walk[_(]' mikebom-cli/src/scan_fs/`. Acceptable matches fall into two categories documented in `mikebom-cli/src/scan_fs/walk.rs`'s comment block:
+Run `grep -rEn --include='*.rs' 'fn walk[_(]' mikebom-cli/src/scan_fs/`. Acceptable matches fall into two categories documented in `mikebom-cli/src/scan_fs/walk.rs`'s comment block:
 
 - **Filesystem ecosystem-discovery walkers** that delegate to `safe_walk` plus the documented known exceptions (`walker.rs` whole-FS deep-hash; `npm/walk.rs` `@scope`-aware; `cmake_observer.rs` stop-at-match descent; `maven_sidecar.rs` lstat-style M2 cache walker).
 - **Non-filesystem-walker false positives** that catch the regex but aren't walkers (`maven::walk_m2_jars`, `maven::walk_jar_maven_meta`, `MavenRepoCache::walk_rootfs_poms`, `rpmdb_sqlite::walk_schema_page`, and test functions named `walks_*` / `walk_jar_*` / `walk_fat_jar_*` / `walk_rootfs_poms_*`).
 
 Any match outside the union of those two lists is a regression: the contributor introduced a new hand-rolled filesystem walker bypassing `safe_walk`. Reviewer action: reject the PR or push back to either migrate the new walker to `safe_walk` OR add a new entry to the comment block at the top of `scan_fs/walk.rs` with a one-sentence reason. The exception list MUST stay short — five entries is the current state; ten is the abstraction failing and we should rethink.
+
+As of milestone 115, the audit pattern is enforced by CI — `.github/workflows/ci.yml`'s `Walker-audit allow-list check` step in the `Lint + test (linux-x86_64)` job diffs the live grep against `mikebom-cli/src/scan_fs/walk.audit-allowlist.txt` and fails the build on drift. The new-exception contributor workflow lives in [`CONTRIBUTING.md` § Walker-audit CI gate](../CONTRIBUTING.md#walker-audit-ci-gate); the spec + design rationale lives at `specs/115-walker-audit-ci/`.
 
 See `mikebom-cli/src/scan_fs/walk.rs`'s module-level doc-comment for the authoritative audit-pattern + known-exception list. The milestone-114 spec lives at `specs/114-safe-walk-migration/`.
 

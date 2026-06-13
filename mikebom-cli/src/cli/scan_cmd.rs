@@ -1747,11 +1747,32 @@ pub async fn execute(
     } else {
         None
     };
-    tracing::info!(
-        components = components.len(),
-        relationships = relationships.len(),
-        "scan complete"
-    );
+    // Milestone 118 (#343 / FR-010) — when --exclude-path had ≥1 entry
+    // in effect, surface the per-scan summary so operators can see how
+    // many entries applied and how many directories were suppressed
+    // without paging through MIKEBOM_LOG=debug output. Per-walker debug
+    // events emit centrally from `safe_walk` since milestone 114.
+    // When the set is empty, preserve the pre-118 two-field shape
+    // byte-identically (FR-010 emission gating).
+    if !exclude_set.is_empty() {
+        tracing::info!(
+            components = components.len(),
+            relationships = relationships.len(),
+            excluded_entries = exclude_set.entries().len(),
+            excluded_literals = exclude_set.count_literals(),
+            excluded_patterns = exclude_set.count_patterns(),
+            suppressed_dirs = exclude_set
+                .suppressed_dirs
+                .load(std::sync::atomic::Ordering::Relaxed),
+            "scan complete"
+        );
+    } else {
+        tracing::info!(
+            components = components.len(),
+            relationships = relationships.len(),
+            "scan complete"
+        );
+    }
 
     // Enrichment source control: resolve which sources are enabled.
     // `--offline` is handled by each enrichment source's internal

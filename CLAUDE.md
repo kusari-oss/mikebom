@@ -132,6 +132,8 @@ Auto-generated from all feature plans. Last updated: 2026-06-13
 - same source-tree-committed plain-text file `mikebom-cli/src/scan_fs/walk.audit-allowlist.txt`; the file's location and name are unchanged. Only the per-entry shape changes: `<file>:<content>` (this feature) vs `<file>:<line>:<content>` (milestone 115). (117-line-stable-allowlist)
 - Rust stable (workspace toolchain inherited from milestones 001–117; no nightly required for this user-space-only feature). + Existing only — `std::sync::atomic::AtomicUsize` (std), `tracing`, `tempfile` (test-only; already a dev-dep), `serde_json` (test parsing), `globset` (workspace; already used by milestone 113's `ExclusionSet`). **Zero new Cargo dependencies.** (118-exclude-path-polish)
 - N/A — all state in-process per scan; the `AtomicUsize` counter is reset implicitly on each new `ExclusionSet` instance (one per scan). (118-exclude-path-polish)
+- Rust stable (workspace toolchain inherited from milestones 001–118; no nightly required). + Existing only — `serde`/`serde_json` (CDX JSON parse), `clap` (the new flag via derive), `sha2` + `data-encoding` (the supplement file's sha256 for FR-012 provenance — both already in the workspace), `tracing`, `anyhow`, `thiserror`. **Zero new Cargo dependencies.** Per research §1, the supplement file validation is a hand-rolled structural check — no `jsonschema` runtime dep added. (119-supplement-cdx)
+- N/A — the supplement file is read once at scan startup; its parsed representation lives in-process for the duration of the scan; no caching, no persistence. (119-supplement-cdx)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -194,9 +196,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 119-supplement-cdx: Added Rust stable (workspace toolchain inherited from milestones 001–118; no nightly required). + Existing only — `serde`/`serde_json` (CDX JSON parse), `clap` (the new flag via derive), `sha2` + `data-encoding` (the supplement file's sha256 for FR-012 provenance — both already in the workspace), `tracing`, `anyhow`, `thiserror`. **Zero new Cargo dependencies.** Per research §1, the supplement file validation is a hand-rolled structural check — no `jsonschema` runtime dep added.
 - 118-exclude-path-polish: Added Rust stable (workspace toolchain inherited from milestones 001–117; no nightly required for this user-space-only feature). + Existing only — `std::sync::atomic::AtomicUsize` (std), `tracing`, `tempfile` (test-only; already a dev-dep), `serde_json` (test parsing), `globset` (workspace; already used by milestone 113's `ExclusionSet`). **Zero new Cargo dependencies.**
 - 117-line-stable-allowlist: Added POSIX shell (bash) inside GitHub Actions YAML; no Rust code change. + existing tools — `grep`, `sort`, `diff`, `sed` (all POSIX-mandated; preinstalled on every GitHub Actions runner image). **Zero new tool installations.** Specifically `sed` is the new addition vs milestone 115; it's already used elsewhere in the workflow and on every runner.
-- 116-produces-binaries-pra: Added Rust stable (workspace toolchain inherited from milestones 001–115; no nightly required for this user-space-only feature). + Existing only — `toml = "0.8"` (already used by cargo + pip parsers), `quick-xml = "0.31"` (already used by maven), `serde`/`serde_json`, `tracing`, `anyhow`, `thiserror`, `clap`. Reuses milestone-114's `scan_fs::walk::safe_walk` for Cargo `src/bin/*.rs` enumeration (FR-005's third source) and Go `package main` directory walk (FR-010). Reuses milestone-111's `Purl` newtype + binding envelope plumbing. **Zero new Cargo dependencies.**
 
 
 <!-- MANUAL ADDITIONS START -->

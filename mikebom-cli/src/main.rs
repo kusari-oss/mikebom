@@ -42,6 +42,7 @@ mod policy;
 mod resolve;
 mod sbom;
 mod scan_fs;
+mod supplement;
 mod trace;
 
 #[derive(Parser)]
@@ -140,6 +141,46 @@ struct Cli {
     /// See docs/user-guide/cli-reference.md#--exclude-path.
     #[arg(long, global = true, action = clap::ArgAction::Append, value_name = "PATH_OR_PATTERN")]
     exclude_path: Vec<String>,
+
+    /// Milestone 119 (#326) — operator-supplied CDX 1.6 JSON
+    /// supplement file declaring ground truth the scanner cannot
+    /// observe: SaaS dependencies, vendored libraries without
+    /// recognizable manifests, license + supplier + copyright
+    /// metadata on otherwise-known components.
+    ///
+    /// At scan startup mikebom parses + structurally validates the
+    /// file (zero new runtime deps — hand-rolled subset check), then
+    /// merges it into the emitted SBOM:
+    /// - **Solo entries** (PURL not in scanner output) become new
+    ///   components/services tagged `mikebom:source-tier = declared`.
+    /// - **Collisions** (PURL matches scanner output) resolve via
+    ///   the hard/soft split: scanner wins on bytes-derived facts
+    ///   (hashes, cpe, canonical purl, version, binary role);
+    ///   developer wins on metadata (licenses, supplier, copyright,
+    ///   display name, description, externalReferences). Each
+    ///   disagreement annotated `mikebom:assertion-conflict` for
+    ///   audit.
+    ///
+    /// Safety property: developer CANNOT suppress scanner detection
+    /// of bytes-evident content. A supplement asserting "no openssl"
+    /// still produces an SBOM containing the openssl the scanner
+    /// fingerprinted; the assertion appears as an annotated conflict.
+    ///
+    /// Provenance: the emitted SBOM carries a document-scope
+    /// `mikebom:supplement-cdx = <path>@sha256:<hex>` annotation so
+    /// consumers can verify which supplement file fed the merge.
+    ///
+    /// Parse / I/O / schema-validation failures cause non-zero exit
+    /// BEFORE any walker begins (Constitution Principle III). No
+    /// partial SBOM emitted on supplement failure.
+    ///
+    /// Single-occurrence in v0.1 (FR-001); the supplement's
+    /// `metadata.component` is IGNORED — `--scan-as` continues to
+    /// own scan-target identity.
+    ///
+    /// See `docs/user-guide/cli-reference.md#--supplement-cdx`.
+    #[arg(long, global = true, value_name = "PATH")]
+    supplement_cdx: Option<std::path::PathBuf>,
 
     /// Include declared-but-not-on-disk dependencies (manifest SBOM).
     /// By default, mikebom emits only components physically present in
@@ -316,6 +357,7 @@ async fn main() -> anyhow::Result<std::process::ExitCode> {
                 cli.include_legacy_rpmdb,
                 cli.include_declared_deps,
                 exclude_set,
+                cli.supplement_cdx,
             )
             .await
         }

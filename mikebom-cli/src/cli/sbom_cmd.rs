@@ -60,6 +60,7 @@ pub async fn execute(
     include_legacy_rpmdb: bool,
     include_declared_deps: bool,
     exclude_set: crate::scan_fs::package_db::exclude_path::ExclusionSet,
+    supplement_cdx: Option<std::path::PathBuf>,
 ) -> anyhow::Result<ExitCode> {
     match cmd.command {
         SbomSubcommand::Generate(args) => {
@@ -79,6 +80,7 @@ pub async fn execute(
                 include_legacy_rpmdb,
                 include_declared_deps,
                 exclude_set,
+                supplement_cdx,
             )
             .await?;
             Ok(ExitCode::from(0))

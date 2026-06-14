@@ -691,6 +691,30 @@ cdx_anno!(c63_cdx, "mikebom:exclude-path",              document);
 // ecosystem PURL. Library-only components MUST NOT carry this property.
 cdx_anno!(c64_cdx, "mikebom:produces-binaries",         component);
 
+// C65 — `mikebom:source-tier = "declared"` (milestone 119 FR-011 / SC-004).
+// Per-component value-extension on the existing source-tier key for
+// supplement-introduced solo entries (collisions keep the scanner's
+// pre-existing tier). The existing C5 extractor reads the same key, so
+// this extractor is a value-agnostic duplicate registered under the
+// C65 row_id so the catalog-coverage test recognizes the value-set
+// extension as separately documented.
+cdx_anno!(c65_cdx, "mikebom:source-tier",               component);
+
+// C66 — `mikebom:supplement-cdx` (milestone 119 FR-012 / SC-004).
+// Envelope-level provenance recording the operator-supplied supplement
+// file's verbatim path + sha256. Emitted only when --supplement-cdx
+// was in effect; absent (+ byte-identical pre-feature output) when no
+// supplement was supplied.
+cdx_anno!(c66_cdx, "mikebom:supplement-cdx",            document);
+
+// C67 — `mikebom:assertion-conflict` (milestone 119 FR-008 / FR-009 / SC-003).
+// Per-component conflict-record annotation. Repeatable conflicts on
+// one component accumulate into a JSON-encoded array under the same
+// property key. Emitted only on components where supplement-declared
+// values contradicted scanner-discovered values; absent on all other
+// components.
+cdx_anno!(c67_cdx, "mikebom:assertion-conflict",        component);
+
 // ============================================================
 // Section D — Evidence (D1, D2 — CDX-native shape)
 // ============================================================

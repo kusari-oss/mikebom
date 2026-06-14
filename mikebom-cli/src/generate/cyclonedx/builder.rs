@@ -463,6 +463,18 @@ impl CycloneDxBuilder {
             "dependencies": deps,
             "vulnerabilities": vulnerabilities
         });
+        // Milestone 119 (#326) — supplement-declared `services[]`. The
+        // section is omitted entirely when no supplement is in effect
+        // OR the supplement declared zero services, preserving byte-
+        // identity with pre-119 emission per FR-013 / SC-006.
+        let supplement_services =
+            crate::supplement::current_services().unwrap_or_default();
+        let services_value = super::services::build_services(&supplement_services);
+        if !services_value.is_null() {
+            if let Some(obj) = bom.as_object_mut() {
+                obj.insert("services".to_string(), services_value);
+            }
+        }
         if !user_annotations.is_empty() {
             if let Some(obj) = bom.as_object_mut() {
                 obj.insert("annotations".to_string(), json!(user_annotations));

@@ -58,6 +58,48 @@ operator cannot re-include them via `--exclude-path`. See
 [`docs/user-guide/cli-reference.md` § `--exclude-path`](user-guide/cli-reference.md#--exclude-path-path_or_pattern)
 for the full troubleshooting matrix + worked examples.
 
+## Operator-supplied supplement (--supplement-cdx)
+
+Across every ecosystem there's a class of dependencies the scanner
+cannot observe: SaaS services with no on-disk footprint, vendored
+libraries dropped into the source tree without a recognizable
+manifest, and metadata gaps (license / supplier / copyright) on
+otherwise-known components. `--supplement-cdx <PATH>` (milestone 119,
+issue #326) lets the operator hand-author a small CDX 1.6 JSON file
+declaring this ground truth; the merge runs once per scan, before
+emission, so every output format sees the same combined view.
+
+Three concrete use cases:
+
+- **SaaS dependencies** (Stripe, Twilio, Auth0, …) appear under the
+  emitted SBOM's `services[]` section — a CDX-native section the
+  scanner never populates from on-disk evidence.
+- **Vendored libraries with no manifest** appear as regular components
+  tagged `mikebom:source-tier = "declared"` so downstream consumers
+  can distinguish declared from observed.
+- **Metadata gaps** on scanner-discovered components are filled by
+  the operator's declared values (licenses, supplier, copyright,
+  description, externalReferences). Bytes-derived facts (hashes,
+  cpe, version) the scanner read off disk continue to win.
+
+Safety property: the operator **cannot** suppress scanner detection of
+bytes-evident content. A supplement asserting "no openssl" against a
+fingerprint-detected openssl still produces an SBOM containing the
+openssl component; the assertion appears as an annotated conflict for
+audit (`mikebom:assertion-conflict`).
+
+Provenance: when the flag is in effect, the emitted SBOM carries a
+document-scope `mikebom:supplement-cdx = "<path>@sha256:<hex>"`
+annotation so consumers can verify which supplement file fed the
+merge.
+
+Parse / I/O / schema-validation failures fail closed before any
+walker begins — no partial SBOM is ever emitted on supplement
+failure. See
+[`docs/user-guide/cli-reference.md` § `--supplement-cdx`](user-guide/cli-reference.md#--supplement-cdx-path)
+for the full file format, hard/soft conflict-split rules, worked
+example, and troubleshooting matrix.
+
 ---
 
 ## apk

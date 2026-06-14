@@ -567,6 +567,20 @@ spdx3_anno!(c63_spdx3, "mikebom:exclude-path",             document);
 // graph-element annotation listing produced binary names.
 spdx3_anno!(c64_spdx3, "mikebom:produces-binaries",        component);
 
+// C65 — `mikebom:source-tier = "declared"` (milestone 119).
+// Per-component graph-element annotation; value-set extension on
+// the existing source-tier key.
+spdx3_anno!(c65_spdx3, "mikebom:source-tier",              component);
+
+// C66 — `mikebom:supplement-cdx` (milestone 119). Document-scope
+// provenance for `--supplement-cdx`; envelope shape mirrors C63.
+spdx3_anno!(c66_spdx3, "mikebom:supplement-cdx",           document);
+
+// C67 — `mikebom:assertion-conflict` (milestone 119). Per-component
+// graph-element annotation carrying the JSON-encoded array of
+// conflict records.
+spdx3_anno!(c67_spdx3, "mikebom:assertion-conflict",       component);
+
 // C47 — document-level user-defined identifiers (milestone 073).
 // Per `contracts/identifiers-annotation.md` C-1 SPDX 3 and C-2
 // SPDX 3: user-defined identifiers ride `Element.externalIdentifier[]`

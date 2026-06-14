@@ -1456,6 +1456,7 @@ pub async fn execute(
     include_legacy_rpmdb: bool,
     include_declared_deps: bool,
     exclude_set: crate::scan_fs::package_db::exclude_path::ExclusionSet,
+    supplement_cdx: Option<std::path::PathBuf>,
 ) -> anyhow::Result<()> {
     // Milestone 102 FR-016: propagate the `--include-vendored` flag to
     // the env var that the C/C++ readers read directly. This avoids
@@ -2068,6 +2069,44 @@ pub async fn execute(
              independently."
         );
     }
+
+    // Milestone 119 (#326) — `--supplement-cdx <PATH>` opt-in: parse
+    // the operator-supplied supplement BEFORE the artifact bundle is
+    // constructed; merge it into the scanner-discovered stream so
+    // every format builder sees the same combined view; install the
+    // merge outcome's provenance + services list on the supplement
+    // module's thread-local so per-format metadata emitters can pick
+    // them up without churning every ScanArtifacts call site.
+    //
+    // Parse / I/O / schema-validation failures here exit non-zero
+    // BEFORE any emitter runs per FR-002 / SC-005. When the flag is
+    // absent the merge is skipped entirely, preserving byte-identity
+    // with pre-119 mikebom output per FR-013 / SC-006.
+    let _supplement_guard = if let Some(path) = supplement_cdx.as_ref() {
+        let supp = crate::supplement::load(path).with_context(|| {
+            format!(
+                "loading supplement file `{}` (see --supplement-cdx)",
+                path.display()
+            )
+        })?;
+        let outcome =
+            crate::supplement::merge(components, relationships, supp).with_context(
+                || {
+                    format!(
+                        "merging supplement file `{}` into scanner output",
+                        path.display()
+                    )
+                },
+            )?;
+        components = outcome.components;
+        relationships = outcome.dependencies;
+        Some(crate::supplement::install(
+            outcome.supplement_provenance,
+            outcome.services,
+        ))
+    } else {
+        None
+    };
 
     // Build the neutral artifacts bundle once and hand it to every
     // serializer the user requested — the single-pass guarantee of

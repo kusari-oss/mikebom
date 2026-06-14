@@ -134,6 +134,21 @@ pub fn build_metadata(
         }
     }
 
+    // Milestone 119 (#326) FR-012 / Decision 6: when the scan was
+    // invoked with `--supplement-cdx <PATH>`, record the supplement
+    // file's verbatim path + sha256 hash on the envelope so consumers
+    // can verify which supplement file fed the merge. Absence
+    // preserves byte-identity with pre-119 mikebom output per FR-013.
+    if let Some(prov) = crate::supplement::current_provenance() {
+        properties.push(json!({
+            "name": "mikebom:supplement-cdx",
+            "value": crate::supplement::annotation::build_supplement_cdx_provenance_string(
+                &prov.source_path,
+                &prov.source_sha256,
+            ),
+        }));
+    }
+
     // Milestone 061 (closes #119, catalog row C44): doc-level Go
     // graph-completeness signal. Per Constitution Principle X
     // (Transparency): when mikebom can't supply every transitive edge

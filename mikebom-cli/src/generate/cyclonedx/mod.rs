@@ -14,6 +14,7 @@ pub mod dependencies;
 pub mod evidence;
 pub mod metadata;
 pub mod serializer;
+pub mod services;
 pub mod vex;
 
 use std::path::PathBuf;

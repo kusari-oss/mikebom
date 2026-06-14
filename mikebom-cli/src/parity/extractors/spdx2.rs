@@ -496,6 +496,18 @@ spdx23_anno!(c63_spdx23, "mikebom:exclude-path",             document);
 // CDX `properties[].mikebom:produces-binaries`.
 spdx23_anno!(c64_spdx23, "mikebom:produces-binaries",        component);
 
+// C65 — `mikebom:source-tier = "declared"` (milestone 119).
+// Per-Package envelope; value-set extension on the existing key.
+spdx23_anno!(c65_spdx23, "mikebom:source-tier",              component);
+
+// C66 — `mikebom:supplement-cdx` (milestone 119). Document-scope
+// provenance for `--supplement-cdx`; envelope shape mirrors C63.
+spdx23_anno!(c66_spdx23, "mikebom:supplement-cdx",           document);
+
+// C67 — `mikebom:assertion-conflict` (milestone 119). Per-Package
+// envelope carrying the JSON-encoded array of conflict records.
+spdx23_anno!(c67_spdx23, "mikebom:assertion-conflict",       component);
+
 // ============================================================
 // Sections D-G — custom SPDX 2.3 extractors
 // ============================================================

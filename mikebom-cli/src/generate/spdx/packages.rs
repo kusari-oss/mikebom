@@ -357,7 +357,85 @@ pub fn build_packages(
     // deterministic document output (FR-009 / SC-007).
     let extracted: Vec<super::document::SpdxExtractedLicensingInfo> =
         extracted_by_id.into_values().collect();
+    // Milestone 119 phase-2 — append supplement-declared services as
+    // SPDX 2.3 Packages tagged `mikebom:component-role = "saas-service"`
+    // per research Decision 4. SPDX 2.3 has no native Service type;
+    // the C40 component-role pattern is the project's standing
+    // mechanism for component-role classification when no native
+    // field exists. Reusing it preserves consumer interoperability
+    // (downstream tooling that already understands C40 picks up the
+    // new "saas-service" value automatically).
+    if let Some(services) = crate::supplement::current_services() {
+        for svc in &services {
+            packages.push(supplement_service_to_package(svc, annotator, date));
+        }
+    }
     (packages, extracted)
+}
+
+/// Project a supplement-declared `SupplementService` onto an SPDX 2.3
+/// `SpdxPackage` carrying the `mikebom:component-role = "saas-service"`
+/// + `mikebom:source-tier = "declared"` annotations. The Package has
+///   `downloadLocation = NOASSERTION` (services aren't artifacts),
+///   `filesAnalyzed = false`, and no checksums/external-refs by default
+///   — supplement endpoints surface as `mikebom:service-endpoints`
+///   annotation since SPDX 2.3 has no native `endpoints[]` slot.
+fn supplement_service_to_package(
+    svc: &crate::supplement::SupplementService,
+    annotator: &str,
+    date: &str,
+) -> SpdxPackage {
+    use super::annotations::build_annotation;
+    use super::ids::SpdxId;
+    use serde_json::json;
+    // ID derivation: prefer the supplement's own bom-ref (hashed for
+    // SPDXID compliance); fall back to the name when bom-ref is
+    // absent. Both are operator-declared strings preserved verbatim.
+    let id_seed = svc.bom_ref.as_deref().unwrap_or(svc.name.as_str());
+    let spdx_id = SpdxId::for_supplement_service(id_seed);
+    let mut annotations = vec![
+        build_annotation(
+            annotator,
+            date,
+            "mikebom:component-role",
+            json!("saas-service"),
+        ),
+        build_annotation(annotator, date, "mikebom:source-tier", json!("declared")),
+    ];
+    if let Some(endpoints) = &svc.endpoints {
+        if !endpoints.is_empty() {
+            annotations.push(build_annotation(
+                annotator,
+                date,
+                "mikebom:service-endpoints",
+                json!(endpoints),
+            ));
+        }
+    }
+    if let Some(desc) = &svc.description {
+        annotations.push(build_annotation(
+            annotator,
+            date,
+            "mikebom:description",
+            json!(desc),
+        ));
+    }
+    SpdxPackage {
+        spdx_id,
+        name: svc.name.clone(),
+        version_info: "NOASSERTION".to_string(),
+        download_location: "NOASSERTION".to_string(),
+        supplier: svc.provider.as_deref().map(supplier_string),
+        originator: None,
+        files_analyzed: false,
+        checksums: Vec::new(),
+        license_declared: SpdxLicenseField::NoAssertion,
+        license_concluded: SpdxLicenseField::NoAssertion,
+        copyright_text: None,
+        external_refs: Vec::new(),
+        annotations,
+        primary_package_purpose: None,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

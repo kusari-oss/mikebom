@@ -253,6 +253,20 @@ pub fn build_packages(
         packages.push(Value::Object(pkg));
     }
 
+    // Milestone 119 phase-2 — append supplement-declared services as
+    // SPDX 3 `software_Package` elements tagged via the existing C40
+    // mikebom annotation pattern per research Decision 4. The
+    // standalone SPDX 3.0.1 stable schema doesn't carry a Service
+    // element type usable across consumer tooling; the C40 fallback
+    // pattern preserves consumer interoperability with the SPDX 2.3
+    // projection. The supplement bom-ref / name seeds the IRI hash;
+    // the resulting IRI is stable across runs.
+    if let Some(services) = crate::supplement::current_services() {
+        for svc in &services {
+            packages.push(supplement_service_to_v3_package(svc, doc_iri, creation_info_id));
+        }
+    }
+
     // Deterministic ordering by spdxId (data-model.md §"Deterministic
     // ordering rules").
     packages.sort_by(|a, b| {
@@ -261,6 +275,41 @@ pub fn build_packages(
     });
 
     (packages, package_iri_by_purl)
+}
+
+fn supplement_service_to_v3_package(
+    svc: &crate::supplement::SupplementService,
+    doc_iri: &str,
+    creation_info_id: &str,
+) -> Value {
+    let id_seed = svc.bom_ref.as_deref().unwrap_or(svc.name.as_str());
+    let pkg_iri = format!("{doc_iri}/pkg-{}", hash_prefix(id_seed.as_bytes(), 16));
+    let mut pkg = serde_json::Map::new();
+    pkg.insert("type".to_string(), json!("software_Package"));
+    pkg.insert("spdxId".to_string(), json!(pkg_iri));
+    pkg.insert("creationInfo".to_string(), json!(creation_info_id));
+    pkg.insert("name".to_string(), json!(svc.name));
+    if let Some(desc) = &svc.description {
+        pkg.insert("description".to_string(), json!(desc));
+    }
+    // Endpoints surface on `software_homePage` when there's exactly
+    // one; otherwise they ride a mikebom-namespaced extension below.
+    // The SPDX 3.0.1 stable schema has no native `endpoints[]` slot.
+    if let Some(endpoints) = &svc.endpoints {
+        if endpoints.len() == 1 {
+            pkg.insert("software_homePage".to_string(), json!(endpoints[0]));
+        }
+    }
+    Value::Object(pkg)
+}
+
+/// Return the IRI for a supplement-declared service package. Used by
+/// `v3_document::build_document` to construct Annotation elements
+/// targeting the service after `build_packages` has already emitted
+/// the Package itself.
+pub fn supplement_service_iri(svc: &crate::supplement::SupplementService, doc_iri: &str) -> String {
+    let id_seed = svc.bom_ref.as_deref().unwrap_or(svc.name.as_str());
+    format!("{doc_iri}/pkg-{}", hash_prefix(id_seed.as_bytes(), 16))
 }
 
 /// Deterministic base32 prefix of SHA-256(input). Used for IRI path

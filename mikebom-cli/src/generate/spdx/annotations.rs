@@ -376,6 +376,22 @@ pub fn annotate_document(
         }
     }
 
+    // Milestone 119 phase-2 — document-scope supplement-cdx provenance
+    // mirrors the CDX twin in `cyclonedx/metadata.rs`. Same `<path>@
+    // sha256:<hex>` shape as CDX so consumers can cross-format-grep.
+    if let Some(prov) = crate::supplement::current_provenance() {
+        push(
+            &mut out,
+            "mikebom:supplement-cdx",
+            json!(
+                crate::supplement::annotation::build_supplement_cdx_provenance_string(
+                    &prov.source_path,
+                    &prov.source_sha256,
+                )
+            ),
+        );
+    }
+
     // C44 (milestone 061, closes #119): doc-level Go graph-completeness
     // signal. Per Constitution Principle X (Transparency): when mikebom
     // can't supply every transitive edge for `go.sum` components, the

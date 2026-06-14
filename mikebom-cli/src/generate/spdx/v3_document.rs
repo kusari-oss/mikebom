@@ -684,6 +684,14 @@ pub fn build_document(
         &doc_iri,
         CREATION_INFO_ID,
     ));
+    // Milestone 119 phase-2 — supplement-declared services need C40
+    // saas-service + C65 source-tier=declared annotations on the
+    // service Package elements `v3_packages::build_packages` already
+    // emitted.
+    annotations.extend(super::v3_annotations::build_supplement_service_annotations(
+        &doc_iri,
+        CREATION_INFO_ID,
+    ));
     // Milestone 080 — user-supplied --metadata-comment + --annotator/
     // --annotation-comment pairs land as Annotation elements pointed
     // at the SpdxDocument. Each annotator references the corresponding

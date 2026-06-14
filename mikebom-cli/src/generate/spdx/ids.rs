@@ -105,6 +105,17 @@ impl SpdxId {
     ) -> Self {
         SpdxId(format!("{external_doc_ref_id}:{target_spdxid}"))
     }
+
+    /// Milestone 119 phase-2 — derive the SPDX ID for a supplement-
+    /// declared service. SPDX 2.3 has no native Service element, so
+    /// services project onto `packages[]` and need a stable Package
+    /// ID. Hash input is the supplement's `bom-ref` when present,
+    /// falling back to the service's `name` — both are operator-
+    /// declared strings preserved verbatim.
+    pub fn for_supplement_service(seed: &str) -> Self {
+        let prefix = hash_prefix(seed.as_bytes(), PURL_HASH_PREFIX_LEN);
+        SpdxId(format!("SPDXRef-Package-{prefix}"))
+    }
 }
 
 /// Deterministic base32 prefix of SHA-256(input) — the shared

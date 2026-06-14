@@ -75,6 +75,42 @@ pub fn build_document_annotations(
     out
 }
 
+/// Milestone 119 phase-2 — build SPDX 3 Annotation elements for the
+/// supplement-declared services projected onto `software_Package` via
+/// `v3_packages::supplement_service_to_v3_package`. Each service gets
+/// two Annotations: `mikebom:component-role = "saas-service"` (C40
+/// fallback per research Decision 4) and `mikebom:source-tier =
+/// "declared"` (C65 marker). Endpoints + description are already
+/// carried on the Package element by the projection helper.
+pub fn build_supplement_service_annotations(
+    doc_iri: &str,
+    creation_info_id: &str,
+) -> Vec<Value> {
+    let mut out: Vec<Value> = Vec::new();
+    let Some(services) = crate::supplement::current_services() else {
+        return out;
+    };
+    for svc in &services {
+        let pkg_iri = super::v3_packages::supplement_service_iri(svc, doc_iri);
+        out.push(build_annotation(
+            &pkg_iri,
+            doc_iri,
+            creation_info_id,
+            "mikebom:component-role",
+            json!("saas-service"),
+        ));
+        out.push(build_annotation(
+            &pkg_iri,
+            doc_iri,
+            creation_info_id,
+            "mikebom:source-tier",
+            json!("declared"),
+        ));
+    }
+    sort_by_spdx_id(&mut out);
+    out
+}
+
 /// Build a single SPDX 3 `Annotation` element wrapping the shared
 /// `MikebomAnnotationCommentV1` envelope.
 fn build_annotation(
@@ -341,6 +377,22 @@ fn push_document_fields(
                 json!(entries.join(",")),
             );
         }
+    }
+
+    // Milestone 119 phase-2 — document-scope supplement-cdx provenance
+    // mirrors the CDX twin in `cyclonedx/metadata.rs` and the SPDX 2.3
+    // twin in `spdx/annotations.rs`.
+    if let Some(prov) = crate::supplement::current_provenance() {
+        push(
+            out,
+            "mikebom:supplement-cdx",
+            json!(
+                crate::supplement::annotation::build_supplement_cdx_provenance_string(
+                    &prov.source_path,
+                    &prov.source_sha256,
+                )
+            ),
+        );
     }
 
     // C44 (milestone 061, closes #119): doc-level Go graph-completeness

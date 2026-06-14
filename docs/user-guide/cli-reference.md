@@ -50,6 +50,7 @@ noun on every subcommand (clap's flag-position-tolerant parser).
 | `--timeout <SECONDS>` | u64 | disabled | Wall-clock time limit for the entire mikebom invocation. Exits with status 124 (POSIX `timeout(1)` convention) when exceeded. Set to `0` (or omit) to disable. |
 | `--no-go-mod-why` | bool | off | Disable Go build-graph classification via `go mod why`. Also via `MIKEBOM_NO_GO_MOD_WHY=1`. |
 | `--exclude-path <PATH_OR_PATTERN>` | string (repeatable) | (none) | Skip directory subtrees matching the given path or glob pattern during scan. Entries with `*`/`?`/`[` are patterns at any depth; otherwise literal paths anchored at scan root. Also via `MIKEBOM_EXCLUDE_PATH`. See [`--exclude-path`](#--exclude-path-path_or_pattern). |
+| `--supplement-cdx <PATH>` | path | (none) | Merge an operator-supplied CDX 1.6 (or 1.4 / 1.5) JSON document declaring ground truth the scanner cannot observe: SaaS dependencies, vendored libraries without manifests, license / supplier / copyright metadata. See [`--supplement-cdx`](#--supplement-cdx-path). |
 
 ### `--offline`
 
@@ -270,6 +271,204 @@ You cannot use `--exclude-path` to re-enable scanning of a built-in skip.
 | `error: --exclude-path entry was empty` | An empty string was passed. Remove the empty entry. |
 | Fixture component still appears | Pattern didn't match. Re-run with `RUST_LOG=debug` and look for `exclude-path: skipping directory matched by user-supplied entry` lines. If none appear, your pattern doesn't match the actual path; try `--exclude-path '**/<dir-name>'`. |
 | Real component disappeared | Your exclusion is too broad. Use a more specific path or pattern. |
+
+### `--supplement-cdx <PATH>`
+
+Merge an operator-supplied CDX 1.6 JSON document into the emitted SBOM,
+declaring ground truth the scanner cannot observe. Single-occurrence in
+v0.1; CDX 1.4 / 1.5 files are also accepted (the fields mikebom reads are
+unchanged across versions).
+
+#### When to use it
+
+mikebom is an evidence-extracting scanner: it only emits components for
+artifacts it can *observe* on disk (manifests, lockfiles, installed
+packages, binary fingerprints). Three common cases leave the scanner
+blind to dependencies the operator knows about:
+
+- **SaaS dependencies** — Stripe, Twilio, Datadog, Auth0. There's
+  nothing on disk to inspect.
+- **Vendored libraries with no manifest** — a copy of `liberror/`
+  dropped into `third_party/` with no `Cargo.toml`, `package.json`, or
+  equivalent. The scanner walks the directory but finds nothing it
+  recognizes.
+- **Metadata gaps on otherwise-known components** — the scanner found
+  a component but its license, supplier, or copyright is empty because
+  the upstream manifest omitted them. The operator knows the correct
+  value from upstream documentation.
+
+`--supplement-cdx <PATH>` is the operator's hook to fill those gaps
+without modifying the scanner's evidence model.
+
+#### File format
+
+The supplement is a small CDX 1.6 JSON document. At minimum:
+
+```json
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "components": [],
+  "services": [],
+  "dependencies": []
+}
+```
+
+Worked example: a Rust project that uses Stripe (SaaS) plus a vendored
+`liberror`:
+
+```json
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "liberror-1.2.3",
+      "purl": "pkg:generic/liberror@1.2.3",
+      "name": "liberror",
+      "supplier": { "name": "Acme Open Source Foundation" },
+      "licenses": [ { "license": { "id": "MIT" } } ],
+      "copyright": "© 2026 Acme"
+    }
+  ],
+  "services": [
+    {
+      "bom-ref": "stripe-saas",
+      "name": "Stripe",
+      "provider": { "name": "Stripe, Inc." },
+      "endpoints": [ "https://api.stripe.com" ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:cargo/my-app@1.0.0",
+      "dependsOn": [ "liberror-1.2.3", "stripe-saas" ]
+    }
+  ]
+}
+```
+
+Invoke the scan:
+
+```bash
+mikebom sbom scan --path . \
+  --supplement-cdx supplement.cdx.json \
+  --format cyclonedx-json --output sbom.cdx.json
+```
+
+The emitted SBOM contains every scanner-discovered component (the
+Cargo project + its transitive deps) PLUS `liberror` as a declared
+component PLUS `Stripe` under `services[]`. The `dependencies[]` block
+carries the new edges from `my-app` to both supplement entries.
+
+#### Honored fields
+
+Per-component (supplement → emitted SBOM):
+
+- `purl` (required — the join key for collision-vs-additive)
+- `bom-ref` (re-anchored at merge time to canonical PURLs where matches exist)
+- `name`, `version`, `supplier.name`
+- `licenses[]`, `copyright`, `description`
+- `externalReferences[]` (all types)
+- `hashes[]`, `cpe`
+
+Per-service:
+
+- `name` (required)
+- `bom-ref`, `provider.name`, `endpoints[]`, `description`
+- `licenses[]`, `externalReferences[]`
+
+Per-dependency edge:
+
+- `ref` (bom-ref OR canonical PURL — the source side)
+- `dependsOn[]` (bom-refs OR PURLs — the target side(s))
+
+Other CDX fields (`evidence`, `pedigree`, `swid`, `signature`,
+`vulnerabilities`, `formulation`, `metadata.component`, …) are
+silently ignored. The supplement's `metadata.component` is **always
+ignored**: `--scan-as` continues to own scan-target identity.
+
+#### Hard/soft conflict resolution
+
+When a supplement PURL matches a scanner-discovered PURL, fields
+partition into two sets:
+
+- **Scanner wins** (bytes-derived facts the developer can't gainsay):
+  `hashes[]`, `cpe`, canonical `purl`, `version`, binary role.
+- **Developer wins** (operator-domain metadata the scanner can only
+  guess at): `licenses[]`, `concluded_licenses[]`, `supplier`,
+  `copyright`, `name` (display), `description`,
+  `externalReferences[]` (all types).
+- **Catch-all default**: scanner wins.
+
+Each disagreement is recorded as a `mikebom:assertion-conflict`
+annotation on the merged component. Repeatable conflicts on one
+component accumulate into a single property whose JSON-encoded value
+is an ARRAY of conflict records:
+
+```json
+{
+  "name": "mikebom:assertion-conflict",
+  "value": "[{\"field\":\"licenses\",\"scanner_value\":[],\"supplement_value\":[{\"license\":{\"id\":\"Apache-2.0\"}}],\"winner\":\"supplement\",\"justification\":\"developer-metadata-override\"}]"
+}
+```
+
+The `justification` field is a 2-value enum derived mechanically from
+the partition: `developer-metadata-override` when the operator won;
+`bytes-evident-detection-preserved` when the scanner won.
+
+#### Safety property: scanner detection cannot be suppressed
+
+A supplement entry asserting "no openssl" (via any mechanism — a
+contradicting fact, a confidence override, an explicit removal
+directive) does **NOT** remove the openssl component from the emitted
+SBOM. If the scanner fingerprinted openssl, openssl ships.
+
+The merge can only ADD components (solo path) or REPLACE-IN-PLACE
+(collision path); it can never REMOVE. This is FR-015, enforced by a
+post-condition assertion in the merge code. The supplement is
+enrichment, not a discovery substitute.
+
+#### Source-tier marker
+
+Every supplement-introduced solo component carries
+`mikebom:source-tier = "declared"` so consumers can distinguish
+operator-declared entries from scanner-observed ones at a glance.
+Scanner-observed entries keep their existing tier value
+(`installed` / `analyzed` / `source`). Collisions don't add the
+`declared` value (the component is fundamentally a scanner discovery;
+the supplement provided enrichment, not the original observation).
+
+#### Provenance annotation
+
+When `--supplement-cdx <PATH>` is in effect, the emitted SBOM carries
+a document-scope `mikebom:supplement-cdx` annotation on
+`metadata.properties[]` with the value `<path>@sha256:<hex>` —
+recording the operator's verbatim path argument plus a SHA-256 over
+the supplement file's raw bytes. Consumers can verify the supplement
+hasn't drifted from what fed the merge by recomputing the hash. When
+the flag is omitted, the annotation is absent and the SBOM is
+byte-identical to a pre-feature mikebom build.
+
+#### Fail-closed behavior
+
+Parse / I/O / schema-validation failures cause non-zero exit
+**before any walker begins**. No partial SBOM is ever emitted on
+supplement failure. Error messages name the supplement path verbatim
+so operators can diagnose without re-running with debug logs.
+
+#### Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| `error: supplement file '<path>' unreadable: ...` | Path doesn't exist or permissions denied. Check the path argument. |
+| `error: supplement file '<path>' is not valid JSON: ...` | File has a syntax error. Run `jq . <path>` to find the bad line. |
+| `error: supplement file '<path>' failed structural validation: ...` | The error message names the specific field: wrong `bomFormat`, unsupported `specVersion`, missing required `purl`, unparsable PURL, etc. |
+| `error: supplement file declares duplicate PURL '<purl>' across components[] / services[]` | The same canonical PURL appears twice. Remove the duplicate. |
+| `error: supplement file dependencies[] references unknown bom-ref or PURL '<ref>'` | A `dependsOn` entry doesn't match any supplement-internal `bom-ref` or any scanner-discovered PURL. Fix the reference or add the missing entry. |
+| Operator-declared license doesn't appear on a scanner-discovered component | Currently the supplement license override flows through `mikebom:supplement-licenses` annotation rather than overwriting the typed `licenses[]` field on Cargo main-module components emitted via `metadata.component`. End-to-end propagation onto `metadata.component` is tracked for milestone-119-phase-2. |
+| `services[]` section appears but operator wanted SPDX output | v0.1 emits services natively in CDX 1.6 only. SPDX 2.3 / SPDX 3 service projection is deferred to milestone-119-phase-2. |
 
 ### `--no-go-mod-why`
 

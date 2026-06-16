@@ -45,11 +45,14 @@ pub(super) enum CatalogError {
         #[source]
         source: std::io::Error,
     },
+    /// `toml::de::Error` is 128+ bytes — boxing keeps `CatalogError`
+    /// small enough to satisfy `clippy::result-large-err` (a Windows
+    /// CI lane lint that's pickier than the local lane).
     #[error("libs.versions.toml at `{path}` parse failure: {source}")]
     ParseToml {
         path: PathBuf,
         #[source]
-        source: toml::de::Error,
+        source: Box<toml::de::Error>,
     },
 }
 
@@ -60,7 +63,7 @@ pub(super) fn parse(path: &Path) -> Result<VersionCatalog, CatalogError> {
     })?;
     let parsed: toml::Value = toml::from_str(&text).map_err(|source| CatalogError::ParseToml {
         path: path.to_path_buf(),
-        source,
+        source: Box::new(source),
     })?;
     let versions: BTreeMap<String, String> = parsed
         .get("versions")

@@ -1953,7 +1953,8 @@ mod tests {
             .with_root_override(crate::generate::RootComponentOverride {
                 name: Some("widget-svc".to_string()),
                 version: Some("1.2.3".to_string()),
-            });
+            ..Default::default()
+        });
         let components = vec![make_component("serde", "1.0.0")];
         let integrity = clean_integrity();
         let bom = builder
@@ -1978,7 +1979,8 @@ mod tests {
             .with_root_override(crate::generate::RootComponentOverride {
                 name: Some("widget-svc".to_string()),
                 version: Some("1.2.3".to_string()),
-            });
+            ..Default::default()
+        });
         let components = vec![
             make_main_module_component("cargo", "foo-internal", "0.5.1"),
             make_component("serde", "1.0.0"),
@@ -2056,7 +2058,8 @@ mod tests {
         .with_root_override(crate::generate::RootComponentOverride {
             name: Some("widget-svc".to_string()),
             version: Some("1.2.3".to_string()),
-        });
+        ..Default::default()
+    });
         let components = vec![make_component("serde", "1.0.0")];
         let integrity = clean_integrity();
         let bom = builder

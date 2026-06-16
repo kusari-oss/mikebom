@@ -550,6 +550,8 @@ Exactly one of `--path` or `--image` is required.
 | `--component-id <PURL=SCHEME:VALUE>` | string (repeatable) | (none) | Attach a user-defined identifier to a specific component. |
 | `--root-name <NAME>` | string | auto-derived | Override `metadata.component.name`. |
 | `--root-version <VERSION>` | string | auto-derived | Override `metadata.component.version`. |
+| `--root-purl-type <TYPE>` | string | (none) | Override the type segment of the root PURL. Defaults to `generic` when `--root-name` is set; this flag replaces that default. REQUIRES `--root-name`. Mutually exclusive with `--no-root-purl`. See [`--root-purl-type`](#--root-purl-type-type). |
+| `--no-root-purl` | bool | off | Omit the root component's PURL entirely from the emitted SBOM. REQUIRES `--root-name`. Mutually exclusive with `--root-purl-type`. See [`--no-root-purl`](#--no-root-purl). |
 | `--creator <TYPE: NAME>` | string (repeatable) | (none) | Attach a creator entry to the SBOM. |
 | `--annotator <TYPE: NAME>` | string (repeatable, paired) | (none) | Document-level annotator. Pair 1:1 with `--annotation-comment`. |
 | `--annotation-comment <TEXT>` | string (repeatable, paired) | (none) | Comment that pairs positionally with the preceding `--annotator`. |
@@ -973,6 +975,86 @@ version for project scans).
 
 ```bash
 mikebom sbom scan --path . --root-name acme-platform --root-version 2.4.1 --output platform.cdx.json
+```
+
+### `--root-purl-type <TYPE>`
+
+Override the type segment of the root component's PURL. By default,
+when `--root-name` is supplied, mikebom hardcodes the type to `generic`
+(`pkg:generic/<name>@<version>`). This flag replaces that default so
+the BOM subject's PURL can carry an operator-chosen ecosystem type.
+
+Useful when a downstream consumer keys software identity on
+`(pkg_type, name)` and an existing record was originally produced with
+a different type (e.g., a Go build emitted by another tool as
+`pkg:golang/...`, or a Maven build emitted as `pkg:maven/...`).
+Matching the existing type on re-scan keeps the SBOM landing on the
+existing identity row instead of spawning a new one.
+
+REQUIRES `--root-name` to be supplied at the same time (an explicit
+name accompanies the type-overriding output). Mutually exclusive with
+`--no-root-purl`.
+
+The type token is validated at parse time against the purl-spec
+charset `^[a-z][a-z0-9.+-]*$` (lowercase ASCII alphanumeric plus
+`.`/`+`/`-`, starting with a letter). Invalid values produce a
+clap-style error naming the flag.
+
+```bash
+mikebom sbom scan --path . --root-name github.com/example/svc \
+  --root-version v1.2.3 --root-purl-type golang \
+  --output svc.cdx.json
+# → metadata.component.purl = "pkg:golang/github.com%2Fexample%2Fsvc@v1.2.3"
+
+mikebom sbom scan --path . --root-name "@scope/pkg" --root-version 1.0.0 \
+  --root-purl-type npm --output pkg.cdx.json
+# → metadata.component.purl = "pkg:npm/%40scope%2Fpkg@1.0.0"
+```
+
+Applied identically across all three output formats: CycloneDX
+`metadata.component.purl`, SPDX 2.3 root Package
+`externalRefs[purl]`, SPDX 3 root `software_packageUrl` +
+`externalIdentifier[packageUrl]`.
+
+### `--no-root-purl`
+
+Omit the root component's PURL entirely from the emitted SBOM. The
+PURL slot is ABSENT (not null, not empty) in every format:
+
+- **CycloneDX**: `metadata.component.purl` field is omitted.
+- **SPDX 2.3**: the root Package's `externalRefs[]` contains no entry
+  with `referenceType: "purl"`. The CPE `externalRef` still emits.
+- **SPDX 3**: the root `software_Package` element has no
+  `software_packageUrl` field AND its `externalIdentifier[]` contains
+  no entry with `externalIdentifierType: "packageUrl"`. The CPE
+  externalIdentifier entry still emits.
+
+Useful when downstream consumers key software identity on
+`(pkg_type, name)` and the target record was originally produced by a
+tool that emitted no root PURL — reproducing that empty-type identity
+requires omitting the PURL here.
+
+REQUIRES `--root-name` to be supplied (an explicit name is the only
+identity signal once the PURL is dropped). Mutually exclusive with
+`--root-purl-type`.
+
+```bash
+mikebom sbom scan --path . --root-name my-svc --no-root-purl \
+  --output svc.cdx.json
+# → metadata.component.name = "my-svc"
+# → metadata.component.version = "..." (from --root-version or default)
+# → metadata.component.purl ABSENT
+```
+
+The name is taken from `--root-name` straight through to the
+component-name slot without PURL encoding — slashes and `@` in the
+name round-trip byte-for-byte, e.g.:
+
+```bash
+mikebom sbom scan --path . \
+  --root-name 767xxxxxxxxx.dkr.ecr.us-east-1.amazonaws.com/pico-server \
+  --root-version 1.0.0 --no-root-purl --output image.cdx.json
+# → metadata.component.name preserves the full registry path verbatim
 ```
 
 ### `--creator <TYPE: NAME>`

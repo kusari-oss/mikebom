@@ -7,7 +7,7 @@ use mikebom_common::types::license::SpdxExpression;
 use mikebom_common::types::purl::encode_purl_segment;
 use serde_json::json;
 
-use crate::generate::{percent_encode_purl_name, RootComponentOverride};
+use crate::generate::RootComponentOverride;
 
 /// Normalize a string for inclusion in a CPE 2.3 segment.
 ///
@@ -276,11 +276,14 @@ pub fn build_metadata(
                 .version
                 .clone()
                 .unwrap_or_else(|| target_version.to_string());
-            let purl = format!(
-                "pkg:generic/{}@{}",
-                percent_encode_purl_name(&name),
-                percent_encode_purl_name(&version),
-            );
+            // Milestone N+1: `build_subject_purl` returns `None` when
+            // `--no-root-purl` is in effect; the empty-string fallback
+            // here is safe because the `purl` JSON field is post-
+            // processed off the emitted `metadata.component` below
+            // when `omit_purl` is set.
+            let purl = root_override
+                .build_subject_purl(&name, &version)
+                .unwrap_or_default();
             (name, version, purl)
         } else if let Some(c) = main_module {
             (
@@ -461,6 +464,18 @@ pub fn build_metadata(
         },
         "properties": properties,
     });
+
+    // Milestone N+1: `--no-root-purl` drops the `purl` field from
+    // `metadata.component` entirely. The CDX 1.6 schema makes `purl`
+    // optional, so absence (vs null) is the spec-correct shape.
+    if root_override.omit_purl {
+        if let Some(comp_obj) = metadata
+            .get_mut("component")
+            .and_then(|v| v.as_object_mut())
+        {
+            comp_obj.remove("purl");
+        }
+    }
 
     // Milestone 080 — first user-supplied `Organization:` creator
     // populates CDX 1.6 `metadata.manufacturer` (single-valued slot

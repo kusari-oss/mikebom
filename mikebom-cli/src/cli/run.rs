@@ -545,6 +545,9 @@ pub async fn execute(args: RunArgs) -> anyhow::Result<()> {
         root_override: crate::generate::RootComponentOverride {
             name: args.root_name.clone(),
             version: args.root_version.clone(),
+            // trace-run doesn't currently expose the milestone-???
+            // root-purl-control flags; preserve back-compat defaults.
+            ..Default::default()
         },
         // Milestone 080 — forward aggregated user-supplied SBOM
         // metadata from the trace-run flags.

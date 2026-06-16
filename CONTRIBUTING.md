@@ -279,7 +279,12 @@ a checkbox for this.
 - Run `./scripts/pre-pr.sh` clean before requesting review.
 - For changes that regenerate byte-identity goldens, mention the
   expected diff symmetry in the PR description (e.g., "+1521/-1521
-  tool-version churn only").
+  tool-version churn only"). Use `./scripts/regen-goldens.sh` to
+  refresh every golden in one pass — it runs the workspace test
+  suite under all three `MIKEBOM_UPDATE_*` env vars at once, which
+  covers per-test pinned goldens outside the three main regression
+  targets. Narrowing cargo to `--test cdx_regression --test
+  spdx_regression --test spdx3_regression` silently skips those.
 
 ## Reporting issues + security
 

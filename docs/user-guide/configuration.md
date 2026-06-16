@@ -78,9 +78,18 @@ output changes — and operators should not need to set them.
 
 | Var | Accepted values | Purpose |
 |---|---|---|
-| `MIKEBOM_UPDATE_CDX_GOLDENS` | `1` | Regenerate CycloneDX 1.6 byte-identity goldens during `cargo test --workspace`. Active only inside the `cdx_regression` test target. |
-| `MIKEBOM_UPDATE_SPDX_GOLDENS` | `1` | Regenerate SPDX 2.3 byte-identity goldens during `cargo test --workspace`. Active only inside the `spdx_regression` test target. |
-| `MIKEBOM_UPDATE_SPDX3_GOLDENS` | `1` | Regenerate SPDX 3.0.1 byte-identity goldens. Active only inside the `spdx3_regression` test target. |
+| `MIKEBOM_UPDATE_CDX_GOLDENS` | `1` | Regenerate CycloneDX 1.6 byte-identity goldens during `cargo test`. Honored by the main `cdx_regression` target AND any other test that pins its own CDX golden (e.g., `pkg_alias_binding_us1`). |
+| `MIKEBOM_UPDATE_SPDX_GOLDENS` | `1` | Regenerate SPDX 2.3 byte-identity goldens during `cargo test`. Honored by the main `spdx_regression` target AND any other test that pins its own SPDX 2.3 golden. |
+| `MIKEBOM_UPDATE_SPDX3_GOLDENS` | `1` | Regenerate SPDX 3.0.1 byte-identity goldens during `cargo test`. Honored by the main `spdx3_regression` target AND any other test that pins its own SPDX 3 golden. |
+
+To regenerate every golden the workspace can produce in one pass, run
+[`./scripts/regen-goldens.sh`](https://github.com/kusari-oss/mikebom/blob/main/scripts/regen-goldens.sh).
+The wrapper sets all three env vars and runs `cargo test --workspace`, so
+per-test pinned goldens outside the three main regression targets are
+covered. Do NOT narrow cargo to `--test cdx_regression --test
+spdx_regression --test spdx3_regression`; that silently skips the
+per-test pinned goldens (see
+[issue #361](https://github.com/kusari-oss/mikebom/issues/361)).
 
 ### OCI / docker integration test env vars
 

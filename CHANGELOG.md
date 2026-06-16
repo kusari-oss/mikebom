@@ -7,13 +7,80 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
-### Changed
+## [0.1.0-alpha.48] — 2026-06-16
 
-- **Internal cleanup: every ecosystem-reader filesystem walker migrated to a shared `safe_walk` helper** (milestone 114; closes #108). Pre-114, 15 hand-rolled `fn walk_*` recursions across `mikebom-cli/src/scan_fs/` each carried their own canonicalize-keyed visited-set + depth-bound + milestone-113 directory-exclusion + skip-cause logging code. Post-114 a single `scan_fs::walk::safe_walk` helper centralizes all four invariants; each per-ecosystem reader configures a `WalkConfig` + visit callback and the helper handles descent. Four documented known exceptions (`walker.rs` whole-FS deep-hash, `npm/walk.rs` `@scope`-aware, `cmake_observer.rs` stop-at-match descent, `maven_sidecar.rs` lstat-style M2 cache walker) stay hand-rolled with explicit one-sentence reasons in the helper module's comment block. No user-visible behavior change — byte-identical SBOMs across all 33 committed goldens. The audit pattern `grep -rEn 'fn walk[_(]' mikebom-cli/src/scan_fs/` is the durability mechanism documented in `docs/design-notes.md`.
+Milestones 114 (`safe_walk` refactor), 115 + 117 (walker-audit CI gate), 116 (cross-tier `produces-binaries` binder), 118 (`--exclude-path` polish), 119 (operator supplement file via `--supplement-cdx`), and 122 (Swift Package Manager + Kotlin DSL Gradle ecosystem readers + KMP polyglot regression) all ship in this release. Plus producer-side root-PURL control (`--root-purl-type` / `--no-root-purl`), the deprecated `--include-dev` shim removal, and the CI release-tag-push gap closure.
+
+**Default behavior changes (non-byte-identical):**
+
+- Every Go source-tree scan that previously needed the milestone-113 `--exclude-path` workaround to bypass exotic `gradle.lockfile` discovery now naturally walks via `safe_walk` (milestone 114) with identical output bytes — but readers across cargo / maven / gem / pip / npm / gradle / nuget / yocto / Go source / Go binary now go through one centralized helper.
+- Cargo / npm / pip / gem / maven / Go main-module components now carry the new `mikebom:produces-binaries` (C64) annotation listing the canonical binary names the ecosystem manifest declares (milestone 116). The cross-tier `--bind-to-source` binder uses this to auto-alias image-tier `pkg:generic/<name>` components to their source-tier ecosystem PURL — operators using `mikebom verify-binding` get more binding coverage out of the box.
+- `mikebom sbom scan --supplement-cdx <PATH>` now accepts a hand-authored CDX 1.6 supplement file declaring ground truth the scanner cannot observe (SaaS deps, vendored libraries without manifests, license / supplier / copyright metadata). When the flag is in effect, the emitted SBOM carries `mikebom:source-tier = "declared"` on solo entries + a document-scope `mikebom:supplement-cdx = "<path>@sha256:<hex>"` provenance annotation + per-component `mikebom:assertion-conflict` annotations on collisions. Three new annotation keys (C65 / C66 / C67) with full Principle V audit narratives in `docs/reference/sbom-format-mapping.md`.
+- Two new ecosystem readers: Swift Package Manager (`Package.resolved` lockfiles, `pkg:swift/<host>/<ns>/<name>@<version>` PURLs) and Kotlin DSL Gradle (`build.gradle.kts` + `libs.versions.toml` + `settings.gradle.kts`, `pkg:maven/...` PURLs). KMP multi-target source-set provenance rides the new `mikebom:kmp-source-set` (C68) annotation. Off by default in the sense that scans of non-Swift / non-Kotlin trees produce identical output, but Swift / Android / KMP scans previously produced empty SBOMs and now produce real ones.
+
+All other ecosystems see byte-identical SBOMs by default — milestone-119's `--supplement-cdx` is opt-in, milestone-122's readers contribute zero components when their ecosystems aren't present, and PR #358's root-PURL flags are opt-in.
+
+### Internal cleanup — `safe_walk` migration (milestone 114, #341)
+
+Every ecosystem-reader filesystem walker migrated to a shared `scan_fs::walk::safe_walk` helper. Pre-114, 15 hand-rolled `fn walk_*` recursions across `mikebom-cli/src/scan_fs/` each carried their own canonicalize-keyed visited-set + depth-bound + milestone-113 directory-exclusion + skip-cause logging code. Post-114 a single helper centralizes all four invariants; each reader configures a `WalkConfig` + visit callback. Four documented known exceptions (`walker.rs` whole-FS deep-hash, `npm/walk.rs` `@scope`-aware, `cmake_observer.rs` stop-at-match descent, `maven_sidecar.rs` lstat-style M2 cache walker) stay hand-rolled with explicit one-sentence reasons in the helper module's comment block. No user-visible behavior change — byte-identical SBOMs across all 33 committed goldens. The audit pattern `grep -rEn 'fn walk[_(]' mikebom-cli/src/scan_fs/` is the durability mechanism documented in `docs/design-notes.md`.
+
+### CI walker-audit gate (milestone 115 #344, milestone 117 #349)
+
+Permanent CI guard against new ad-hoc walkers reappearing. A new `walker-audit` job grep-walks `mikebom-cli/src/scan_fs/` for `fn walk*` and `fn .*walk` declarations, diffs against `walk.audit-allowlist.txt`, and fails CI on any net-new unrecognized walker. Milestone 117 (#349) tightens the allowlist comparison so it ignores line-number drift — entries are compared by `file:content` rather than `file:line:content` so unrelated edits to a file don't churn the allowlist.
+
+### Cross-tier `produces-binaries` binder (milestone 116, #345 + #346 + #348)
+
+New `mikebom:produces-binaries` (C64) annotation on main-module components carries the canonical binary names the ecosystem manifest declares. The cross-tier `--bind-to-source` binder consumes the annotation to auto-alias image-tier `pkg:generic/<name>` components to their source-tier ecosystem PURL even when the operator doesn't pass an explicit `--pkg-alias` flag. Per-ecosystem extractors: Cargo (`[[bin]]` + `src/main.rs` + `src/bin/*.rs`) via #345, npm (`bin` field both shapes) + pip (`[project.scripts]` + setup.cfg `console_scripts`/`gui_scripts`) + gem (`executables`) + maven (shade-/jar-plugin `<finalName>`) via #346, Go (filesystem walk for `package main` directories) via #348. Alias provenance is recorded via the new `alias_source` field on the milestone-111 `SourceDocumentBinding` envelope so auditors can distinguish operator-supplied aliases from automatic-from-produces-binaries.
+
+### `--exclude-path` polish (milestone 118, closes #343, #350)
+
+Six per-ecosystem regression tests + an opt-in perf benchmark + a scan-end `tracing::info!` summary. The scan summary now surfaces `excluded_entries=N excluded_literals=N excluded_patterns=N suppressed_dirs=N` when at least one exclusion entry is in effect. Operators can grep stderr for the summary instead of paging through `RUST_LOG=debug` output. The perf benchmark gates exclusion overhead at ≤1.10× the no-flag baseline on the kusari-cli fixture.
+
+### Operator-supplied supplement file via `--supplement-cdx` (milestone 119, closes #326, #351 + #352 + #353)
+
+`mikebom sbom scan --supplement-cdx <PATH>` accepts a hand-authored CDX 1.6 (1.4 / 1.5 also accepted) JSON document declaring ground truth the scanner cannot observe — SaaS dependencies, vendored libraries without manifests, license / supplier / copyright metadata on otherwise-known components. The merge runs once per scan, before emission, so every output format sees the same combined view.
+
+- **Solo entries** (PURL not in scanner output) become new components tagged `mikebom:source-tier = "declared"`.
+- **Collisions** resolve via the hard/soft split: scanner wins on bytes-derived facts (hashes, cpe, canonical purl, version, binary_role); developer wins on metadata (licenses, supplier, copyright, name, description, externalReferences — all types). Catch-all default: scanner wins (FR-015 safety property — developer cannot suppress scanner detection of bytes-evident content).
+- Every disagreement records a `mikebom:assertion-conflict` annotation as a JSON-encoded array of conflict records per the C1-committed `BTreeMap<String, serde_json::Value::Array>` storage convention.
+- Document-scope `mikebom:supplement-cdx = "<path>@sha256:<hex>"` provenance.
+- Parse / I/O / schema failures fail closed before any walker begins per FR-002.
+
+Phase-2 (#352) extended this with SPDX 2.3 + SPDX 3 service projection (CDX `services[]` entries surface as `packages[]` with `mikebom:component-role = "saas-service"` annotation in SPDX), C68/C67 parity-catalog rows, and the document-scope `mikebom:supplement-cdx` annotation on SPDX outputs. Follow-up (#353) propagates supplement-declared `licenses[]` overrides onto Cargo's `metadata.component` main-module path via a typed `Vec<SpdxExpression>` projection so the operator's declared license appears in every emission format uniformly.
+
+Three new annotation keys with full Principle V audit narratives: C65 (`mikebom:source-tier = "declared"` value extension), C66 (`mikebom:supplement-cdx` envelope-level provenance), C67 (`mikebom:assertion-conflict` per-component JSON-array). Hand-rolled structural validator (no `jsonschema` runtime dep).
+
+### Swift Package Manager + Kotlin DSL Gradle + KMP polyglot readers (milestone 122, #354 + #356 + #357)
+
+Two new ecosystem readers shipped under one coordinated milestone:
+
+- **Swift Package Manager** (#354) — parses `Package.resolved` lockfiles (v1 / v2 / v3 schema dispatch), emits `pkg:swift/<host>/<namespace>/<name>@<version>` PURLs per the [purl-spec swift type](https://github.com/package-url/purl-spec/blob/main/PURL-TYPES.rst#swift). Commit-pinned mode (no `state.version`) uses the FULL 40-char revision SHA as the version segment. `Package.swift` is detected (signals SwiftPM project root) but never parsed for content. Deep-namespace URLs (GitLab subgroups) are warn-and-dropped — purl-spec swift type allows single-segment namespaces only.
+- **Kotlin DSL Gradle** (#356) — regex-extracts dep declarations from `build.gradle.kts` (the Android Studio / IntelliJ default since 2023), resolves `libs.<alias>` against `gradle/libs.versions.toml`, emits `pkg:maven/<group>/<name>@<version>` per the existing milestone-106 lane. Multi-module workspaces synthesize a `pkg:generic/<rootProject.name>@0.0.0` workspace-root per FR-007. KMP source-set provenance via the new `mikebom:kmp-source-set` (C68) annotation, JSON-array storage. Components are design-tier (`mikebom:sbom-tier = "design"`) gated by `--include-declared-deps`. Complements (not replaces) the existing milestone-106 `gradle.lockfile` reader.
+- **KMP polyglot regression suite** (#357) — three-module monorepo fixture (`androidApp/` + `shared/` with KMP source-sets + `iosApp/` SwiftPM) verifies both ecosystems coexist in one SBOM without cross-ecosystem collapse.
+
+### Producer-side root-PURL control (#358)
+
+Two new opt-in flags on `mikebom sbom scan` that give operators producer-side control of the root component's PURL across all three output formats:
+
+- **`--root-purl-type <TYPE>`** — overrides the type segment of the auto-derived root PURL. Today, when `--root-name` is supplied, mikebom hardcodes `pkg:generic/<name>@<version>`. The new flag replaces that hardcoded `generic` with an operator-supplied type token (e.g., `--root-purl-type=golang --root-name=github.com/example/svc` produces `pkg:golang/github.com%2Fexample%2Fsvc@<version>`). Validated at parse time against the purl-spec type charset `^[a-z][a-z0-9.+-]*$`. REQUIRES `--root-name`. Mutually exclusive with `--no-root-purl`.
+- **`--no-root-purl`** — omits the root component's PURL entirely. CDX: `metadata.component.purl` absent. SPDX 2.3: no `purl` `externalRef`. SPDX 3: no `software_packageUrl` AND no `externalIdentifier[packageUrl]`. REQUIRES `--root-name`. Mutually exclusive with `--root-purl-type`.
+
+Default behavior unchanged — both flags are opt-in. Extends the existing milestone-077 `RootComponentOverride` surface. Follow-up GitHub issue #359 tracks a possible future simplification to a single `--root-purl <VALUE>` flag.
 
 ### Removed (BREAKING)
 
-- **`--include-dev` CLI flag removed** (closes #101). Deprecated since milestone 052/part-3 (alpha.20, PR #100) when the scan default flipped to emit ALL lifecycle scopes natively tagged. The post-052 shim only logged a deprecation warning and was otherwise a no-op; the soak window has elapsed (>20 weeks since the warning landed). Operators wanting the pre-052 strict deployed-runtime view should use `--exclude-scope dev,build,test`. Shell scripts and CI configs still passing `--include-dev` will now fail with clap's standard "unexpected argument" message — the operator-visible fix is a one-token swap.
+- **`--include-dev` CLI flag removed** (#340, closes #101). Deprecated since milestone 052/part-3 (alpha.20, PR #100) when the scan default flipped to emit ALL lifecycle scopes natively tagged. The post-052 shim only logged a deprecation warning and was otherwise a no-op; the soak window has elapsed (>20 weeks since the warning landed). Operators wanting the pre-052 strict deployed-runtime view should use `--exclude-scope dev,build,test`. Shell scripts and CI configs still passing `--include-dev` will now fail with clap's standard "unexpected argument" message — the operator-visible fix is a one-token swap.
+
+### CI plumbing (#338, #339)
+
+- Closed the release-bump-merged-but-tag-not-pushed gap (#171). When a release-bump PR merges, the new `auto-tag-release.yml` workflow extracts the version from `Cargo.toml`, creates the matching annotated tag on the merge commit, pushes it via an explicit `x-access-token` URL, and explicitly dispatches the `release.yml` workflow against the new tag — closing the gap where `GITHUB_TOKEN`-pushed tags don't trigger downstream workflows by design.
+- Bumped `actions/checkout` from 6.0.2 → 6.0.3 (closes #319).
+
+### Release deltas
+
+- `Cargo.toml`: workspace version `0.1.0-alpha.47` → `0.1.0-alpha.48`.
+- `Cargo.lock`: regenerated via `cargo +stable build`.
+- `mikebom-cli/tests/fixtures/golden/`: 33 byte-identity goldens regenerated (11 CDX + 11 SPDX 2.3 + 11 SPDX 3). Deltas are version-bump-only — the mikebom-self-component `version` field bumps from alpha.47 → alpha.48 across CDX + SPDX 2.3 + SPDX 3, and the SHA-derived SPDX 3 document IDs shift accordingly per milestone 011's deterministic-ID scheme.
 
 ## [0.1.0-alpha.47] — 2026-06-12
 

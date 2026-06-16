@@ -199,6 +199,20 @@ pub struct RootComponentOverride {
     /// When `Some(version)`, replaces the auto-derived version field
     /// across all three formats. Validated at CLI parse per VR-077-001.
     pub version: Option<String>,
+    /// Override the type segment of the root component's PURL.
+    /// `None` keeps the default `generic`. `Some("golang")` produces
+    /// `pkg:golang/<name>@<version>` instead of `pkg:generic/...`.
+    /// Validated at CLI parse against the purl-spec type charset
+    /// (`^[a-z][a-z0-9.+-]*$`). REQUIRES `name` to be `Some`.
+    /// Mutually exclusive with `omit_purl`.
+    pub purl_type: Option<String>,
+    /// When `true`, the root component is emitted WITHOUT a PURL at
+    /// all. CDX: `metadata.component.purl` field absent. SPDX 2.3: no
+    /// `purl` entry in the root Package's `externalRefs[]`. SPDX 3:
+    /// no `software_packageUrl` AND no `externalIdentifier[]` entry
+    /// with `externalIdentifierType: "packageUrl"`. REQUIRES `name`
+    /// to be `Some`. Mutually exclusive with `purl_type`.
+    pub omit_purl: bool,
 }
 
 impl RootComponentOverride {
@@ -207,7 +221,27 @@ impl RootComponentOverride {
     /// module components from the emitted `components[]` array per
     /// the 2026-05-06 clean-replacement clarification.
     pub fn is_active(&self) -> bool {
-        self.name.is_some() || self.version.is_some()
+        self.name.is_some()
+            || self.version.is_some()
+            || self.purl_type.is_some()
+            || self.omit_purl
+    }
+
+    /// Build the PURL string for the BOM subject given the resolved
+    /// name + version. Returns `None` when `omit_purl` is set — the
+    /// caller MUST skip the PURL emission slot entirely. Otherwise
+    /// returns `pkg:<type>/<name>@<version>` with type defaulting to
+    /// `generic` and name/version percent-encoded per RFC 3986.
+    pub fn build_subject_purl(&self, name: &str, version: &str) -> Option<String> {
+        if self.omit_purl {
+            return None;
+        }
+        let type_token = self.purl_type.as_deref().unwrap_or("generic");
+        Some(format!(
+            "pkg:{type_token}/{}@{}",
+            percent_encode_purl_name(name),
+            percent_encode_purl_name(version),
+        ))
     }
 }
 
@@ -470,7 +504,8 @@ mod tests {
         let o = RootComponentOverride {
             name: Some("widget-svc".to_string()),
             version: None,
-        };
+        ..Default::default()
+    };
         assert!(o.is_active());
     }
 
@@ -479,7 +514,8 @@ mod tests {
         let o = RootComponentOverride {
             name: None,
             version: Some("1.2.3".to_string()),
-        };
+        ..Default::default()
+    };
         assert!(o.is_active());
     }
 
@@ -488,7 +524,8 @@ mod tests {
         let o = RootComponentOverride {
             name: Some("widget-svc".to_string()),
             version: Some("1.2.3".to_string()),
-        };
+        ..Default::default()
+    };
         assert!(o.is_active());
     }
 

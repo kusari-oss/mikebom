@@ -784,12 +784,19 @@ fn pick_root_iri(
             .as_deref()
             .unwrap_or(scan.target_name);
         let version = scan.root_override.version.as_deref().unwrap_or("0.0.0");
-        let purl_name = crate::generate::percent_encode_purl_name(name);
-        let purl_version = crate::generate::percent_encode_purl_name(version);
-        let synth_purl = format!("pkg:generic/{purl_name}@{purl_version}");
+        // Milestone N+1: `build_subject_purl` returns `None` when
+        // `--no-root-purl` is in effect; otherwise builds
+        // `pkg:<type>/<name>@<version>` with the type from
+        // `--root-purl-type` (default `generic`).
+        let synth_purl_opt = scan.root_override.build_subject_purl(name, version);
+        // IRI: hash the PURL when present, else hash `name@version` so
+        // the synthesized IRI stays stable across runs in the omit case.
+        let iri_seed = synth_purl_opt
+            .clone()
+            .unwrap_or_else(|| format!("{name}@{version}"));
         let synth_iri = format!(
             "{doc_iri}/pkg-root-{}",
-            hash_prefix(synth_purl.as_bytes(), 16)
+            hash_prefix(iri_seed.as_bytes(), 16)
         );
         // CPE: reuse `url_friendly` for sanitization parity with the
         // existing non-override path. CPE has its own escape rules
@@ -799,26 +806,38 @@ fn pick_root_iri(
             url_friendly(name),
             url_friendly(version),
         );
-        let synth_pkg = json!({
+        // Build externalIdentifier[] conditionally — CPE always, PURL
+        // only when present.
+        let mut ext_ids: Vec<serde_json::Value> = Vec::with_capacity(2);
+        ext_ids.push(json!({
+            "type": "ExternalIdentifier",
+            "externalIdentifierType": "cpe23",
+            "identifier": synth_cpe,
+        }));
+        if let Some(ref synth_purl) = synth_purl_opt {
+            ext_ids.push(json!({
+                "type": "ExternalIdentifier",
+                "externalIdentifierType": "packageUrl",
+                "identifier": synth_purl,
+            }));
+        }
+        let mut synth_pkg = json!({
             "type": "software_Package",
             "spdxId": synth_iri,
             "creationInfo": CREATION_INFO_ID,
             "name": name,
             "software_packageVersion": version,
-            "software_packageUrl": synth_purl,
-            "externalIdentifier": [
-                {
-                    "type": "ExternalIdentifier",
-                    "externalIdentifierType": "cpe23",
-                    "identifier": synth_cpe,
-                },
-                {
-                    "type": "ExternalIdentifier",
-                    "externalIdentifierType": "packageUrl",
-                    "identifier": synth_purl,
-                },
-            ],
+            "externalIdentifier": ext_ids,
         });
+        // Add software_packageUrl only when the PURL is present.
+        if let Some(synth_purl) = synth_purl_opt {
+            if let Some(obj) = synth_pkg.as_object_mut() {
+                obj.insert(
+                    "software_packageUrl".to_string(),
+                    serde_json::Value::String(synth_purl),
+                );
+            }
+        }
         packages.insert(0, synth_pkg);
         return (vec![synth_iri], true);
     }

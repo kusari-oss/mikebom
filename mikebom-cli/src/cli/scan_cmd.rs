@@ -488,6 +488,51 @@ pub struct ScanArgs {
     )]
     pub root_version: Option<String>,
 
+    /// Override the type segment of the root component's PURL.
+    /// Defaults to `generic` when `--root-name` is set; this flag
+    /// replaces that default so the BOM subject's PURL carries an
+    /// operator-supplied ecosystem type. Example: `--root-purl-type
+    /// golang --root-name github.com/example/svc` produces
+    /// `pkg:golang/github.com/example/svc@<version>`.
+    ///
+    /// Validated at parse time against the purl-spec type charset
+    /// (`^[a-z][a-z0-9.+-]*$`). REQUIRES `--root-name`. Mutually
+    /// exclusive with `--no-root-purl`.
+    ///
+    /// Applied identically across all three output formats: CDX
+    /// `metadata.component.purl`, SPDX 2.3 root Package
+    /// `externalRefs[purl]`, SPDX 3 root `software_packageUrl` +
+    /// `externalIdentifier[packageUrl]`.
+    #[arg(
+        long = "root-purl-type",
+        value_name = "TYPE",
+        value_parser = validate_root_purl_type,
+        requires = "root_name",
+        conflicts_with = "no_root_purl",
+    )]
+    pub root_purl_type: Option<String>,
+
+    /// Omit the root component's PURL entirely from the emitted SBOM.
+    /// CDX: `metadata.component.purl` field absent. SPDX 2.3: no
+    /// `purl` entry in the root Package's `externalRefs[]`. SPDX 3:
+    /// no `software_packageUrl` AND no `externalIdentifier[]` entry
+    /// with `externalIdentifierType: "packageUrl"`.
+    ///
+    /// Useful when downstream consumers key software identity on
+    /// `(type, name)` and a target record was originally produced by
+    /// a tool that emitted no root PURL — reproducing that empty-type
+    /// identity requires omitting the PURL here.
+    ///
+    /// REQUIRES `--root-name` (an explicit name is the only identity
+    /// signal once the PURL is dropped). Mutually exclusive with
+    /// `--root-purl-type`.
+    #[arg(
+        long = "no-root-purl",
+        requires = "root_name",
+        conflicts_with = "root_purl_type",
+    )]
+    pub no_root_purl: bool,
+
     // ────────────────────────────────────────────────────────────
     // Milestone 080 — user-provided SBOM metadata. See
     // `specs/080-user-sbom-metadata/` for the full design.
@@ -791,6 +836,28 @@ pub(crate) fn validate_root_name(value: &str) -> Result<String, String> {
 /// with the canonical flag-name string.
 pub(crate) fn validate_root_version(value: &str) -> Result<String, String> {
     validate_root_field(value, "--root-version")
+}
+
+/// Clap value_parser for `--root-purl-type`. Enforces the purl-spec
+/// type-token charset (`^[a-z][a-z0-9.+-]*$`). The `packageurl` crate
+/// would reject non-conforming tokens at PURL construction time
+/// downstream, but pre-validating at parse time gives the operator a
+/// fast, flag-named error instead of an opaque "PURL construction
+/// failed" message during emission.
+pub(crate) fn validate_root_purl_type(value: &str) -> Result<String, String> {
+    use std::sync::LazyLock;
+    static RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"^[a-z][a-z0-9.+-]*$")
+            .expect("root-purl-type regex compiles")
+    });
+    if RE.is_match(value) {
+        Ok(value.to_string())
+    } else {
+        Err(format!(
+            "--root-purl-type `{value}` is not a valid purl-spec type token \
+             (expected lowercase ASCII alphanumeric + `.+-`, starting with a letter)"
+        ))
+    }
 }
 
 /// Parse a `--id <scheme>=<value>` flag for a user-defined identifier.
@@ -2156,6 +2223,8 @@ pub async fn execute(
         root_override: crate::generate::RootComponentOverride {
             name: args.root_name.clone(),
             version: args.root_version.clone(),
+            purl_type: args.root_purl_type.clone(),
+            omit_purl: args.no_root_purl,
         },
         // Milestone 080: user-provided SBOM metadata aggregated from
         // the new flags (--creator / --annotator / --annotation-comment
@@ -2897,6 +2966,8 @@ mod tests {
             component_id: vec![],
             root_name: None,
             root_version: None,
+            root_purl_type: None,
+            no_root_purl: false,
             // Milestone 080 — defaults for new fields keep the test
             // helper's "minimal flags" contract intact.
             creator: vec![],

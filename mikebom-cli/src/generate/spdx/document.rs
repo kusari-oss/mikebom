@@ -391,6 +391,7 @@ pub fn build_document(
             &namespace,
             artifacts.root_override.name.as_deref(),
             artifacts.root_override.version.as_deref(),
+            &artifacts.root_override,
         );
         (vec![id], Some(root))
     } else if main_module_indices.len() == 1 {
@@ -772,6 +773,7 @@ fn synthesize_root_with_override(
     namespace: &SpdxDocumentNamespace,
     override_name: Option<&str>,
     override_version: Option<&str>,
+    root_override: &crate::generate::RootComponentOverride,
 ) -> (SpdxId, super::packages::SpdxPackage) {
     use super::packages::{
         SpdxExternalRef, SpdxExternalRefCategory, SpdxLicenseField, SpdxPackage,
@@ -796,11 +798,10 @@ fn synthesize_root_with_override(
     let encoded = BASE32_NOPAD.encode(&digest);
     let id = SpdxId::synthetic_root(&encoded[..16]);
 
-    // PURL uses RFC 3986 percent-encoding for the override path
-    // (research §1) so npm-scoped names round-trip.
-    let purl_name = crate::generate::percent_encode_purl_name(name);
-    let purl_version = crate::generate::percent_encode_purl_name(version);
-    let synth_purl = format!("pkg:generic/{purl_name}@{purl_version}");
+    // PURL — uses `build_subject_purl` so `--root-purl-type` selects
+    // the type segment and `--no-root-purl` returns `None`, in which
+    // case we DO NOT emit the `purl` externalRef.
+    let purl_opt = root_override.build_subject_purl(name, version);
 
     // CPE uses `cpe_escape`-style sanitization for both segments; reuse
     // the existing sanitize_for_coord helper which matches the CDX
@@ -809,6 +810,22 @@ fn synthesize_root_with_override(
     let cpe_version = sanitize_for_coord(version);
     let synth_cpe =
         format!("cpe:2.3:a:mikebom:{cpe_name}:{cpe_version}:*:*:*:*:*:*:*");
+
+    let mut external_refs: Vec<SpdxExternalRef> = Vec::with_capacity(2);
+    if let Some(synth_purl) = purl_opt {
+        external_refs.push(SpdxExternalRef {
+            category: SpdxExternalRefCategory::PackageManager,
+            ref_type: "purl".to_string(),
+            locator: synth_purl,
+            comment: None,
+        });
+    }
+    external_refs.push(SpdxExternalRef {
+        category: SpdxExternalRefCategory::Security,
+        ref_type: "cpe23Type".to_string(),
+        locator: synth_cpe,
+        comment: None,
+    });
 
     let root = SpdxPackage {
         spdx_id: id.clone(),
@@ -822,20 +839,7 @@ fn synthesize_root_with_override(
         license_declared: SpdxLicenseField::NoAssertion,
         license_concluded: SpdxLicenseField::NoAssertion,
         copyright_text: None,
-        external_refs: vec![
-            SpdxExternalRef {
-                category: SpdxExternalRefCategory::PackageManager,
-                ref_type: "purl".to_string(),
-                locator: synth_purl,
-                comment: None,
-            },
-            SpdxExternalRef {
-                category: SpdxExternalRefCategory::Security,
-                ref_type: "cpe23Type".to_string(),
-                locator: synth_cpe,
-                comment: None,
-            },
-        ],
+        external_refs,
         annotations: Vec::new(),
         primary_package_purpose: None,
     };
@@ -1227,7 +1231,8 @@ mod tests {
         arts.root_override = crate::generate::RootComponentOverride {
             name: Some(root_name.to_string()),
             version: Some(root_version.to_string()),
-        };
+        ..Default::default()
+    };
         arts
     }
 

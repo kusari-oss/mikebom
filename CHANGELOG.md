@@ -7,6 +7,45 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### Cargo-auditable gate fix for package-db-claimed binaries (milestone 130 US1)
+
+Closes the second-largest single ecosystem gap surfaced by the audit against syft on the polyglot
+Wolfi-based dev-tooling container image (`remediation-planner:latest`): pre-130, mikebom emitted only
+58 `pkg:cargo` components on this image, all from a `Cargo.lock` source-tier hit at
+`/usr/lib64/rustlib/src/rust/library/Cargo.lock`. The 1,058 cargo crates embedded inside
+`/usr/bin/uv` and `/usr/bin/uvx` via `cargo auditable`'s `.dep-v0` ELF sections were silently dropped.
+
+The existing milestone-029 reader at `mikebom-cli/src/scan_fs/binary/cargo_auditable.rs` is correct
+and functional — it parses the ZLIB-decompressed JSON payload faithfully. The bug was at the call
+site in `mikebom-cli/src/scan_fs/binary/mod.rs:700`, where the emission block was gated by
+`!skip_secondary_evidence`. That gate becomes `true` for any binary claimed by a package-db reader
+(`apk`/`dpkg`/`rpm`), so the Wolfi-apk-claimed `/usr/bin/uv` triggered suppression. The gate's intent
+("don't double-emit shadows of authoritative package-db claims") is correct for the version-string
+scanner, the linkage aggregator, and the ELF-note reader — those genuinely produce shadows of
+claimed binaries. But cargo-auditable's per-crate emissions are NOT shadows of the file-level binary
+identity — they're the transitive build closure of crates statically linked into the binary, which
+is a separate tier of truth from the package-db claim. The gate was conceptually wrong for this one
+block from the start.
+
+**Fix**: remove the `skip_secondary_evidence` gate around lines 700-708 only. All other
+`skip_secondary_evidence`-gated blocks at lines 502, 530, 561 stay gated (the comments documenting
+the per-block intent are preserved verbatim).
+
+**Audit-image impact**: total `pkg:cargo` components 58 → 1,116 (+1,058). Unique
+`(name, version)` cargo PURLs: 58 → 582. mikebom now exceeds syft's 493 unique cargo count by 89
+components (mikebom's superset comes from the Cargo.lock source-tier reader catching the Rust
+stdlib's internal `alloc@0.0.0`, `alloctests@0.0.0`, etc. that syft's binary cataloger doesn't
+enumerate).
+
+**Byte-identity preserved** across the 33 alpha.48 goldens. For images without `cargo-auditable`-
+built binaries (the common case), the fix is a no-op.
+
+**Follow-ups still tracked** for separate PRs per the milestone-130 plan's recommended cadence:
+
+- US2 — Maven nested-JAR recursion (~300 packages, ~400 LOC). See
+  `specs/130-binary-tier-completion/spec.md` US2.
+- US3 — PE/CLR managed-assembly metadata (~450 packages, ~1000 LOC ECMA-335 hand-roll). See US3.
+
 ### `.deps.json` reader for .NET container images (milestone 129 US1A)
 
 Fills the largest single ecosystem gap surfaced by a side-by-side audit against syft on a polyglot Wolfi-based dev-tooling container image (`767397973649.dkr.ecr.us-east-1.amazonaws.com/remediation-planner:latest`): pre-milestone-129, mikebom emitted **zero** `pkg:nuget` PURLs on .NET-bearing images because the existing milestone-106 NuGet reader is source-tier (`.csproj`/`Directory.Packages.props`/`packages.lock.json`) and production container images ship only the compiled output. This milestone adds a `.deps.json` sidecar reader to `mikebom-cli/src/scan_fs/package_db/nuget/deps_json.rs` that walks the rootfs for `*.deps.json` files (emitted by `dotnet publish` and shipped throughout the .NET SDK + runtime store layouts) and emits one `pkg:nuget/<name>@<version>` per `libraries[]` entry with `type: "package"`. On the audit image, this lifts the unique NuGet count from 0 to **184** (vs syft's 635 unique; the residual ~451 packages live in `.dll` PE/CLR metadata which a follow-up milestone will address).

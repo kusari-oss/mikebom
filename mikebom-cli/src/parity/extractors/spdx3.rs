@@ -580,6 +580,25 @@ spdx3_anno!(c66_spdx3, "mikebom:supplement-cdx",           document);
 // gating as the CDX side.
 spdx3_anno!(c69_spdx3, "mikebom:root-selection-heuristic", document);
 
+// Milestone 128: C70..C86 — Yocto annotation family.
+spdx3_anno!(c70_spdx3, "mikebom:srcrev",                    component);
+spdx3_anno!(c71_spdx3, "mikebom:src-uri",                   component);
+spdx3_anno!(c72_spdx3, "mikebom:srcrev-by-machine",         component);
+spdx3_anno!(c73_spdx3, "mikebom:yocto-layer",               component);
+spdx3_anno!(c74_spdx3, "mikebom:yocto-layer-version",       component);
+spdx3_anno!(c75_spdx3, "mikebom:yocto-layer-series",        component);
+spdx3_anno!(c76_spdx3, "mikebom:bbappend-applied",          component);
+spdx3_anno!(c77_spdx3, "mikebom:depends-unresolved",        component);
+spdx3_anno!(c78_spdx3, "mikebom:rdepends-unresolved",       component);
+spdx3_anno!(c79_spdx3, "mikebom:yocto-unexpanded-vars",     component);
+spdx3_anno!(c80_spdx3, "mikebom:yocto-license-closed",      component);
+spdx3_anno!(c81_spdx3, "mikebom:yocto-description",         component);
+spdx3_anno!(c82_spdx3, "mikebom:src-uri-local-only",        component);
+spdx3_anno!(c83_spdx3, "mikebom:yocto-class-extend",        component);
+spdx3_anno!(c84_spdx3, "mikebom:yocto-overrides-merged",    component);
+spdx3_anno!(c85_spdx3, "mikebom:yocto-recipe-name",         component);
+spdx3_anno!(c86_spdx3, "mikebom:yocto-recipe-version",      component);
+
 // C67 — `mikebom:assertion-conflict` (milestone 119). Per-component
 // graph-element annotation carrying the JSON-encoded array of
 // conflict records.

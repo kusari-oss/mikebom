@@ -1246,14 +1246,18 @@ pub fn read_all(
     // AND a manifest for the same image, the installed-DB wins and
     // the manifest's source-mechanism appears in `also-detected-via`.
     out.extend(yocto::manifest::read(rootfs));
-    // Milestone 107 US4: BitBake recipe walker. Emits one
-    // `pkg:bitbake/<recipe>@<version>?layer=<layer>` component per
-    // `.bb` file in a `meta-<vendor>/` layer tree. Filename-only —
-    // no recipe-body parsing, no variable expansion. Lowest tier in
-    // the FR-010 precedence ladder: declarations may never have been
-    // built. Cross-tier collisions (opkg-installed-DB + recipe-tier
-    // both naming the same coord) keep BOTH components because the
-    // PURL ecosystem differs (`pkg:opkg/` vs `pkg:bitbake/`).
+    // Milestone 107 US4 + milestone 128: BitBake recipe walker
+    // with body-parser enrichment. Emits one
+    // `pkg:generic/<recipe>@<version>?openembedded=true&layer=<layer>`
+    // component per `.bb` file in a `meta-<vendor>/` layer tree.
+    // Body-parsed for LICENSE, SRC_URI, SRCREV, HOMEPAGE, SUMMARY,
+    // DESCRIPTION, DEPENDS, RDEPENDS, BBCLASSEXTEND per FR-001..FR-005.
+    // Lowest tier in the FR-010 precedence ladder: declarations may
+    // never have been built. Cross-tier collisions (opkg-installed-DB
+    // + recipe-tier both naming the same coord) merge through the
+    // milestone-105 dedup pipeline via `mikebom:also-detected-via`
+    // per FR-014a; the recipe-tier's license + provenance fields
+    // propagate onto the post-dedup winning component.
     out.extend(yocto::recipe::read(rootfs, exclude_set));
 
     // Python: venv dist-info + lockfiles + requirements.txt per R13 tiers.

@@ -140,9 +140,12 @@ fn well_formed_yocto_manifests_emit_components_despite_neighboring_malformed_fil
         "yocto-manifest well-formed component (gst) missing; got purls: {purls:#?}",
     );
 
-    // BitBake recipe well-formed file MUST surface.
+    // BitBake recipe well-formed file MUST surface. Milestone 128
+    // (FR-001) migrated the recipe PURL from `pkg:bitbake/...?layer=`
+    // to `pkg:generic/...?openembedded=true&layer=...` (qualifiers
+    // alphabetized by `Purl::new`).
     assert!(
-        purls.iter().any(|p| p == "pkg:bitbake/mikebom-fixture-recipe@1.0.0?layer=meta-mikebom-fixture"),
+        purls.iter().any(|p| p == "pkg:generic/mikebom-fixture-recipe@1.0.0?layer=meta-mikebom-fixture&openembedded=true"),
         "bitbake-recipe well-formed component missing; got purls: {purls:#?}",
     );
 

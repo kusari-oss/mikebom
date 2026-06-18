@@ -1,6 +1,6 @@
 # mikebom Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-06-17
+Auto-generated from all feature plans. Last updated: 2026-06-18
 
 ## Active Technologies
 - Rust stable (user-space only; no eBPF touched in this milestone) (002-python-npm-ecosystem)
@@ -138,6 +138,8 @@ Auto-generated from all feature plans. Last updated: 2026-06-17
 - N/A — all reader state is in-process per scan; the lookup table built from `libs.versions.toml` is constructed at parse time and dies with the scan. Mirrors every milestone since 002. (122-kotlin-swift-readers)
 - Rust stable (workspace toolchain inherited from milestones 001–126; no nightly required for this user-space-only selection logic). + Existing only — `std::path::{Path, PathBuf}` + `std::fs::canonicalize` (already pervasive in `scan_fs/`), `tracing` (warn/info logs), `anyhow` (error propagation), `serde`/`serde_json` (annotation construction). **Zero new Cargo dependencies.** (127-smarter-root-pick)
 - N/A — all state in-process per scan; persisted only inside the emitted SBOM via the existing document-scope annotation channel. Mirrors every milestone since 002. (127-smarter-root-pick)
+- Rust stable (workspace toolchain inherited from milestones 001–127; no nightly required). + Existing only — `regex` (already direct dep since milestones 113 + 127), `std::str::Lines` (recipe-body parsing), `std::path::{Path, PathBuf}` + `std::fs::canonicalize` (layer attribution + include resolution), `mikebom_common::types::license::SpdxExpression::try_canonical` (LICENSE canonicalization), `mikebom_common::types::purl::Purl::new` (PURL construction, already validates against purl-spec), `tracing`, `anyhow`, `serde`/`serde_json`. **Zero new Cargo dependencies.** (128-yocto-recipe-enrich)
+- N/A — all state in-process per scan; persisted only inside the emitted SBOM via the existing per-component `extra_annotations` channel + the milestone-127 layer-root component shape. Mirrors every milestone since 002. (128-yocto-recipe-enrich)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -200,9 +202,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 128-yocto-recipe-enrich: Added Rust stable (workspace toolchain inherited from milestones 001–127; no nightly required). + Existing only — `regex` (already direct dep since milestones 113 + 127), `std::str::Lines` (recipe-body parsing), `std::path::{Path, PathBuf}` + `std::fs::canonicalize` (layer attribution + include resolution), `mikebom_common::types::license::SpdxExpression::try_canonical` (LICENSE canonicalization), `mikebom_common::types::purl::Purl::new` (PURL construction, already validates against purl-spec), `tracing`, `anyhow`, `serde`/`serde_json`. **Zero new Cargo dependencies.**
 - 127-smarter-root-pick: Added Rust stable (workspace toolchain inherited from milestones 001–126; no nightly required for this user-space-only selection logic). + Existing only — `std::path::{Path, PathBuf}` + `std::fs::canonicalize` (already pervasive in `scan_fs/`), `tracing` (warn/info logs), `anyhow` (error propagation), `serde`/`serde_json` (annotation construction). **Zero new Cargo dependencies.**
 - 122-kotlin-swift-readers: Added Rust stable (workspace toolchain inherited from milestones 001–121; no nightly required for this user-space-only ecosystem-expansion work). + Existing only — `serde` + `serde_json` (`Package.resolved` JSON parsing — already used by every JSON-format reader), `toml = "0.8"` (`libs.versions.toml` parsing — already used by `cargo.rs` + `pip/`), `regex` (`build.gradle.kts` dep-declaration extraction — already used by milestone-106 + milestone-119), `tracing` (parse-error warnings), `anyhow` (error propagation). The PURL construction reuses `mikebom_common::types::purl::Purl::new()` which already supports the `pkg:swift/` ecosystem type per the upstream `packageurl` crate. **Zero new Cargo dependencies.**
-- 119-supplement-cdx: Added Rust stable (workspace toolchain inherited from milestones 001–118; no nightly required). + Existing only — `serde`/`serde_json` (CDX JSON parse), `clap` (the new flag via derive), `sha2` + `data-encoding` (the supplement file's sha256 for FR-012 provenance — both already in the workspace), `tracing`, `anyhow`, `thiserror`. **Zero new Cargo dependencies.** Per research §1, the supplement file validation is a hand-rolled structural check — no `jsonschema` runtime dep added.
 
 
 <!-- MANUAL ADDITIONS START -->

@@ -1,0 +1,2 @@
+LICENSE = "MIT"
+SUMMARY = "Recipe A"

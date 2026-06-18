@@ -5,7 +5,7 @@
 //! `yocto_recipe_layer/` fixture (a synthetic `meta-mikebom-fixture/`
 //! Yocto layer with 4 recipe files) and asserts:
 //!
-//! - 3 `pkg:bitbake/...` components emerge (the well-formed recipes +
+//! - 3 `pkg:generic/...` components emerge (the well-formed recipes +
 //!   the no-version recipe; the `${PN}_${PV}.bb` is silently skipped
 //!   per FR-008)
 //! - Each emitted component carries the `?layer=meta-mikebom-fixture`
@@ -66,12 +66,16 @@ fn yocto_recipe_layer_emits_bitbake_components() {
     let bytes = std::fs::read(&out_path).expect("read emitted SBOM");
     let json: serde_json::Value = serde_json::from_slice(&bytes).expect("parse JSON");
     let components = json["components"].as_array().expect("components array");
+    // Milestone 128 (FR-001): bitbake recipes now emit
+    // `pkg:generic/<name>@<ver>?...openembedded=true`. Filter on the
+    // `openembedded=true` qualifier to isolate recipe components from
+    // any other `pkg:generic/` synthesized component (e.g. layer-roots).
     let bitbake_components: Vec<&serde_json::Value> = components
         .iter()
         .filter(|c| {
             c["purl"]
                 .as_str()
-                .map(|p| p.starts_with("pkg:bitbake/"))
+                .map(|p| p.starts_with("pkg:generic/") && p.contains("openembedded=true"))
                 .unwrap_or(false)
         })
         .collect();
@@ -91,10 +95,10 @@ fn yocto_recipe_layer_emits_bitbake_components() {
         .collect();
 
     let expected = [
-        "pkg:bitbake/mikebom-fixture-lib@1.2.3?layer=meta-mikebom-fixture",
+        "pkg:generic/mikebom-fixture-lib@1.2.3?layer=meta-mikebom-fixture&openembedded=true",
         // `+` in version becomes `%2B` per the package-url spec via encode_purl_segment.
-        "pkg:bitbake/mikebom-fixture-app@2.0%2Bgit1234abcd?layer=meta-mikebom-fixture",
-        "pkg:bitbake/mikebom-fixture-noversion@unknown?layer=meta-mikebom-fixture",
+        "pkg:generic/mikebom-fixture-app@2.0%2Bgit1234abcd?layer=meta-mikebom-fixture&openembedded=true",
+        "pkg:generic/mikebom-fixture-noversion@unknown?layer=meta-mikebom-fixture&openembedded=true",
     ];
     for purl in expected {
         assert!(

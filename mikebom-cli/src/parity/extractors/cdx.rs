@@ -729,6 +729,27 @@ cdx_anno!(c68_cdx, "mikebom:kmp-source-set",            component);
 // (exclude-path) and C66 (supplement-cdx).
 cdx_anno!(c69_cdx, "mikebom:root-selection-heuristic",  document);
 
+// Milestone 128: C70..C86 — Yocto/OpenEmbedded source-tier
+// annotation family (recipe enrichment per FR-001..FR-019 + FR-002a).
+// All per-component-scope per data-model.md + contracts/annotation-schema.md.
+cdx_anno!(c70_cdx, "mikebom:srcrev",                    component);
+cdx_anno!(c71_cdx, "mikebom:src-uri",                   component);
+cdx_anno!(c72_cdx, "mikebom:srcrev-by-machine",         component);
+cdx_anno!(c73_cdx, "mikebom:yocto-layer",               component);
+cdx_anno!(c74_cdx, "mikebom:yocto-layer-version",       component);
+cdx_anno!(c75_cdx, "mikebom:yocto-layer-series",        component);
+cdx_anno!(c76_cdx, "mikebom:bbappend-applied",          component);
+cdx_anno!(c77_cdx, "mikebom:depends-unresolved",        component);
+cdx_anno!(c78_cdx, "mikebom:rdepends-unresolved",       component);
+cdx_anno!(c79_cdx, "mikebom:yocto-unexpanded-vars",     component);
+cdx_anno!(c80_cdx, "mikebom:yocto-license-closed",      component);
+cdx_anno!(c81_cdx, "mikebom:yocto-description",         component);
+cdx_anno!(c82_cdx, "mikebom:src-uri-local-only",        component);
+cdx_anno!(c83_cdx, "mikebom:yocto-class-extend",        component);
+cdx_anno!(c84_cdx, "mikebom:yocto-overrides-merged",    component);
+cdx_anno!(c85_cdx, "mikebom:yocto-recipe-name",         component);
+cdx_anno!(c86_cdx, "mikebom:yocto-recipe-version",      component);
+
 // ============================================================
 // Section D — Evidence (D1, D2 — CDX-native shape)
 // ============================================================

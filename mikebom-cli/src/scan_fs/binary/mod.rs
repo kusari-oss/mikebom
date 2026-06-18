@@ -691,21 +691,31 @@ pub fn read(
         }
 
         // Milestone 029 — cargo-auditable per-crate components.
-        // Same `skip_secondary_evidence` gate as the version-string
-        // scanner: when the binary is already covered by an
-        // authoritative package-db entry (dpkg/rpm/etc.), don't
-        // double-emit `pkg:cargo/<crate>` shadows. Each emitted
-        // crate carries `parent_purl = file_level_purl` cross-
-        // linking back to the file-level binary component's identity.
-        if !skip_secondary_evidence {
-            if let Some(ref manifest) = scan.cargo_auditable {
-                let entries = cargo_auditable_packages_to_entries(
-                    manifest,
-                    &file_level_purl,
-                    &path,
-                );
-                out.extend(entries);
-            }
+        // Milestone 130 US1 fix: the `skip_secondary_evidence` gate
+        // was REMOVED from this block. Cargo-auditable per-crate
+        // emissions are NOT shadows of the file-level binary identity
+        // — they're the transitive build closure of crates statically
+        // linked into the binary, which is a separate tier of truth
+        // from the package-db claim (apk/dpkg/rpm). The gate was
+        // suppressing the emission on every claimed Rust binary
+        // (Wolfi /usr/bin/uv, Debian /usr/bin/rustup, etc.) pre-130,
+        // leaving 928 cargo packages off the audit-image SBOM. See
+        // specs/130-binary-tier-completion/research.md §R1 for the
+        // diagnosis. All OTHER `skip_secondary_evidence`-gated blocks
+        // in this loop (version-string scan, linkage aggregation,
+        // ELF-note packages) STAY gated — those genuinely do produce
+        // shadows of package-db claims.
+        //
+        // Each emitted crate carries `parent_purl = file_level_purl`
+        // cross-linking back to the file-level binary's identity per
+        // the existing milestone-029 convention.
+        if let Some(ref manifest) = scan.cargo_auditable {
+            let entries = cargo_auditable_packages_to_entries(
+                manifest,
+                &file_level_purl,
+                &path,
+            );
+            out.extend(entries);
         }
     }
 

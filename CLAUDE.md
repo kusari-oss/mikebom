@@ -142,6 +142,7 @@ Auto-generated from all feature plans. Last updated: 2026-06-18
 - N/A — all state in-process per scan; persisted only inside the emitted SBOM via the existing per-component `extra_annotations` channel + the milestone-127 layer-root component shape. Mirrors every milestone since 002. (128-yocto-recipe-enrich)
 - Rust stable (workspace toolchain inherited from milestones 001–128; no nightly required). + Existing only — `object = "0.36"` (workspace; ELF section reading for `.dep-v0` per (129-binary-tier-readers)
 - N/A — all state in-process per scan; no caches, no persistence. Matches every milestone since 002. (129-binary-tier-readers)
+- Rust stable (workspace toolchain inherited from milestones 001–129; no nightly + Existing only — `object = "0.36"` (workspace; ELF section reading for the (130-binary-tier-completion)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -204,9 +205,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 130-binary-tier-completion: Added Rust stable (workspace toolchain inherited from milestones 001–129; no nightly + Existing only — `object = "0.36"` (workspace; ELF section reading for the
 - 129-binary-tier-readers: Added Rust stable (workspace toolchain inherited from milestones 001–128; no nightly required). + Existing only — `object = "0.36"` (workspace; ELF section reading for `.dep-v0` per
 - 128-yocto-recipe-enrich: Added Rust stable (workspace toolchain inherited from milestones 001–127; no nightly required). + Existing only — `regex` (already direct dep since milestones 113 + 127), `std::str::Lines` (recipe-body parsing), `std::path::{Path, PathBuf}` + `std::fs::canonicalize` (layer attribution + include resolution), `mikebom_common::types::license::SpdxExpression::try_canonical` (LICENSE canonicalization), `mikebom_common::types::purl::Purl::new` (PURL construction, already validates against purl-spec), `tracing`, `anyhow`, `serde`/`serde_json`. **Zero new Cargo dependencies.**
-- 127-smarter-root-pick: Added Rust stable (workspace toolchain inherited from milestones 001–126; no nightly required for this user-space-only selection logic). + Existing only — `std::path::{Path, PathBuf}` + `std::fs::canonicalize` (already pervasive in `scan_fs/`), `tracing` (warn/info logs), `anyhow` (error propagation), `serde`/`serde_json` (annotation construction). **Zero new Cargo dependencies.**
 
 
 <!-- MANUAL ADDITIONS START -->

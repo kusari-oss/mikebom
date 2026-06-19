@@ -59,8 +59,15 @@ pub struct ExtractedImage {
 struct DockerManifestEntry {
     #[serde(rename = "Config", default)]
     _config: String,
+    // `Option<Vec<String>>` (not `Vec<String>`) because `docker save` on an
+    // image that was pulled by digest (no tag) writes `"RepoTags": null` —
+    // a present field with a null value, which `#[serde(default)]` does NOT
+    // cover (default only catches *missing* fields). `Option` accepts both
+    // `null` and absence, and `unwrap_or_default()` at the use-site treats
+    // both as empty. Observed during milestone-132 MVP SC verification when
+    // `docker pull <repo>@sha256:<digest>` produced a tag-less image.
     #[serde(rename = "RepoTags", default)]
-    repo_tags: Vec<String>,
+    repo_tags: Option<Vec<String>>,
     #[serde(rename = "Layers", default)]
     layers: Vec<String>,
 }
@@ -81,7 +88,7 @@ pub fn extract(archive_path: &Path) -> Result<ExtractedImage> {
         bail!("manifest.json contains zero image entries");
     };
 
-    let repo_tag = image.repo_tags.into_iter().next();
+    let repo_tag = image.repo_tags.unwrap_or_default().into_iter().next();
     if image.layers.is_empty() {
         bail!("image manifest has zero layers — not a valid docker save tarball?");
     }
@@ -477,6 +484,53 @@ mod tests {
         // Forget the tmp so it isn't dropped+removed before the test reads it.
         let _ = tmp.persist(&path);
         path
+    }
+
+    #[test]
+    fn manifest_json_with_null_repo_tags_deserializes() {
+        // Regression: `docker save` on an image pulled by digest writes
+        // `"RepoTags": null` (a present field with literal null), which
+        // a `Vec<String>` field with `#[serde(default)]` did NOT tolerate
+        // (default only catches *missing* fields). Discovered during
+        // milestone-132 MVP SC verification when scanning the audit image
+        // by `@sha256:<digest>`. The fix is `Option<Vec<String>>` +
+        // `unwrap_or_default()` at the use-site.
+        let manifest = r#"[{"Config":"config.json","RepoTags":null,"Layers":["layer0/layer.tar"]}]"#;
+        let entries: Vec<DockerManifestEntry> =
+            serde_json::from_str(manifest).expect("null RepoTags must deserialize");
+        assert_eq!(entries.len(), 1);
+        assert!(
+            entries[0].repo_tags.is_none(),
+            "null RepoTags should land as Option::None, not be coerced to []",
+        );
+        assert_eq!(entries[0].layers, vec!["layer0/layer.tar".to_string()]);
+    }
+
+    #[test]
+    fn manifest_json_with_missing_repo_tags_deserializes() {
+        // Companion: `#[serde(default)]` still covers the missing-field
+        // case. Preserved coverage so future maintainers don't drop the
+        // `default` attribute thinking `Option` alone is enough — both
+        // missing AND null must work.
+        let manifest = r#"[{"Config":"config.json","Layers":["layer0/layer.tar"]}]"#;
+        let entries: Vec<DockerManifestEntry> =
+            serde_json::from_str(manifest).expect("missing RepoTags must deserialize");
+        assert!(entries[0].repo_tags.is_none());
+    }
+
+    #[test]
+    fn manifest_json_with_populated_repo_tags_deserializes() {
+        // Companion: tagged-image path still works (the existing
+        // build_fake_image helper exercises this end-to-end; the focused
+        // deserializer test below is here so all three RepoTags states
+        // are covered in one spot).
+        let manifest = r#"[{"Config":"config.json","RepoTags":["demo:latest"],"Layers":["layer0/layer.tar"]}]"#;
+        let entries: Vec<DockerManifestEntry> =
+            serde_json::from_str(manifest).expect("populated RepoTags must deserialize");
+        assert_eq!(
+            entries[0].repo_tags.as_deref(),
+            Some(&["demo:latest".to_string()][..]),
+        );
     }
 
     #[test]

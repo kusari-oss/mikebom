@@ -132,40 +132,73 @@ parity-bridging `mikebom:*` annotation per Constitution Principle V's mandate. S
 
 ## Entity: License-enrichment dispatch (US3 Path A — fingerprint table extension)
 
-**Source location**: Existing constant table inside
-`mikebom-cli/src/scan_fs/package_db/nuget/pe_clr.rs`. Milestone 131 PR #375 introduced
-this table at the head of the LICENSE.txt fingerprint matcher with 6 entries.
+**Source location**: Existing `fn fingerprint_license(bytes: &[u8]) -> Option<&'static str>`
+at `mikebom-cli/src/scan_fs/package_db/nuget/pe_clr.rs:973` (introduced by milestone
+131 PR #375). The function is a hand-rolled substring-matcher over the first 4 KB of
+license text, NOT a byte-slice table — a planning-time miscall in the milestone-132
+data-model that this US3 PR corrects in-place. See the milestone-132 plan-correction
+clause in the PR description.
+
 **Driven by**: FR-013 (Path A complement).
 
-### Shape
+### Shape (actual)
 
-Extension of the existing const table:
+Extension of the existing substring-matcher function by appending new
+`if text.contains(...)` arms. Order matters per the existing convention:
+more-specific patterns first (MIT-0 before MIT; LGPL before GPL because LGPL text
+contains "General Public License"; EPL-2.0 before EPL-1.0):
 
 ```rust
-const LICENSE_FINGERPRINT_TABLE: &[(&str, &[u8])] = &[
-    // Existing milestone-131 entries:
-    ("Apache-2.0", b"<embedded canonical first 64 bytes of Apache-2.0 LICENSE>"),
-    ("MIT",        b"<...>"),
-    ("BSD-3-Clause", b"<...>"),
-    ("BSD-2-Clause", b"<...>"),
-    ("GPL-3.0",    b"<...>"),
-    ("GPL-2.0",    b"<...>"),
-    // NEW (milestone 132):
-    ("MS-PL",      b"<embedded canonical Microsoft Public License first 64 bytes>"),
-    ("LGPL-2.1-only", b"<...>"),
-    ("LGPL-3.0-only", b"<...>"),
-    ("LGPL-2.1-or-later", b"<...>"),
-    ("MIT-0",      b"<...>"),
-    ("EPL-1.0",    b"<...>"),
-    ("EPL-2.0",    b"<...>"),
-];
+fn fingerprint_license(bytes: &[u8]) -> Option<&'static str> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    // Existing milestone-131 arms: Apache-2.0, MIT, BSD-3-Clause, BSD-2-Clause,
+    // GPL-3.0, GPL-2.0 (preserved verbatim).
+
+    // NEW milestone-132 arms:
+    // MIT-0 (MUST come BEFORE MIT because "Permission is hereby granted" matches both):
+    if text.contains("MIT No Attribution") { return Some("MIT-0"); }
+    // MS-PL — distinctive "Ms-PL" identifier:
+    if text.contains("Microsoft Public License") && text.contains("Ms-PL") {
+        return Some("MS-PL");
+    }
+    // LGPL-3.0 (BEFORE GPL-3.0 because LGPL text contains "General Public License"):
+    if text.contains("Lesser General Public License")
+        && (text.contains("Version 3") || text.contains("version 3"))
+    { return Some("LGPL-3.0"); }
+    if text.contains("Lesser General Public License")
+        && (text.contains("Version 2.1") || text.contains("version 2.1"))
+    { return Some("LGPL-2.1"); }
+    // EPL-2.0 BEFORE EPL-1.0:
+    if text.contains("Eclipse Public License") && text.contains("v 2.0") {
+        return Some("EPL-2.0");
+    }
+    if text.contains("Eclipse Public License") && text.contains("v 1.0") {
+        return Some("EPL-1.0");
+    }
+    // Existing arms here, unchanged.
+    None
+}
 ```
 
 ### Match rule
 
-(Unchanged from milestone 131): a PE/CLR-emitted component's first 64 bytes of any
-embedded LICENSE.txt are compared byte-for-byte against each table entry; on hit the
-SPDX ID is emitted as `licenses[].license.id`.
+(Unchanged from milestone 131): the milestone-131 `probe_license_file` walker reads
+up to the first 4 KB of any `LICENSE` / `LICENSE.txt` / `LICENSE.md` / `COPYING` /
+`COPYING.txt` file in the PE/CLR package directory (or up to `max_depth` levels of
+parent walking); the bytes are passed to `fingerprint_license` which returns
+`Some(spdx_id)` on a substring match. The matched ID then runs through
+`mikebom_common::types::license::SpdxExpression::try_canonical` at the emission site
+(line 1147) before being attached to the component as `licenses[].license.id`.
+
+### SPDX ID canonicalization
+
+All milestone-132 candidate IDs (MS-PL, LGPL-2.1, LGPL-3.0, MIT-0, EPL-1.0, EPL-2.0)
+pass `SpdxExpression::try_canonical`. Verified at plan-correction time via a
+throw-away `rustc` probe; entries documented in the PR's "SPDX canonicalization
+probe" section. The SPDX deprecated-form IDs (`LGPL-2.1` vs `LGPL-2.1-only`) are
+preserved to match the existing milestone-131 convention (`GPL-3.0` vs
+`GPL-3.0-only`); a future cleanup may migrate both old and new to the
+disambiguated forms together.
 
 ### Validation
 

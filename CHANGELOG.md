@@ -7,6 +7,61 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### License coverage extension Path A — 6 new SPDX patterns in PE/CLR fingerprint matcher (milestone 132 US3 Path A)
+
+**Discrete deliverable**: extends the milestone-131 `fingerprint_license` substring
+matcher (at `mikebom-cli/src/scan_fs/package_db/nuget/pe_clr.rs:973`) with six new
+SPDX license patterns common in `dotnet/packs/` and modern Microsoft assemblies:
+**MIT-0, MS-PL, LGPL-3.0, LGPL-2.1, EPL-2.0, EPL-1.0**.
+
+**Does NOT close SC-003** (License Coverage ≥3★) on its own. Per `research.md
+§License Path Analysis §Decision matrix`, Path A's projected lift on the audit
+baseline is ~+131 PE/CLR components (337 → ~470 nuget hits) — moves overall
+EffectiveRate from 37.8 % to ~42 %, still 2★. **Path C (deps.dev online enrichment
+for cargo + nuget) is the path that closes SC-003** and ships as a separate
+follow-up PR; Path A is the offline-mode complement that hits whenever a real
+LICENSE.txt is present in the PE/CLR package directory.
+
+**Plan-correction landed inline**: my milestone-132 plan / data-model / tasks
+described the Path A change as extending a `LICENSE_FINGERPRINT_TABLE: &[(&str,
+&[u8])]` const + `include_bytes!`-loaded first-64-byte fixtures. **That table does
+not exist.** The real milestone-131 site is the hand-rolled
+`fn fingerprint_license(bytes: &[u8]) -> Option<&'static str>` substring matcher.
+I caught the fabrication during US3 work and corrected `data-model.md
+§License-enrichment dispatch (US3 Path A) §Shape (actual)` + `tasks.md` T017 + T018
+in-place before writing code. Both edits land in this PR so the spec record matches
+reality for any reviewer following the milestone-132 plan trail.
+
+**Pattern ordering** (matters — wrong order means the new arms silently lose to the
+old ones):
+
+- **MIT-0 BEFORE MIT** — both contain `"Permission is hereby granted"`; MIT-0
+  is distinguished by `"MIT No Attribution"` at the head.
+- **LGPL-3.0 / LGPL-2.1 BEFORE GPL-3.0 / GPL-2.0** — LGPL canonical text
+  contains `"Lesser General Public License"`, which substring-matches the
+  existing GPL arms' `"General Public License"` check. Version 3 before
+  version 2.1 within the LGPL family for the same reason GPL-3 is before
+  GPL-2 in the existing code.
+- **EPL-2.0 BEFORE EPL-1.0** — distinguishing pattern is `"v 2.0"` vs `"v 1.0"`
+  in the title.
+- **MS-PL** — distinctive `"Ms-PL"` identifier appears alongside the expanded
+  `"Microsoft Public License"` in canonical Microsoft license text.
+
+**SPDX canonicalization** — all six new IDs (MIT-0, MS-PL, LGPL-3.0, LGPL-2.1,
+EPL-2.0, EPL-1.0) pass `SpdxExpression::try_canonical`. Verified at
+plan-correction time via a throw-away `rustc` probe; verified at code-time via the
+new `fingerprint_license_new_arms_all_canonicalize` unit test which catches future
+typos at unit-test time rather than at production scan time (where the existing
+emission-site canonicalization at `pe_clr.rs:1147` would silently drop the
+license + emit a `tracing::warn!`).
+
+**Tests** (7 new): one per new SPDX id with a realistic canonical-text fixture
+(LGPL fixtures use the full title-plus-body shape from real GPL/LGPL LICENSE
+files because the substring match keys on the mixed-case `"Lesser General Public
+License"` form that appears in the body, not the ALL-CAPS title), plus the
+canonicalization sanity test. Existing 4 milestone-131 fingerprint tests remain
+unchanged and still pass.
+
 ### Fix: `RepoTags: null` in `docker save` manifest crashed image scans
 
 `mikebom sbom scan --image <registry>@sha256:<digest>` failed with

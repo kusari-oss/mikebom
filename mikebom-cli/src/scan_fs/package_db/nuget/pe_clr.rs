@@ -424,7 +424,7 @@ fn parse_tables_stream(
     // `AssemblyFileVersionAttribute` per ECMA-335 §II.22.10 + §II.23.3.
     // Reuses the same row-size approximation as Phase A's Assembly
     // walk — inherits the same caveat that some assemblies misalign.
-    let (informational_version, file_version) = walk_custom_attributes(
+    let (informational_version, file_version) = extract_custom_attribute_versions(
         tables,
         row_cursor,
         &table_widths,
@@ -451,7 +451,7 @@ fn parse_tables_stream(
 ///
 /// `start_offset` is the byte offset in `tables_stream` where
 /// table 0x00 (Module) starts (the row_counts header end).
-fn walk_custom_attributes(
+fn extract_custom_attribute_versions(
     tables: &[u8],
     start_offset: usize,
     widths: &TableWidths,

@@ -970,6 +970,13 @@ fn probe_license_file(dll_path: &Path, max_depth: u8) -> Option<(Vec<u8>, PathBu
 /// Per FR-013: match the license file's first 4 KB against canonical
 /// opening-text patterns of common SPDX licenses. Returns the SPDX
 /// id when a match fires, else `None` (signals the C97 fallback).
+///
+/// Order matters: more-specific patterns first, otherwise a less-specific
+/// arm steals the match. Concretely:
+/// - MIT-0 BEFORE MIT (both contain "Permission is hereby granted").
+/// - LGPL BEFORE GPL (LGPL text contains "General Public License").
+/// - Version 3 BEFORE version 2 within each GPL/LGPL family.
+/// - EPL-2.0 BEFORE EPL-1.0.
 fn fingerprint_license(bytes: &[u8]) -> Option<&'static str> {
     let text = std::str::from_utf8(bytes).ok()?;
     // Case-insensitive substring detection. Order matters: more-specific
@@ -978,6 +985,12 @@ fn fingerprint_license(bytes: &[u8]) -> Option<&'static str> {
         && (text.contains("Version 2.0") || text.contains("Version 2,"))
     {
         return Some("Apache-2.0");
+    }
+    // Milestone 132 US3 Path A: MIT-0 BEFORE the generic MIT arm —
+    // "MIT No Attribution" texts ALSO contain "Permission is hereby
+    // granted" and would otherwise be mis-tagged as MIT.
+    if text.contains("MIT No Attribution") {
+        return Some("MIT-0");
     }
     if text.contains("MIT License")
         || text.contains("Permission is hereby granted, free of charge")
@@ -996,6 +1009,26 @@ fn fingerprint_license(bytes: &[u8]) -> Option<&'static str> {
     {
         return Some("BSD-2-Clause");
     }
+    // Milestone 132 US3 Path A: Microsoft Public License — distinctive
+    // "Ms-PL" identifier appears in the canonical text alongside the
+    // expanded name.
+    if text.contains("Microsoft Public License") && text.contains("Ms-PL") {
+        return Some("MS-PL");
+    }
+    // Milestone 132 US3 Path A: LGPL family BEFORE GPL family because
+    // LGPL canonical text contains "Lesser General Public License" AND
+    // would also match the GPL arm's "General Public License" substring.
+    // Version 3 before version 2.1.
+    if text.contains("Lesser General Public License")
+        && (text.contains("version 3") || text.contains("Version 3"))
+    {
+        return Some("LGPL-3.0");
+    }
+    if text.contains("Lesser General Public License")
+        && (text.contains("version 2.1") || text.contains("Version 2.1"))
+    {
+        return Some("LGPL-2.1");
+    }
     if text.contains("GNU General Public License")
         && (text.contains("version 3") || text.contains("Version 3"))
     {
@@ -1005,6 +1038,14 @@ fn fingerprint_license(bytes: &[u8]) -> Option<&'static str> {
         && (text.contains("version 2") || text.contains("Version 2"))
     {
         return Some("GPL-2.0");
+    }
+    // Milestone 132 US3 Path A: Eclipse Public License v2.0 BEFORE v1.0
+    // for the same reason as GPL ordering.
+    if text.contains("Eclipse Public License") && text.contains("v 2.0") {
+        return Some("EPL-2.0");
+    }
+    if text.contains("Eclipse Public License") && text.contains("v 1.0") {
+        return Some("EPL-1.0");
     }
     None
 }
@@ -1391,6 +1432,68 @@ mod tests {
     fn fingerprint_license_returns_none_for_unrecognized_text() {
         let text = b"This is some proprietary license that mikebom doesn't recognize.";
         assert!(fingerprint_license(text).is_none());
+    }
+
+    // ============================================================
+    // Milestone 132 US3 Path A — extended fingerprint arms.
+    // ============================================================
+
+    #[test]
+    fn fingerprint_license_detects_mit_0_before_mit() {
+        // MIT-0 text shape: starts with "MIT No Attribution" then the
+        // standard MIT permission grant. MUST resolve to MIT-0, not MIT.
+        let text = b"MIT No Attribution\n\nCopyright 2024 Example\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software";
+        assert_eq!(fingerprint_license(text), Some("MIT-0"));
+    }
+
+    #[test]
+    fn fingerprint_license_detects_ms_pl() {
+        let text = b"Microsoft Public License (Ms-PL)\n\nThis license governs use of the accompanying software.";
+        assert_eq!(fingerprint_license(text), Some("MS-PL"));
+    }
+
+    #[test]
+    fn fingerprint_license_detects_lgpl_3_0_before_gpl() {
+        // LGPL canonical text contains "General Public License" — the
+        // LGPL arm MUST fire before the GPL-3.0 arm steals the match.
+        // Real LGPL LICENSE files contain BOTH the ALL-CAPS title line
+        // AND a mixed-case body reference ("GNU Lesser General Public
+        // License"); test fixture must include the mixed-case form
+        // because that's what the substring match keys on.
+        let text = b"                   GNU LESSER GENERAL PUBLIC LICENSE\n                       Version 3, 29 June 2007\n\n  This version of the GNU Lesser General Public License incorporates\nthe terms and conditions of version 3 of the GNU General Public License,";
+        assert_eq!(fingerprint_license(text), Some("LGPL-3.0"));
+    }
+
+    #[test]
+    fn fingerprint_license_detects_lgpl_2_1_before_gpl() {
+        let text = b"                  GNU LESSER GENERAL PUBLIC LICENSE\n                       Version 2.1, February 1999\n\n  This is the GNU Lesser General Public License, version 2.1, which\napplies to those works whose authors release them under its terms.";
+        assert_eq!(fingerprint_license(text), Some("LGPL-2.1"));
+    }
+
+    #[test]
+    fn fingerprint_license_detects_epl_2_0_before_epl_1_0() {
+        let text = b"Eclipse Public License - v 2.0\n\nTHE ACCOMPANYING PROGRAM IS PROVIDED UNDER THE TERMS OF THIS ECLIPSE PUBLIC LICENSE";
+        assert_eq!(fingerprint_license(text), Some("EPL-2.0"));
+    }
+
+    #[test]
+    fn fingerprint_license_detects_epl_1_0() {
+        let text = b"Eclipse Public License - v 1.0\n\nTHE ACCOMPANYING PROGRAM IS PROVIDED UNDER THE TERMS OF THIS ECLIPSE PUBLIC LICENSE";
+        assert_eq!(fingerprint_license(text), Some("EPL-1.0"));
+    }
+
+    #[test]
+    fn fingerprint_license_new_arms_all_canonicalize() {
+        // Sanity: every SPDX id the new arms emit MUST pass
+        // SpdxExpression::try_canonical so the emission site at line ~1147
+        // doesn't silently drop the license. Catches typos at unit-test
+        // time rather than at production scan time.
+        for spdx_id in &["MIT-0", "MS-PL", "LGPL-3.0", "LGPL-2.1", "EPL-2.0", "EPL-1.0"] {
+            mikebom_common::types::license::SpdxExpression::try_canonical(spdx_id)
+                .unwrap_or_else(|e| {
+                    panic!("milestone-132 SPDX id {spdx_id:?} fails try_canonical: {e}");
+                });
+        }
     }
 
     #[test]

@@ -164,7 +164,7 @@
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-HM3DQDMJPT5KFAFVBG7IU6ZF/anno-2DEIETI47XBGIFKE",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/apk/synthetic/lib/apk/db/installed\"]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"lib/apk/db/installed\"]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-HM3DQDMJPT5KFAFVBG7IU6ZF/pkg-NJ6CH7QTZDKJ74FQ",
       "type": "Annotation"
     },
@@ -260,7 +260,7 @@
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-HM3DQDMJPT5KFAFVBG7IU6ZF/anno-YROXVDJWEEVB7HOU",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/apk/synthetic/lib/apk/db/installed\"]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"lib/apk/db/installed\"]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-HM3DQDMJPT5KFAFVBG7IU6ZF/pkg-DHDBA3PTGCIRJAUV",
       "type": "Annotation"
     }

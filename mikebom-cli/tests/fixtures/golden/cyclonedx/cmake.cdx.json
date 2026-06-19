@@ -21,7 +21,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/cmake/cmake/third_party.cmake"
+          "value": "[\"cmake/third_party.cmake\"]"
         },
         {
           "name": "mikebom:sbom-tier",
@@ -61,7 +61,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/cmake/CMakeLists.txt"
+          "value": "[\"CMakeLists.txt\"]"
         },
         {
           "name": "mikebom:sbom-tier",
@@ -100,7 +100,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/cmake/CMakeLists.txt"
+          "value": "[\"CMakeLists.txt\"]"
         },
         {
           "name": "mikebom:sbom-tier",

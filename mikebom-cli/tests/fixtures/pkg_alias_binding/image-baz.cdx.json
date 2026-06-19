@@ -21,7 +21,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<IMAGE_EXTRACT_DIR>/rootfs/usr/local/bin/baz"
+          "value": "[\"usr/local/bin/baz\"]"
         },
         {
           "name": "mikebom:sbom-tier",

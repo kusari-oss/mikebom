@@ -321,7 +321,7 @@
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-VO7CUVBF6TLRTW5PYKFJD3PU/anno-IVZUZHMAHBJMQAOE",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/maven/pom-three-deps/pom.xml\"]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"pom.xml\"]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-VO7CUVBF6TLRTW5PYKFJD3PU/pkg-BE4OZRGHG4BEYMYQ",
       "type": "Annotation"
     },
@@ -409,7 +409,7 @@
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-VO7CUVBF6TLRTW5PYKFJD3PU/anno-V4DXVPBRR2XEMZG4",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/maven/pom-three-deps/pom.xml\"]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"pom.xml\"]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-VO7CUVBF6TLRTW5PYKFJD3PU/pkg-MVONQLC7NTCYCDSJ",
       "type": "Annotation"
     },
@@ -433,7 +433,7 @@
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-VO7CUVBF6TLRTW5PYKFJD3PU/anno-YC6VEFO5GKW6X6DX",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/maven/pom-three-deps/pom.xml\"]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"pom.xml\"]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-VO7CUVBF6TLRTW5PYKFJD3PU/pkg-B7B65U5T2YH5ZD5T",
       "type": "Annotation"
     }

@@ -146,6 +146,7 @@ Auto-generated from all feature plans. Last updated: 2026-06-19
 - Rust stable (workspace toolchain inherited from milestones 001–130; no + Existing only — `object = "0.36"` (workspace; reused for the US1 (131-quality-metadata-backfill)
 - Rust stable (workspace toolchain inherited from milestones 001–131; + Existing only — `serde`/`serde_json` (CDX/SPDX JSON I/O), (132-sc-closeout)
 - N/A — all state in-process per scan. The deps.dev enrichment client uses (132-sc-closeout)
+- Rust stable (workspace toolchain inherited from milestones + Existing only — `walkdir` is NOT used per (133-file-tier-components)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -208,9 +209,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 133-file-tier-components: Added Rust stable (workspace toolchain inherited from milestones + Existing only — `walkdir` is NOT used per
 - 132-sc-closeout: Added Rust stable (workspace toolchain inherited from milestones 001–131; + Existing only — `serde`/`serde_json` (CDX/SPDX JSON I/O),
 - 131-quality-metadata-backfill: Added Rust stable (workspace toolchain inherited from milestones 001–130; no + Existing only — `object = "0.36"` (workspace; reused for the US1
-- 130-binary-tier-completion: Added Rust stable (workspace toolchain inherited from milestones 001–129; no nightly + Existing only — `object = "0.36"` (workspace; ELF section reading for the
 
 
 <!-- MANUAL ADDITIONS START -->

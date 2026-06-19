@@ -751,13 +751,21 @@ impl CycloneDxBuilder {
             }
 
             // Include source file paths if configured and present.
-            if self.config.include_source_files
-                && !component.evidence.source_file_paths.is_empty()
-            {
-                properties.push(json!({
-                    "name": "mikebom:source-files",
-                    "value": component.evidence.source_file_paths.join(", ")
-                }));
+            // Milestone 133 US2.1 (FR-012 Defect B): emit as JSON array
+            // instead of pre-133's comma-separated string. Path
+            // normalization (Defects A + C — rootfs-prefix-strip and
+            // leading-`/`-strip) is done at source-population time in
+            // `scan_fs::mod.rs`, so consumers here just serialize the
+            // already-clean `source_file_paths` Vec.
+            if self.config.include_source_files {
+                if let Some(value) = crate::scan_fs::sbom_path::source_files_as_json_array(
+                    &component.evidence.source_file_paths,
+                ) {
+                    properties.push(json!({
+                        "name": "mikebom:source-files",
+                        "value": value,
+                    }));
+                }
             }
 
             // Milestone 052: `mikebom:lifecycle-scope` property carrying

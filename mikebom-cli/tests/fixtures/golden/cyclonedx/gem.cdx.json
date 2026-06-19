@@ -22,7 +22,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/gem/simple-bundle/Gemfile.lock"
+          "value": "[\"Gemfile.lock\"]"
         },
         {
           "name": "mikebom:sbom-tier",
@@ -57,7 +57,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/gem/simple-bundle/Gemfile.lock"
+          "value": "[\"Gemfile.lock\"]"
         },
         {
           "name": "mikebom:sbom-tier",
@@ -92,7 +92,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/gem/simple-bundle/Gemfile.lock"
+          "value": "[\"Gemfile.lock\"]"
         },
         {
           "name": "mikebom:sbom-tier",
@@ -127,7 +127,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/gem/simple-bundle/Gemfile.lock"
+          "value": "[\"Gemfile.lock\"]"
         },
         {
           "name": "mikebom:sbom-tier",
@@ -162,7 +162,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/gem/simple-bundle/Gemfile.lock"
+          "value": "[\"Gemfile.lock\"]"
         },
         {
           "name": "mikebom:sbom-tier",
@@ -197,7 +197,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/gem/simple-bundle/Gemfile.lock"
+          "value": "[\"Gemfile.lock\"]"
         },
         {
           "name": "mikebom:sbom-tier",
@@ -232,7 +232,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/gem/simple-bundle/Gemfile.lock"
+          "value": "[\"Gemfile.lock\"]"
         },
         {
           "name": "mikebom:sbom-tier",
@@ -267,7 +267,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/gem/simple-bundle/Gemfile.lock"
+          "value": "[\"Gemfile.lock\"]"
         },
         {
           "name": "mikebom:sbom-tier",
@@ -302,7 +302,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/gem/simple-bundle/Gemfile.lock"
+          "value": "[\"Gemfile.lock\"]"
         },
         {
           "name": "mikebom:sbom-tier",
@@ -337,7 +337,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/gem/simple-bundle/Gemfile.lock"
+          "value": "[\"Gemfile.lock\"]"
         },
         {
           "name": "mikebom:source-type",
@@ -376,7 +376,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/gem/simple-bundle/Gemfile.lock"
+          "value": "[\"Gemfile.lock\"]"
         },
         {
           "name": "mikebom:source-type",
@@ -415,7 +415,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/gem/simple-bundle/Gemfile.lock"
+          "value": "[\"Gemfile.lock\"]"
         },
         {
           "name": "mikebom:sbom-tier",
@@ -450,7 +450,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/gem/simple-bundle/Gemfile.lock"
+          "value": "[\"Gemfile.lock\"]"
         },
         {
           "name": "mikebom:sbom-tier",
@@ -485,7 +485,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/gem/simple-bundle/Gemfile.lock"
+          "value": "[\"Gemfile.lock\"]"
         },
         {
           "name": "mikebom:sbom-tier",
@@ -520,7 +520,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/gem/simple-bundle/Gemfile.lock"
+          "value": "[\"Gemfile.lock\"]"
         },
         {
           "name": "mikebom:sbom-tier",
@@ -555,7 +555,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/gem/simple-bundle/Gemfile.lock"
+          "value": "[\"Gemfile.lock\"]"
         },
         {
           "name": "mikebom:sbom-tier",
@@ -590,7 +590,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/gem/simple-bundle/Gemfile.lock"
+          "value": "[\"Gemfile.lock\"]"
         },
         {
           "name": "mikebom:sbom-tier",

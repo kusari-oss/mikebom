@@ -7,6 +7,27 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### Fix: `RepoTags: null` in `docker save` manifest crashed image scans
+
+`mikebom sbom scan --image <registry>@sha256:<digest>` failed with
+`parsing manifest.json: invalid type: null, expected a sequence at line 1 column 106`
+when the source image had been pulled by digest without a tag — `docker save` then
+writes `"RepoTags": null` (a present field with a literal null value), which the
+`Vec<String>` field with `#[serde(default)]` did NOT tolerate (the `default`
+attribute only catches *missing* fields, not present-but-null ones). Discovered
+during milestone-132 MVP SC verification when scanning the audit baseline by its
+pinned `@sha256:` digest.
+
+The fix is one type change in `scan_fs/docker_image.rs::DockerManifestEntry`:
+`repo_tags: Vec<String>` → `repo_tags: Option<Vec<String>>`, plus
+`unwrap_or_default()` at the single use-site. Both null and absent now resolve to
+"no tag carried in the manifest." Three new focused deserializer tests cover the
+null, missing, and populated RepoTags states so the regression cannot silently
+return.
+
+Pre-fix workaround (no longer needed): `docker tag <registry>@<digest> <local-tag>`
+before scanning. Going forward, scanning digest-pinned images works directly.
+
 ### Stripped-Informational version annotation for syft-parity comparisons (milestone 132 US2)
 
 **Discrete deliverable**: implements FR-008 (companion annotation emission). **Does NOT

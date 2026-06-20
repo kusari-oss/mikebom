@@ -173,12 +173,19 @@ pub(crate) struct WalkConfig<'a> {
 ///   posture).
 pub(crate) fn safe_walk<F: FnMut(&Path)>(rootfs: &Path, cfg: &WalkConfig, mut visit: F) {
     let mut visited: HashSet<PathBuf> = HashSet::new();
-    walk_inner(rootfs, rootfs, 0, cfg, &mut visit, &mut visited);
+    // Canonicalize once. Used by `walk_inner` to enforce the rootfs
+    // sandbox: any child dir whose canonical form falls outside this
+    // prefix is rejected, preventing absolute symlinks inside an
+    // extracted image rootfs (e.g. alpine's `/var/run -> /run`) from
+    // pulling host filesystem content into the SBOM. Issue #396.
+    let canonical_rootfs = std::fs::canonicalize(rootfs).unwrap_or_else(|_| rootfs.to_path_buf());
+    walk_inner(rootfs, rootfs, &canonical_rootfs, 0, cfg, &mut visit, &mut visited);
 }
 
 fn walk_inner<F: FnMut(&Path)>(
     dir: &Path,
     rootfs: &Path,
+    canonical_rootfs: &Path,
     depth: usize,
     cfg: &WalkConfig,
     visit: &mut F,
@@ -241,7 +248,39 @@ fn walk_inner<F: FnMut(&Path)>(
                 }
             }
         }
-        walk_inner(&path, rootfs, depth + 1, cfg, visit, visited);
+        // Issue #396 — sandbox enforcement: refuse to follow a directory
+        // whose canonical form escapes the rootfs. Without this check
+        // an absolute symlink inside the extracted image (e.g.
+        // alpine's `var/run -> /run`) silently pulls the host
+        // filesystem's content into the SBOM. The canonicalize call
+        // resolves the FULL symlink chain on every descent; if it
+        // returns an error (broken / dangling symlink, permission
+        // denied), the entry is rejected — safer than the fail-open
+        // tolerance policy elsewhere in this function because the
+        // alternative is leaking host content.
+        match std::fs::canonicalize(&path) {
+            Ok(canonical_child) => {
+                if !canonical_child.starts_with(canonical_rootfs) {
+                    tracing::debug!(
+                        candidate = %path.display(),
+                        canonical = %canonical_child.display(),
+                        rootfs = %canonical_rootfs.display(),
+                        cause = "rootfs-sandbox-escape",
+                        "safe_walk: refusing to follow symlink that escapes the rootfs"
+                    );
+                    continue;
+                }
+            }
+            Err(_) => {
+                tracing::debug!(
+                    candidate = %path.display(),
+                    cause = "canonicalize-failed",
+                    "safe_walk: cannot canonicalize directory; skipping"
+                );
+                continue;
+            }
+        }
+        walk_inner(&path, rootfs, canonical_rootfs, depth + 1, cfg, visit, visited);
     }
 }
 
@@ -592,6 +631,89 @@ mod tests {
         assert!(
             !*saw_inside.borrow(),
             "pattern match suppresses descent into the matched subtree"
+        );
+    }
+
+    /// Issue #396 — `safe_walk` MUST NOT follow an absolute symlink
+    /// that escapes the rootfs sandbox. Reproduces the alpine
+    /// `/var/run -> /run` case that pulled the operator's host
+    /// filesystem (Nix-managed `/var/run/current-system/sw/bin/...`)
+    /// into every image-scan SBOM.
+    #[cfg(unix)]
+    #[test]
+    fn rootfs_sandbox_blocks_absolute_symlink_escape() {
+        // Build a tempdir tree:
+        //   <tmp>/rootfs/in_sandbox/   (a real dir inside the sandbox)
+        //   <tmp>/rootfs/escape   ->   <tmp>/host/sentinel  (an absolute symlink that points outside)
+        //   <tmp>/host/sentinel/poison  (a child file the walker MUST NOT visit)
+        let tmp = tempfile::tempdir().unwrap();
+        let rootfs = tmp.path().join("rootfs");
+        let host_target = tmp.path().join("host/sentinel");
+        std::fs::create_dir_all(rootfs.join("in_sandbox")).unwrap();
+        std::fs::create_dir_all(&host_target).unwrap();
+        std::fs::write(host_target.join("poison"), b"host content").unwrap();
+        // Canonicalize the target path so the symlink uses an absolute
+        // path the way image rootfs symlinks do (`var/run -> /run`).
+        let host_target_canonical = std::fs::canonicalize(&host_target).unwrap();
+        std::os::unix::fs::symlink(&host_target_canonical, rootfs.join("escape")).unwrap();
+
+        let set = ExclusionSet::new_empty();
+        let skip = no_skip();
+        let cfg = WalkConfig {
+            max_depth: 6,
+            should_skip: &skip,
+            exclude_set: &set,
+        };
+        let saw_in_sandbox = RefCell::new(false);
+        let saw_poison = RefCell::new(false);
+        safe_walk(&rootfs, &cfg, |p| {
+            if p.file_name().and_then(|s| s.to_str()) == Some("in_sandbox") {
+                *saw_in_sandbox.borrow_mut() = true;
+            }
+            if p.file_name().and_then(|s| s.to_str()) == Some("poison") {
+                *saw_poison.borrow_mut() = true;
+            }
+        });
+        assert!(
+            *saw_in_sandbox.borrow(),
+            "real directory inside the sandbox must still be visited"
+        );
+        assert!(
+            !*saw_poison.borrow(),
+            "safe_walk MUST NOT follow an absolute symlink out of the rootfs (issue #396 regression)"
+        );
+    }
+
+    /// Issue #396 follow-up — relative symlinks that resolve to a
+    /// path STILL UNDER the rootfs are followed normally. The escape
+    /// guard only fires on absolute / parent-traversal symlinks that
+    /// land outside the rootfs canonical prefix.
+    #[cfg(unix)]
+    #[test]
+    fn rootfs_sandbox_allows_in_sandbox_symlinks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let rootfs = tmp.path().join("rootfs");
+        std::fs::create_dir_all(rootfs.join("real")).unwrap();
+        std::fs::write(rootfs.join("real/inside-file"), b"inside").unwrap();
+        // Relative symlink that stays under the rootfs.
+        std::os::unix::fs::symlink("real", rootfs.join("alias")).unwrap();
+
+        let set = ExclusionSet::new_empty();
+        let skip = no_skip();
+        let cfg = WalkConfig {
+            max_depth: 6,
+            should_skip: &skip,
+            exclude_set: &set,
+        };
+        let saw_inside = RefCell::new(false);
+        safe_walk(&rootfs, &cfg, |p| {
+            if p.file_name().and_then(|s| s.to_str()) == Some("inside-file") {
+                *saw_inside.borrow_mut() = true;
+            }
+        });
+        assert!(
+            *saw_inside.borrow(),
+            "in-sandbox relative symlink must be followed normally"
         );
     }
 }

@@ -1,4 +1,5 @@
 mikebom-cli/src/scan_fs/binary/source_binding/cmake_observer.rs:fn walk_for_cmake_build_dirs(
+mikebom-cli/src/scan_fs/file_tier/walker.rs:pub(crate) fn walk_file_tier(
 mikebom-cli/src/scan_fs/package_db/maven.rs:    fn walk_fat_jar_collects_one_meta_per_vendored_artifact() {
 mikebom-cli/src/scan_fs/package_db/maven.rs:    fn walk_fat_jar_only_primary_coord_gets_archive_sha256() {
 mikebom-cli/src/scan_fs/package_db/maven.rs:    fn walk_jar_attaches_sidecar_hash_when_present() {

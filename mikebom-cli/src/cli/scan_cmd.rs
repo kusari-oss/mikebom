@@ -2240,6 +2240,17 @@ pub async fn execute(
         None
     };
 
+    // Milestone 133 US2.2 (FR-013): stamp `mikebom:layer-digest` on every
+    // component whose `evidence.source_file_paths[0]` matches a path the
+    // OCI layer extractor recorded. No-op for non-image scans (path map
+    // is `None`). Must run AFTER component resolution + all annotations
+    // + path normalization (PR US2.1) so the lookup-keys agree with the
+    // layer-map keys (both rootfs-relative, no leading `/`).
+    scan_fs::tag_components_with_layer_digest(
+        &mut components,
+        _extracted.as_ref().map(|e| &e.layer_path_map),
+    );
+
     // Build the neutral artifacts bundle once and hand it to every
     // serializer the user requested — the single-pass guarantee of
     // FR-004 / SC-009.

@@ -785,6 +785,44 @@ fn tag_main_modules_with_workspace_root(
     }
 }
 
+/// Milestone 133 US2.2 (FR-013): stamp `mikebom:layer-digest` on every
+/// component whose source path (first entry of `evidence.source_file_paths`)
+/// appears in the OCI image's path → layer-digest map. The map is built
+/// by `scan_fs::docker_image::extract` during layer extraction and
+/// captures later-layer-wins overlay semantics.
+///
+/// Only emitted for image scans (`--image`). Non-image scans (`--path`)
+/// pass `None` for `layer_path_map`, and the function is a no-op.
+///
+/// The annotation goes into `extra_annotations`; the existing CDX +
+/// SPDX 2.3 + SPDX 3 emission paths iterate that bag and emit the
+/// annotation under the same key in all three formats (validated by
+/// the `holistic_parity` test under the C-row's `SymmetricEqual`
+/// directionality).
+pub fn tag_components_with_layer_digest(
+    components: &mut [mikebom_common::resolution::ResolvedComponent],
+    layer_path_map: Option<&std::collections::HashMap<String, String>>,
+) {
+    let Some(map) = layer_path_map else {
+        return;
+    };
+    for c in components.iter_mut() {
+        // First entry of source_file_paths is the canonical "where did
+        // the reader identify this component from" path. After
+        // milestone-133 PR US2.1 these paths are rootfs-relative with no
+        // leading `/`, matching the keys in the layer map.
+        let Some(source_path) = c.evidence.source_file_paths.first() else {
+            continue;
+        };
+        if let Some(digest) = map.get(source_path.as_str()) {
+            c.extra_annotations.insert(
+                "mikebom:layer-digest".to_string(),
+                serde_json::Value::String(digest.clone()),
+            );
+        }
+    }
+}
+
 /// Milestone 127 FR-012 implementation. When a Maven main-module
 /// component exists whose PURL matches the JAR walker's
 /// `scan_target_coord`, return `None` (suppress the duplicate
@@ -1630,5 +1668,101 @@ Architecture: amd64
         assert_eq!(key, "clap_builder 4.5.21");
         // Idempotent: applying again is a no-op.
         assert_eq!(normalize_dep_name("cargo", &key), key);
+    }
+
+    // ============================================================
+    // Milestone 133 US2.2 — tag_components_with_layer_digest tests.
+    // ============================================================
+
+    fn make_component(source_path: &str) -> mikebom_common::resolution::ResolvedComponent {
+        use mikebom_common::resolution::{
+            ResolutionEvidence, ResolutionTechnique, ResolvedComponent,
+        };
+        let purl = mikebom_common::types::purl::Purl::new("pkg:cargo/test@1.0.0").unwrap();
+        ResolvedComponent {
+            build_inclusion: None,
+            name: purl.name().to_string(),
+            version: purl.version().unwrap_or("0.0.0").to_string(),
+            purl,
+            evidence: ResolutionEvidence {
+                technique: ResolutionTechnique::PackageDatabase,
+                confidence: 0.9,
+                source_connection_ids: vec![],
+                source_file_paths: vec![source_path.to_string()],
+                deps_dev_match: None,
+            },
+            licenses: vec![],
+            concluded_licenses: Vec::new(),
+            hashes: vec![],
+            supplier: None,
+            cpes: vec![],
+            advisories: vec![],
+            occurrences: vec![],
+            lifecycle_scope: None,
+            requirement_range: None,
+            source_type: None,
+            sbom_tier: None,
+            buildinfo_status: None,
+            evidence_kind: None,
+            binary_class: None,
+            binary_stripped: None,
+            linkage_kind: None,
+            detected_go: None,
+            confidence: None,
+            binary_packed: None,
+            npm_role: None,
+            raw_version: None,
+            parent_purl: None,
+            co_owned_by: None,
+            shade_relocation: None,
+            external_references: Vec::new(),
+            extra_annotations: Default::default(),
+            binary_role: None,
+        }
+    }
+
+    #[test]
+    fn tag_layer_digest_stamps_when_source_path_matches() {
+        let mut map = std::collections::HashMap::new();
+        map.insert(
+            "lib/apk/db/installed".to_string(),
+            "sha256:abc123".to_string(),
+        );
+        let mut comps = vec![make_component("lib/apk/db/installed")];
+        tag_components_with_layer_digest(&mut comps, Some(&map));
+        assert_eq!(
+            comps[0]
+                .extra_annotations
+                .get("mikebom:layer-digest")
+                .and_then(|v| v.as_str()),
+            Some("sha256:abc123"),
+        );
+    }
+
+    #[test]
+    fn tag_layer_digest_skips_when_path_not_in_map() {
+        let map = std::collections::HashMap::new();
+        let mut comps = vec![make_component("unattributed/path")];
+        tag_components_with_layer_digest(&mut comps, Some(&map));
+        assert!(!comps[0].extra_annotations.contains_key("mikebom:layer-digest"));
+    }
+
+    #[test]
+    fn tag_layer_digest_no_op_when_map_is_none() {
+        // Non-image scans pass `None` — function should be a no-op.
+        let mut comps = vec![make_component("any/path")];
+        tag_components_with_layer_digest(&mut comps, None);
+        assert!(!comps[0].extra_annotations.contains_key("mikebom:layer-digest"));
+    }
+
+    #[test]
+    fn tag_layer_digest_skips_components_with_no_source_path() {
+        let mut map = std::collections::HashMap::new();
+        map.insert("foo".to_string(), "sha256:abc".to_string());
+        let mut comp = make_component("foo");
+        comp.evidence.source_file_paths.clear();
+        let mut comps = vec![comp];
+        tag_components_with_layer_digest(&mut comps, Some(&map));
+        assert!(!comps[0].extra_annotations.contains_key("mikebom:layer-digest"));
     }
 }

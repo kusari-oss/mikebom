@@ -44,6 +44,10 @@
           "value": "none"
         },
         {
+          "name": "mikebom:layer-digest",
+          "value": "sha256:c175c9e34aca692d431c1460b2875bfe0e014a1c7614c7ac5023f549c8de87f9"
+        },
+        {
           "name": "mikebom:source-document-binding",
           "value": "{\"algo\":\"v1\",\"reason\":\"source-not-found-in-bind-target\",\"source_doc_id\":{\"iri\":\"<WORKSPACE>/mikebom-cli/tests/fixtures/pkg_alias_binding/source-baz.cdx.json\",\"sha256\":\"77f8f8a7c3cdfb462d1db32380dda41236e0064872d15120992e9166081dd1b6\"},\"strength\":\"unknown\"}"
         }

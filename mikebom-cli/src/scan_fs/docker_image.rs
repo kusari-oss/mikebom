@@ -224,7 +224,28 @@ fn extract_layer_over_rootfs(layer_bytes: &[u8], rootfs: &Path) -> Result<Vec<St
     let mut opaque_dirs: HashSet<PathBuf> = HashSet::new();
     for entry in archive.entries()? {
         let e = entry?;
-        let path = e.path()?.into_owned();
+        let raw_path = e.path()?.into_owned();
+        // Issue #399 — apply the same path-traversal defenses to
+        // whiteout entries as the regular-file unpack loop below.
+        // Without this, a malicious image with a `.wh.` entry like
+        // `../../tmp/.wh.evicted` would have the cleanup loop call
+        // `fs::remove_dir_all` / `fs::remove_file` on
+        // `<rootfs>/../../tmp/evicted` — a delete primitive on
+        // paths outside the extraction tempdir. Treatment is
+        // identical to L312-L320: strip leading `/`, reject any
+        // `..` component.
+        let path = if raw_path.is_absolute() {
+            raw_path.strip_prefix("/").unwrap_or(&raw_path).to_path_buf()
+        } else {
+            raw_path
+        };
+        if path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+            tracing::debug!(
+                path = %path.display(),
+                "skipping unsafe whiteout entry (parent-dir escape)"
+            );
+            continue;
+        }
         let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
             continue;
         };
@@ -824,6 +845,88 @@ mod tests {
         assert_eq!(
             target_bytes, link_bytes,
             "hardlink contents must match target"
+        );
+    }
+
+    /// Issue #399 — hand-write a single-entry ustar tar containing a
+    /// `..`-bearing path. The `tar` crate's `Header::set_path`
+    /// rejects `..` at the writer API (safe-by-default), so a
+    /// malicious tarball can only be simulated by writing the raw
+    /// 512-byte header bytes directly. Returns a complete tar stream
+    /// (header + two trailing zero blocks).
+    fn build_unsafe_tar_with_path(name: &[u8]) -> Vec<u8> {
+        assert!(name.len() <= 100, "ustar name field is 100 bytes max");
+        let mut header = [0u8; 512];
+        header[..name.len()].copy_from_slice(name);
+        // mode = 0644 → "0000644\0"
+        header[100..108].copy_from_slice(b"0000644\0");
+        // uid + gid = "0000000\0"
+        header[108..116].copy_from_slice(b"0000000\0");
+        header[116..124].copy_from_slice(b"0000000\0");
+        // size = 0 → "00000000000\0"
+        header[124..136].copy_from_slice(b"00000000000\0");
+        // mtime = 0
+        header[136..148].copy_from_slice(b"00000000000\0");
+        // checksum field: 8 spaces during the calc, then ASCII octal + space + NUL
+        header[148..156].copy_from_slice(b"        ");
+        // typeflag = '0' (regular file)
+        header[156] = b'0';
+        // magic: ustar with two-space version
+        header[257..263].copy_from_slice(b"ustar ");
+        header[263..265].copy_from_slice(b" \0");
+        // Compute checksum (sum of all 512 header bytes, treating
+        // the checksum field as spaces).
+        let cksum: u32 = header.iter().map(|b| *b as u32).sum();
+        let cksum_str = format!("{cksum:06o}\0 ");
+        header[148..156].copy_from_slice(cksum_str.as_bytes());
+
+        let mut buf = Vec::with_capacity(512 * 3);
+        buf.extend_from_slice(&header);
+        // Two 512-byte zero blocks signal end-of-archive.
+        buf.extend_from_slice(&[0u8; 512]);
+        buf.extend_from_slice(&[0u8; 512]);
+        buf
+    }
+
+    /// Issue #399 — a malicious image with a whiteout entry whose
+    /// path contains `..` MUST NOT cause `extract_layer_over_rootfs`
+    /// to delete files outside the extraction tempdir. Pre-#399 the
+    /// whiteout collection loop accepted the entry path as-is, and
+    /// the cleanup loop's `rootfs.join(<wh-path>)` + `fs::remove_*`
+    /// resolved `..` during the stat call — granting a malicious
+    /// image a delete primitive on the operator's host filesystem.
+    #[test]
+    fn whiteout_with_parent_dir_escape_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        // Layout:
+        //   <tmp>/rootfs/         (extraction sandbox)
+        //   <tmp>/host-area/sentinel  (a host file the attacker wants to delete)
+        let rootfs = dir.path().join("rootfs");
+        let host_area = dir.path().join("host-area");
+        std::fs::create_dir_all(&rootfs).unwrap();
+        std::fs::create_dir_all(&host_area).unwrap();
+        let sentinel = host_area.join("sentinel");
+        std::fs::write(&sentinel, b"important host content").unwrap();
+
+        // Build a tar containing a whiteout entry whose path uses
+        // `..` to escape the rootfs:
+        //   ../host-area/.wh.sentinel
+        // Pre-#399, this would resolve at cleanup time to
+        //   <rootfs>/../host-area/sentinel = <tmp>/host-area/sentinel
+        // and the file would be deleted by `fs::remove_file`.
+        //
+        // The `tar` crate's `Header::set_path` rejects `..` at the
+        // writer API (safe-by-default). To simulate a malicious
+        // tarball we write the 512-byte ustar header bytes directly.
+        let buf = build_unsafe_tar_with_path(b"../host-area/.wh.sentinel");
+
+        // Extraction should complete cleanly — the unsafe whiteout
+        // is silently dropped, not propagated.
+        extract_layer_over_rootfs(&buf, &rootfs).unwrap();
+
+        assert!(
+            sentinel.is_file(),
+            "host sentinel file must still exist after extracting a malicious whiteout (#399 regression)"
         );
     }
 

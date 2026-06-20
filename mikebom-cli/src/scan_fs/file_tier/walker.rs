@@ -1,4 +1,4 @@
-#![allow(dead_code)] // US1.A scaffolding; US1.B wires every entry point in.
+#![allow(dead_code)] // lifted by scan_cmd wiring at the bottom of this PR.
 
 //! Milestone 133 US1 — orphan file-tier walker.
 //!

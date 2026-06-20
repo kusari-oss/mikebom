@@ -772,6 +772,55 @@ where
     out
 }
 
+/// Issue #364 — build a `stdlib` `PackageDbEntry` for a Go project
+/// whose go.mod declares `go <version>`. `bare_version` is the
+/// pre-stripped version string (no `v`/`go` prefix; e.g. `"1.21.5"`).
+/// The PURL takes the canonical syft shape
+/// (`pkg:golang/stdlib@v<version>`). Returns `None` if the version
+/// string can't be parsed into a valid PURL.
+fn build_stdlib_entry(
+    bare_version: &str,
+    source_path: &str,
+) -> Option<PackageDbEntry> {
+    let bare = bare_version;
+    let purl_str = format!("pkg:golang/stdlib@v{bare}");
+    let purl = match mikebom_common::types::purl::Purl::new(&purl_str) {
+        Ok(p) => p,
+        Err(_) => return None,
+    };
+    Some(PackageDbEntry {
+        build_inclusion: None,
+        purl,
+        name: "stdlib".to_string(),
+        version: format!("v{bare}"),
+        arch: None,
+        source_path: source_path.to_string(),
+        depends: Vec::new(),
+        maintainer: None,
+        licenses: Vec::new(),
+        lifecycle_scope: None,
+        requirement_range: None,
+        source_type: None,
+        buildinfo_status: None,
+        evidence_kind: None,
+        binary_class: None,
+        binary_stripped: None,
+        linkage_kind: None,
+        detected_go: None,
+        confidence: None,
+        binary_packed: None,
+        raw_version: None,
+        parent_purl: None,
+        npm_role: None,
+        co_owned_by: None,
+        hashes: Vec::new(),
+        sbom_tier: Some("source".to_string()),
+        shade_relocation: None,
+        extra_annotations: Default::default(),
+        binary_role: None,
+    })
+}
+
 /// Fetch a module's own go.mod from `cache` and return its direct
 /// `require`-d module names. Indirect entries are included (we can't
 /// tell post-hoc which of the upstream module's deps ended up in the
@@ -1942,6 +1991,43 @@ pub fn read(
             signals.graph_completeness_reasons = reason_classes.into_iter().collect();
         }
     }
+
+    // Issue #364 — emit a `stdlib` component per unique Go version seen
+    // across all parsed go.mod files. Runs AFTER every Go-specific
+    // classifier (mod-why, orphan-reason, graph-completeness) so the
+    // stdlib entry isn't misclassified by analyzers that key on
+    // import-graph reachability (stdlib has no go.sum entry / no
+    // upstream module-path in the user's go.mod graph, so the
+    // classifiers would falsely flag it as "not needed" or "orphan
+    // flat-attached"). Matches syft's `pkg:golang/stdlib@v<version>`
+    // emission shape so consumers can match either tool's stdlib CVEs
+    // (e.g. CVE-2024-34156 big.Int overflow) against the CPE
+    // `cpe:2.3:a:golang:go:<version>:*:*:*:*:*:*:*`.
+    let mut emitted_versions: HashSet<String> = HashSet::new();
+    for (project_root, doc, _sums) in &parsed_roots {
+        let Some(go_version) = doc.go_version.as_deref() else {
+            continue;
+        };
+        let bare = go_version
+            .trim()
+            .trim_start_matches('v')
+            .trim_start_matches("go");
+        if bare.is_empty() || !emitted_versions.insert(bare.to_string()) {
+            continue;
+        }
+        let go_sum_path = project_root.join("go.sum");
+        let source_path_for_evidence = if go_sum_path.is_file() {
+            go_sum_path
+                .to_string_lossy()
+                .into_owned()
+        } else {
+            project_root.join("go.mod").to_string_lossy().into_owned()
+        };
+        if let Some(entry) = build_stdlib_entry(bare, &source_path_for_evidence) {
+            out.push(entry);
+        }
+    }
+
     (out, signals)
 }
 

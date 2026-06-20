@@ -631,6 +631,44 @@
       },
       "type": "library",
       "version": "v3.0.1"
+    },
+    {
+      "bom-ref": "pkg:golang/stdlib@v1.26.1",
+      "cpe": "cpe:2.3:a:golang:go:1.26.1:*:*:*:*:*:*:*",
+      "evidence": {
+        "identity": [
+          {
+            "confidence": 0.85,
+            "field": "purl",
+            "methods": [
+              {
+                "confidence": 0.85,
+                "technique": "manifest-analysis"
+              }
+            ]
+          }
+        ],
+        "occurrences": [
+          {
+            "additionalContext": "{\"sha256\":\"9aded8247f7273dbceae5c01267f4c191edeaad5d26464d6fcc6cedadcd566be\"}",
+            "location": "go.sum"
+          }
+        ]
+      },
+      "name": "stdlib",
+      "properties": [
+        {
+          "name": "mikebom:source-files",
+          "value": "[\"go.sum\"]"
+        },
+        {
+          "name": "mikebom:sbom-tier",
+          "value": "source"
+        }
+      ],
+      "purl": "pkg:golang/stdlib@v1.26.1",
+      "type": "library",
+      "version": "v1.26.1"
     }
   ],
   "compositions": [
@@ -648,7 +686,8 @@
         "pkg:golang/github.com/stretchr/testify@v1.11.1",
         "pkg:golang/golang.org/x/sys@v0.28.0",
         "pkg:golang/gopkg.in/check.v1@v0.0.0-20161208181325-20d25e280405",
-        "pkg:golang/gopkg.in/yaml.v3@v3.0.1"
+        "pkg:golang/gopkg.in/yaml.v3@v3.0.1",
+        "pkg:golang/stdlib@v1.26.1"
       ],
       "dependencies": [
         "pkg:golang/example.com/simple@v0.0.0-unknown",
@@ -662,7 +701,8 @@
         "pkg:golang/github.com/stretchr/testify@v1.11.1",
         "pkg:golang/golang.org/x/sys@v0.28.0",
         "pkg:golang/gopkg.in/check.v1@v0.0.0-20161208181325-20d25e280405",
-        "pkg:golang/gopkg.in/yaml.v3@v3.0.1"
+        "pkg:golang/gopkg.in/yaml.v3@v3.0.1",
+        "pkg:golang/stdlib@v1.26.1"
       ]
     },
     {
@@ -738,6 +778,10 @@
     {
       "dependsOn": [],
       "ref": "pkg:golang/gopkg.in/yaml.v3@v3.0.1"
+    },
+    {
+      "dependsOn": [],
+      "ref": "pkg:golang/stdlib@v1.26.1"
     }
   ],
   "metadata": {

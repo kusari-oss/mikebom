@@ -1086,6 +1086,14 @@ fn apply_go_mod_why_verdicts(
         {
             continue;
         }
+        // Issue #364 — the synthetic `pkg:golang/stdlib@v<version>`
+        // component is always present in the production build by
+        // definition. Skip mod-why classification (which would query
+        // `go mod why stdlib` and get back "not-needed" because stdlib
+        // isn't tracked in the user's import graph).
+        if e.name == "stdlib" {
+            continue;
+        }
         if e.build_inclusion.is_some() {
             continue;
         }

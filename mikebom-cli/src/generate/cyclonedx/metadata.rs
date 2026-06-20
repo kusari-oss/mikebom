@@ -582,12 +582,16 @@ pub fn build_metadata(
         }
         // Propagate `mikebom:source-files` (C18) from the main-module's
         // evidence so the parity-extractor framework finds the go.mod
-        // path on the CDX side, matching the SPDX `packages[]`
-        // emission.
-        if !c.evidence.source_file_paths.is_empty() {
+        // path on the CDX side, matching the SPDX `packages[]` emission.
+        // Milestone 133 US2.1 (FR-012 Defect B): JSON-array serialization
+        // (paths arrive pre-normalized from the source-population sites
+        // in `scan_fs::mod.rs`).
+        if let Some(value) = crate::scan_fs::sbom_path::source_files_as_json_array(
+            &c.evidence.source_file_paths,
+        ) {
             comp_props.push(json!({
                 "name": "mikebom:source-files",
-                "value": c.evidence.source_file_paths.join(", "),
+                "value": value,
             }));
         }
         // Propagate `mikebom:detected-go` (C14) — true for any Go

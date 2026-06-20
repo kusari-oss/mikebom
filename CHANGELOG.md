@@ -7,6 +7,63 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### Fix: `mikebom:source-files` defects on CycloneDX emission (milestone 133 US2.1)
+
+Three defects discovered during milestone-133 US2 implementation prep on the
+existing `mikebom:source-files` property (pre-dates milestone 133):
+
+- **Defect A — rootfs/tempdir prefix leak**: image scans emitted values like
+  `/private/var/folders/dz/.../mikebom-image-XXXXXX/rootfs/usr/bin/curl`,
+  leaking the macOS tempdir into SBOMs and making outputs non-deterministic
+  across runs.
+- **Defect B — comma-separated string vs JSON array**: emitted as `"a, b"`
+  instead of `["a","b"]`, preventing reliable parsing of multi-path components.
+- **Defect C — leading `/`**: paths kept the leading slash, disagreeing with
+  the no-leading-`/` convention milestone 133 establishes for path properties.
+
+This PR fixes **all three defects across all three SBOM formats** (CDX, SPDX
+2.3, SPDX 3). Architecture choice: path normalization happens at
+source-population time in `scan_fs::mod.rs` (where the resolver records the
+path the reader saw) rather than at per-format emission time. The CDX
+JSON-array shape fix is a small additional emission-time helper. Both
+choices are validated by `cargo +stable test --test holistic_parity` (the
+C18 row's `SymmetricEqual` directionality test would catch cross-format
+divergence — initially I tried the CDX-only emission-time fix and the test
+correctly caught the resulting drift, prompting the architecture flip).
+
+**Spec-correction trail**: milestone 133's original US2 plan invented a NEW
+`mikebom:component-path` annotation. Ground-truth read during implementation
+revealed `mikebom:source-files` already exists and serves the same semantic.
+The original plan's Principle V audit incorrectly claimed "no native fit"
+for this kind of data — CDX 1.6's `evidence.occurrences[].location` is the
+native field. Spec amended (spec.md FR-002.1, FR-012, FR-014, FR-021) and
+US2 scope rewritten into three sequential PRs. See `specs/133-file-tier-components/spec.md`
+§User Story 2 §spec-correction history for the full trail.
+
+**Implementation**: two new helpers in
+`mikebom_cli::scan_fs::sbom_path`:
+- `normalize_sbom_path_relative(s: &str, rootfs_root: Option<&Path>) -> String`
+  applies Defects A + C (rootfs-prefix-strip + leading-`/`-strip). Called from
+  the two source-population sites in `scan_fs::mod.rs` (FilePathPattern
+  emission + OS-package-DB emission) with `Some(root)` for the scan rootfs.
+- `source_files_as_json_array(paths: &[String]) -> Option<String>` applies
+  Defect B (JSON-array serialization for CDX). Called from the two CDX
+  emission sites (`builder.rs` per-component + `metadata.rs` main-module).
+
+7 unit tests on the helpers (empty / no-rootfs / rootfs-prefix-strip / no-match
+fallback / prefix-collision edge case for the path normalizer; empty / single /
+multi for the JSON-array serializer). All 11 CDX goldens + 11 SPDX 2.3
+goldens + 11 SPDX 3 goldens regenerated (declared intentional churn per spec
+FR-004 / SC-005). `holistic_parity` test green — all 9 ecosystems pass the
+cross-format C18 SymmetricEqual check.
+
+**C-row update**: `docs/reference/sbom-format-mapping.md` C18 row corrected to
+document the new JSON-array + rootfs-relative + no-leading-`/` shape; CDX +
+SPDX 2.3 + SPDX 3 cells now agree.
+
+Pinned audit baseline (carried from milestone 132):
+`767397973649.dkr.ecr.us-east-1.amazonaws.com/remediation-planner@sha256:4e7b05811ce4885d8a7183819b4e0e209662784fe24b7553ceea3d149e3c719c`.
+
 ### Milestone 132 US3 Path C closeout — SC-003 met without code change; spec corrections only
 
 **Truth-finding outcome**: the entire "Path C deps.dev online enrichment" deliverable

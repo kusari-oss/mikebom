@@ -26,7 +26,7 @@
         },
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/maven/pom-three-deps/pom.xml"
+          "value": "[\"pom.xml\"]"
         },
         {
           "name": "mikebom:source-type",
@@ -65,7 +65,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/maven/pom-three-deps/pom.xml"
+          "value": "[\"pom.xml\"]"
         },
         {
           "name": "mikebom:lifecycle-scope",
@@ -113,7 +113,7 @@
         },
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/maven/pom-three-deps/pom.xml"
+          "value": "[\"pom.xml\"]"
         },
         {
           "name": "mikebom:source-type",
@@ -204,7 +204,7 @@
         },
         {
           "name": "mikebom:source-files",
-          "value": "path+file://<WORKSPACE>/tests/fixtures/maven/pom-three-deps"
+          "value": "[\"path+file://<WORKSPACE>/tests/fixtures/maven/pom-three-deps\"]"
         }
       ],
       "purl": "pkg:maven/com.example/demo-app@1.0.0",

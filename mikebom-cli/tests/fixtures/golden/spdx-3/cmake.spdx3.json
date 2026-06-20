@@ -174,7 +174,7 @@
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-DP2TXV4FZRLD2JRKFJJK4D7E/anno-A425K7DIMX7CHYIE",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cmake/cmake/third_party.cmake\"]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"cmake/third_party.cmake\"]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-DP2TXV4FZRLD2JRKFJJK4D7E/pkg-6JWGJCRVPGZ5RSBG",
       "type": "Annotation"
     },
@@ -206,7 +206,7 @@
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-DP2TXV4FZRLD2JRKFJJK4D7E/anno-IBMHBQYNZ5SPP4KX",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cmake/CMakeLists.txt\"]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"CMakeLists.txt\"]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-DP2TXV4FZRLD2JRKFJJK4D7E/pkg-3ECZZDDDHD3O6FKS",
       "type": "Annotation"
     },
@@ -222,7 +222,7 @@
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-DP2TXV4FZRLD2JRKFJJK4D7E/anno-MLPSWZTWFCXSS76G",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cmake/CMakeLists.txt\"]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"CMakeLists.txt\"]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-DP2TXV4FZRLD2JRKFJJK4D7E/pkg-LXTPKDHC3UVRRT5J",
       "type": "Annotation"
     },

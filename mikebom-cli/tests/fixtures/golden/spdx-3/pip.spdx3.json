@@ -510,7 +510,7 @@
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-NXFDLTJMIC7J6NQAEHMOXGNG/anno-CC6STAOECP2KSHTG",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/python/simple-venv/.venv/lib/python3.12/site-packages/flask-3.0.0.dist-info/METADATA\"]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\".venv/lib/python3.12/site-packages/flask-3.0.0.dist-info/METADATA\"]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-NXFDLTJMIC7J6NQAEHMOXGNG/pkg-ND26YIDZX2IHEVKH",
       "type": "Annotation"
     },
@@ -606,7 +606,7 @@
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-NXFDLTJMIC7J6NQAEHMOXGNG/anno-L4QXSTEPMQLKGZAO",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/python/simple-venv/.venv/lib/python3.12/site-packages/idna-3.6.dist-info/METADATA\"]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\".venv/lib/python3.12/site-packages/idna-3.6.dist-info/METADATA\"]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-NXFDLTJMIC7J6NQAEHMOXGNG/pkg-KVTB5ZDMEOOSAO3A",
       "type": "Annotation"
     },
@@ -622,7 +622,7 @@
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-NXFDLTJMIC7J6NQAEHMOXGNG/anno-MJZXV2FC4Y6NJ76W",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/python/simple-venv/.venv/lib/python3.12/site-packages/requests-2.31.0.dist-info/METADATA\"]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\".venv/lib/python3.12/site-packages/requests-2.31.0.dist-info/METADATA\"]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-NXFDLTJMIC7J6NQAEHMOXGNG/pkg-6PK6TYQPA2QWXM26",
       "type": "Annotation"
     },
@@ -630,7 +630,7 @@
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-NXFDLTJMIC7J6NQAEHMOXGNG/anno-N7OGJWRZJMXPSP2O",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/python/simple-venv/.venv/lib/python3.12/site-packages/jinja2-3.1.2.dist-info/METADATA\"]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\".venv/lib/python3.12/site-packages/jinja2-3.1.2.dist-info/METADATA\"]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-NXFDLTJMIC7J6NQAEHMOXGNG/pkg-E7GW44NAPCTLSLSL",
       "type": "Annotation"
     },
@@ -646,7 +646,7 @@
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-NXFDLTJMIC7J6NQAEHMOXGNG/anno-NYVNYVCCMTVU6THV",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/python/simple-venv/.venv/lib/python3.12/site-packages/certifi-2023.7.22.dist-info/METADATA\"]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\".venv/lib/python3.12/site-packages/certifi-2023.7.22.dist-info/METADATA\"]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-NXFDLTJMIC7J6NQAEHMOXGNG/pkg-IGBIL3UCACAQFOM3",
       "type": "Annotation"
     },
@@ -662,7 +662,7 @@
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-NXFDLTJMIC7J6NQAEHMOXGNG/anno-OA3HI2B6SZ7BWWV2",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/python/simple-venv/.venv/lib/python3.12/site-packages/charset_normalizer-3.3.2.dist-info/METADATA\"]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\".venv/lib/python3.12/site-packages/charset_normalizer-3.3.2.dist-info/METADATA\"]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-NXFDLTJMIC7J6NQAEHMOXGNG/pkg-Z2NM5GYCT4SAIAVF",
       "type": "Annotation"
     },
@@ -670,7 +670,7 @@
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-NXFDLTJMIC7J6NQAEHMOXGNG/anno-SO2XDF4H4HCTALEO",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/python/simple-venv/.venv/lib/python3.12/site-packages/urllib3-2.0.7.dist-info/METADATA\"]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\".venv/lib/python3.12/site-packages/urllib3-2.0.7.dist-info/METADATA\"]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-NXFDLTJMIC7J6NQAEHMOXGNG/pkg-R4X6ZI7PYUOFDI6S",
       "type": "Annotation"
     },

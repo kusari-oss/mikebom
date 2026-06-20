@@ -164,7 +164,7 @@
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-F4EJJVYXEGBLEPXIGOQU3YDB/anno-CI4P3ZNSVYJS3AYU",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/deb/synthetic/var/lib/dpkg/status\"]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"var/lib/dpkg/status\"]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-F4EJJVYXEGBLEPXIGOQU3YDB/pkg-ZKB4GX3JBL66K2UG",
       "type": "Annotation"
     },
@@ -196,7 +196,7 @@
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-F4EJJVYXEGBLEPXIGOQU3YDB/anno-LCP5VVEU6NUXA7AQ",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/deb/synthetic/var/lib/dpkg/status\"]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"var/lib/dpkg/status\"]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-F4EJJVYXEGBLEPXIGOQU3YDB/pkg-FBZUYFQKGJMH6COB",
       "type": "Annotation"
     },

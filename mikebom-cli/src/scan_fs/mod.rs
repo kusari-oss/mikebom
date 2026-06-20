@@ -172,8 +172,14 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
                 technique: ResolutionTechnique::FilePathPattern,
                 confidence: FILE_PATH_CONFIDENCE,
                 source_connection_ids: vec![],
-                source_file_paths: vec![crate::scan_fs::sbom_path::normalize_sbom_path_str(
+                // Milestone 133 US2.1 (FR-012 Defects A + C): normalize the
+                // path to rootfs-relative + no-leading-`/` at the moment we
+                // record it, so all three SBOM formats (CDX/SPDX 2.3/SPDX 3)
+                // get the same clean value (holistic_parity test asserts the
+                // C18 row's `SymmetricEqual` directionality across formats).
+                source_file_paths: vec![crate::scan_fs::sbom_path::normalize_sbom_path_relative(
                     &path_string,
+                    Some(root),
                 )],
                 deps_dev_match: None,
             },
@@ -558,8 +564,12 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
                     technique: ResolutionTechnique::PackageDatabase,
                     confidence: PACKAGE_DB_CONFIDENCE,
                     source_connection_ids: vec![],
-                    source_file_paths: vec![crate::scan_fs::sbom_path::normalize_sbom_path_str(
+                    // Milestone 133 US2.1 (FR-012 Defects A + C): see same-
+                    // numbered comment above; normalize at source-population
+                    // time so SPDX/CDX/SPDX3 all read the clean value.
+                    source_file_paths: vec![crate::scan_fs::sbom_path::normalize_sbom_path_relative(
                         &entry.source_path,
+                        Some(root),
                     )],
                     deps_dev_match: None,
                 },
@@ -751,7 +761,15 @@ fn tag_main_modules_with_workspace_root(
 
         let is_workspace_root = match (manifest_path, canonical_root.as_ref()) {
             (Some(p), Some(canon_root)) => {
-                let manifest_parent = Path::new(p).parent();
+                // Milestone 133 US2.1 (FR-012): post-normalization, manifest
+                // paths in `evidence.source_file_paths` are rootfs-relative
+                // (e.g. `sub/go.mod`) rather than absolute. Re-join against
+                // `scan_root` so `canonicalize` resolves the right
+                // filesystem location. Absolute paths (legacy / annotation-
+                // sourced) join correctly because `Path::join` returns the
+                // absolute when given one.
+                let abs_path = scan_root.join(p);
+                let manifest_parent = abs_path.parent();
                 manifest_parent
                     .and_then(|parent| std::fs::canonicalize(parent).ok())
                     .map(|canon_manifest_parent| canon_manifest_parent == *canon_root)

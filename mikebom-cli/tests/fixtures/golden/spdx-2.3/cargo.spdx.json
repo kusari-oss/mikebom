@@ -94,7 +94,7 @@
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.48",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"Cargo.lock\"]}"
         },
         {
           "annotationDate": "1970-01-01T00:00:00Z",
@@ -147,7 +147,7 @@
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.48",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"Cargo.lock\"]}"
         },
         {
           "annotationDate": "1970-01-01T00:00:00Z",
@@ -200,7 +200,7 @@
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.48",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"Cargo.lock\"]}"
         },
         {
           "annotationDate": "1970-01-01T00:00:00Z",
@@ -247,7 +247,7 @@
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.48",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"Cargo.lock\"]}"
         },
         {
           "annotationDate": "1970-01-01T00:00:00Z",
@@ -294,7 +294,7 @@
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.48",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"Cargo.lock\"]}"
         },
         {
           "annotationDate": "1970-01-01T00:00:00Z",
@@ -341,7 +341,7 @@
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.48",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"Cargo.lock\"]}"
         },
         {
           "annotationDate": "1970-01-01T00:00:00Z",
@@ -388,7 +388,7 @@
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.48",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"Cargo.lock\"]}"
         },
         {
           "annotationDate": "1970-01-01T00:00:00Z",
@@ -435,7 +435,7 @@
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.48",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"Cargo.lock\"]}"
         },
         {
           "annotationDate": "1970-01-01T00:00:00Z",
@@ -482,7 +482,7 @@
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.48",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"Cargo.lock\"]}"
         },
         {
           "annotationDate": "1970-01-01T00:00:00Z",
@@ -535,7 +535,7 @@
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.48",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"<WORKSPACE>/tests/fixtures/cargo/lockfile-v3/Cargo.lock\"]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:source-files\",\"value\":[\"Cargo.lock\"]}"
         },
         {
           "annotationDate": "1970-01-01T00:00:00Z",

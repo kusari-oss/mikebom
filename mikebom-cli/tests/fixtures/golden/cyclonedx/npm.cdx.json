@@ -30,7 +30,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/npm/node-modules-walk/node_modules/express/package.json"
+          "value": "[\"node_modules/express/package.json\"]"
         },
         {
           "name": "mikebom:sbom-tier",
@@ -73,7 +73,7 @@
       "properties": [
         {
           "name": "mikebom:source-files",
-          "value": "<WORKSPACE>/tests/fixtures/npm/node-modules-walk/node_modules/safe-buffer/package.json"
+          "value": "[\"node_modules/safe-buffer/package.json\"]"
         },
         {
           "name": "mikebom:sbom-tier",
@@ -155,7 +155,7 @@
         },
         {
           "name": "mikebom:source-files",
-          "value": "path+file://<WORKSPACE>/tests/fixtures/npm/node-modules-walk"
+          "value": "[\"path+file://<WORKSPACE>/tests/fixtures/npm/node-modules-walk\"]"
         }
       ],
       "purl": "pkg:npm/node-modules-walk-fixture@0.1.0",

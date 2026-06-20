@@ -362,6 +362,33 @@ fn push_document_fields(
     };
     push(out, "mikebom:generation-context", json!(gc));
 
+    // Milestone 133 US3 (C93/C94/C95): file-tier walker diagnostic
+    // skip counters. Constitution Principle X. See CDX +
+    // SPDX 2.3 twins.
+    if let Some(stats) = scan.file_inventory_stats {
+        if stats.oversize_skipped > 0 {
+            push(
+                out,
+                "mikebom:file-inventory-skipped-oversize",
+                json!(stats.oversize_skipped.to_string()),
+            );
+        }
+        if stats.special_skipped > 0 {
+            push(
+                out,
+                "mikebom:file-inventory-skipped-special-files",
+                json!(stats.special_skipped.to_string()),
+            );
+        }
+        if stats.unreadable_skipped > 0 {
+            push(
+                out,
+                "mikebom:file-inventory-unreadable",
+                json!(stats.unreadable_skipped.to_string()),
+            );
+        }
+    }
+
     // C22 os-release-missing-fields
     if !scan.os_release_missing_fields.is_empty() {
         push(

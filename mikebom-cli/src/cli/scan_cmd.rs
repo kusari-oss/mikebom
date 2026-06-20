@@ -2303,6 +2303,10 @@ pub async fn execute(
                 args.file_inventory
             )
         })?;
+    // Milestone 133 US3: hoist `WalkerStats` so the per-format
+    // document-level annotation emission paths can read the
+    // diagnostic counters via `ScanArtifacts::file_inventory_stats`.
+    let mut file_inventory_stats: Option<scan_fs::file_tier::walker::WalkerStats> = None;
     if file_inventory_mode != scan_fs::file_tier::FileInventoryMode::Off {
         // Milestone 133 US1.C: if the operator excluded the scan root
         // itself via `--exclude-path=<abs-root>`, every package-DB
@@ -2351,6 +2355,7 @@ pub async fn execute(
             "file-tier walker complete"
         );
         components.extend(entries.into_iter().map(|e| e.into_resolved_component()));
+        file_inventory_stats = Some(stats);
         } // end `else` branch for !root_excluded
     }
 
@@ -2395,6 +2400,7 @@ pub async fn execute(
         // `--component-id <PURL>=<scheme>:<value>` flags. Threaded to
         // per-format emitters which match against `components[].purl`.
         component_identifiers: &args.component_id,
+        file_inventory_stats: file_inventory_stats.as_ref(),
         // Milestone 077: operator-supplied overrides for the root
         // component's name + version. Constructed from the new
         // `--root-name` / `--root-version` CLI flags; defaults to

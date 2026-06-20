@@ -106,6 +106,7 @@ pub fn build_document(
             source_document_binding: scan.source_document_binding,
             identifiers: scan.identifiers,
             component_identifiers: scan.component_identifiers,
+            file_inventory_stats: None,
             root_override: scan.root_override.clone(),
             user_metadata: scan.user_metadata.clone(),
             sbom_type_override: scan.sbom_type_override,

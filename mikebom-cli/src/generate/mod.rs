@@ -122,6 +122,13 @@ pub struct ScanArtifacts<'a> {
     /// using the flag — backwards-compatible.
     pub component_identifiers:
         &'a [mikebom::binding::identifiers::component_id::ComponentIdentifierFlag],
+    /// Milestone 133 US3: file-tier walker diagnostic counters.
+    /// `None` when the walker didn't run (`--file-inventory=off`).
+    /// `Some(_)` when `orphan` or `full` ran — each non-zero
+    /// counter projects onto one `mikebom:file-inventory-skipped-*`
+    /// document-level annotation per Constitution Principle X.
+    pub file_inventory_stats:
+        Option<&'a crate::scan_fs::file_tier::walker::WalkerStats>,
     /// Milestone 077: operator-supplied overrides for the root
     /// component's name + version. When `name` or `version` is
     /// `Some(_)`, the override replaces the corresponding auto-derived

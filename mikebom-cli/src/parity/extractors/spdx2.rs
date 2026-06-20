@@ -539,6 +539,7 @@ spdx23_anno!(c94_spdx23, "mikebom:file-inventory-skipped-special-files", documen
 spdx23_anno!(c95_spdx23, "mikebom:file-inventory-unreadable", document);
 spdx23_anno!(c96_spdx23, "mikebom:file-paths-truncated", component);
 spdx23_anno!(c97_spdx23, "mikebom:file-inventory-mode", document);
+spdx23_anno!(c98_spdx23, "mikebom:license-concluded-source", component);
 
 // C67 — `mikebom:assertion-conflict` (milestone 119). Per-Package
 // envelope carrying the JSON-encoded array of conflict records.

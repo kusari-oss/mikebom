@@ -7,6 +7,60 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### `--conclude-licenses` operator-assertion flag (closes #363)
+
+New CLI flag that the operator passes to formally assert that the
+declared licenses in the scan target have been reviewed and verified.
+When set, every component whose `licenseConcluded` slot is currently
+empty (typical when ClearlyDefined / deps.dev enrichment couldn't
+fill it) is promoted: `licenseDeclared → licenseConcluded`. Each
+promoted component carries a per-component
+`mikebom:license-concluded-source = "operator-asserted"` annotation
+recording the provenance — downstream consumers can distinguish
+operator-asserted conclusions (which carry a human-review claim per
+the flag's contract) from external-enrichment-derived ones.
+
+**Operator assertion contract**: the flag's CLI help text emphasizes
+"by passing this flag, YOU (the operator) ASSERT that you have
+reviewed and verified the declared license data for accuracy." Per
+SPDX 2.3 § 7.13 / SPDX 3.0.1 `licenseConcluded` carries the analyst's
+reviewed conclusion; downstream consumers (sbomqs, Kusari Inspector,
+syft-style comparators) treat the value as analyst-verified.
+Operators MUST NOT pass this flag in unattended pipelines without an
+upstream review step.
+
+**Default OFF** — preserves pre-feature byte-identity. Pre-existing
+concluded values from external enrichers (ClearlyDefined etc.) are
+NEVER overwritten; the promotion only fills empty slots.
+
+**Comparison data** (mikebom v0.1.0-alpha.47 vs syft v1.42.3 on
+KubeLB v1.4.2 per the issue body):
+
+| Field                       | mikebom default | mikebom + `--conclude-licenses` | syft   |
+|-----------------------------|-----------------|----------------------------------|--------|
+| `licenseDeclared` coverage  | 99.2 %          | 99.2 %                           | 61.3 % |
+| `licenseConcluded` coverage | 0 %             | 99.2 %                           | 97.5 % |
+
+mikebom now matches syft's `licenseConcluded` coverage when the
+operator opts in, while preserving the SPDX-correct provenance
+distinction via the `mikebom:license-concluded-source` annotation
+(C98 catalog row).
+
+**New parity catalog row C98** `mikebom:license-concluded-source`
+symmetric across CDX 1.6 `properties[]` / SPDX 2.3
+`Package.annotations[]` / SPDX 3 `Annotation` element. Initial value
+`"operator-asserted"`; future enrichment work may add
+`"clearly-defined"`, `"deps-dev"`, etc. for parallel provenance.
+
+**Tests**: 3 new integration tests
+(`mikebom-cli/tests/conclude_licenses.rs`) — default-mode preserves
+no concluded licenses, flag-mode promotes every declared license
+and emits the annotation, flag-mode is a no-op when declared is
+empty.
+
+No new Cargo dependencies. No golden churn (default OFF preserves
+byte-identity on every existing fixture).
+
 ### Constitution amendment + component-tiers reference doc (milestone 133 US4)
 
 Closes milestone 133. Pure docs + one new annotation:

@@ -927,6 +927,41 @@ fn manifest_occurrence(
     }]
 }
 
+/// Issue #363 — operator-asserted license-concluded promotion.
+///
+/// When the operator passes `--conclude-licenses`, mikebom promotes every
+/// component's declared licenses to concluded IF AND ONLY IF the
+/// concluded field is currently empty (preserves earlier ClearlyDefined /
+/// deps.dev enrichment, which sets it to a verified value).
+///
+/// **Operator-assertion semantic**: the flag is a formal operator claim
+/// that the declared licenses have been reviewed. Downstream consumers
+/// reading `licenseConcluded` (sbomqs, Kusari Inspector, syft-style
+/// comparators) treat the value as analyst-verified per SPDX 2.3 § 7.13
+/// / SPDX 3.0.1 semantics. The per-component annotation
+/// `mikebom:license-concluded-source = "operator-asserted"` records the
+/// provenance so consumers can distinguish operator-asserted conclusions
+/// from external-enrichment-derived ones.
+///
+/// Returns the count of components whose concluded set was updated. Used
+/// by `scan_cmd::scan` for the post-pass info log.
+pub fn apply_operator_asserted_conclusions(
+    components: &mut [mikebom_common::resolution::ResolvedComponent],
+) -> usize {
+    let mut promoted = 0usize;
+    for c in components.iter_mut() {
+        if c.concluded_licenses.is_empty() && !c.licenses.is_empty() {
+            c.concluded_licenses = c.licenses.clone();
+            c.extra_annotations.insert(
+                "mikebom:license-concluded-source".to_string(),
+                serde_json::Value::String("operator-asserted".to_string()),
+            );
+            promoted += 1;
+        }
+    }
+    promoted
+}
+
 /// Milestone 127 FR-012 implementation. When a Maven main-module
 /// component exists whose PURL matches the JAR walker's
 /// `scan_target_coord`, return `None` (suppress the duplicate

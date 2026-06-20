@@ -236,6 +236,34 @@ pub struct ScanArgs {
     #[arg(long)]
     pub no_package_db: bool,
 
+    /// Issue #363 — operator assertion that declared licenses have been
+    /// reviewed and may be promoted to `licenseConcluded`.
+    ///
+    /// **By passing this flag, YOU (the operator) ASSERT that you have
+    /// reviewed and verified the declared license data for accuracy.**
+    /// Per SPDX 2.3 § 7.13 / SPDX 3.0.1 `licenseConcluded` carries the
+    /// analyst's reviewed conclusion; without this flag mikebom leaves
+    /// `licenseConcluded` as `NOASSERTION` (no human verified) even
+    /// when `licenseDeclared` is populated — technically correct but
+    /// invisible to consumers that key on `concluded` (sbomqs,
+    /// Kusari Inspector, syft-comparators).
+    ///
+    /// When set, every component whose `concluded_licenses` is empty
+    /// AND `licenses` is non-empty gets its declared licenses copied to
+    /// concluded, plus a per-component
+    /// `mikebom:license-concluded-source = "operator-asserted"`
+    /// annotation recording that the conclusion came from THIS FLAG (a
+    /// formal operator assertion), not from external enrichment
+    /// (ClearlyDefined / deps.dev). Components that already have a
+    /// concluded license (e.g. from ClearlyDefined) are untouched.
+    ///
+    /// Default OFF — preserves pre-feature byte-identity. Don't pass
+    /// this flag in unattended pipelines without an upstream review
+    /// step; downstream consumers will treat your `licenseConcluded`
+    /// as analyst-verified.
+    #[arg(long)]
+    pub conclude_licenses: bool,
+
     /// Skip per-file SHA-256 hashing of installed-package contents.
     /// Falls back to a fast SHA-256 over each package's dpkg `.md5sums`
     /// file (microseconds per package; component-level identity only,
@@ -2288,6 +2316,20 @@ pub async fn execute(
         _extracted.as_ref().map(|e| &e.layer_path_map),
     );
 
+    // Issue #363 — operator-asserted license-concluded promotion. Runs
+    // AFTER every external enricher (ClearlyDefined, deps.dev) so the
+    // empty-concluded check correctly identifies components those
+    // enrichers couldn't fill. Pre-existing concluded values from
+    // enrichment ARE preserved (the apply fn skips populated entries).
+    if args.conclude_licenses {
+        let promoted = scan_fs::apply_operator_asserted_conclusions(&mut components);
+        tracing::info!(
+            promoted_components = promoted,
+            "operator-asserted license-concluded promotion (per --conclude-licenses): \
+             you assert the declared licenses have been reviewed."
+        );
+    }
+
     // Milestone 133 US1.B (FR-002 + FR-015): file-tier emission for
     // unattributed content (custom binaries, vendored libraries with
     // no manifest, embedded archives). Runs AFTER every package /
@@ -3145,6 +3187,7 @@ mod tests {
             deb_codename: None,
             no_package_db: false,
             no_deep_hash: false,
+            conclude_licenses: false,
             // Test helper preserves byte-identity on enrichment-
             // focused unit tests by keeping file-tier emission off.
             // Production default in `scan_cmd.rs` is `orphan` per

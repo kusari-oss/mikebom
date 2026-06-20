@@ -246,6 +246,35 @@ pub struct ScanArgs {
     #[arg(long)]
     pub no_deep_hash: bool,
 
+    /// Milestone 133 US1 — emit file-tier components for unattributed
+    /// content (custom binaries, vendored libraries with no manifest,
+    /// embedded archives) surviving the FR-005 content-shape allowlist.
+    ///
+    /// Modes:
+    /// - `off` (US1.B default — preserves pre-milestone-133 byte-
+    ///   identity): no file-tier emission.
+    /// - `orphan` (US1.C default — planned flip): emit components only
+    ///   for content NOT covered by any package-tier or binary-tier
+    ///   component's `evidence.occurrences[]` paths or `hashes[]`
+    ///   SHA-256 set (FR-011 hybrid dedupe).
+    /// - `full`: emit a component for every regular file surviving the
+    ///   FR-005 allowlist, regardless of dedupe coverage. Useful for
+    ///   forensic / compliance use cases cataloguing every hash on
+    ///   disk.
+    ///
+    /// Emitted file-tier components carry a `mikebom:component-tier =
+    /// "file"` annotation and a `mikebom:file-paths` JSON-encoded
+    /// array of every observed path for the unique content.
+    #[arg(long, value_name = "MODE", default_value = "off")]
+    pub file_inventory: String,
+
+    /// Maximum file size (bytes) considered for file-tier emission.
+    /// Files larger than this are skipped; the document-level
+    /// `mikebom:file-inventory-skipped-oversize` annotation reports
+    /// the skip count. Default 100 MB per FR-010.
+    #[arg(long, default_value_t = 100 * 1024 * 1024)]
+    pub file_inventory_size_limit: u64,
+
     /// Print a JSON summary to stdout after writing the SBOM.
     #[arg(long)]
     pub json: bool,
@@ -2251,6 +2280,51 @@ pub async fn execute(
         _extracted.as_ref().map(|e| &e.layer_path_map),
     );
 
+    // Milestone 133 US1.B (FR-002 + FR-015): file-tier emission for
+    // unattributed content (custom binaries, vendored libraries with
+    // no manifest, embedded archives). Runs AFTER every package /
+    // binary / enrichment step so the FR-011 hybrid dedupe sees the
+    // full claim set. Default `off` in US1.B — preserves pre-
+    // milestone-133 byte-identity. US1.C flips the default to
+    // `orphan`. `full` mode forwards an empty `DedupeIndex` so every
+    // surviving content-shape match emits regardless of coverage.
+    let file_inventory_mode = scan_fs::file_tier::FileInventoryMode::parse(&args.file_inventory)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "--file-inventory expects one of: off, orphan, full (got: {:?})",
+                args.file_inventory
+            )
+        })?;
+    if file_inventory_mode != scan_fs::file_tier::FileInventoryMode::Off {
+        let exclusion_globs = scan_fs::file_tier::content_shape::build_orphan_exclusion_globs();
+        let dedupe_index = match file_inventory_mode {
+            scan_fs::file_tier::FileInventoryMode::Full => {
+                // Full mode bypasses dedupe — caller wants every
+                // content-shape-passing file regardless of coverage.
+                scan_fs::file_tier::dedupe::DedupeIndex::default()
+            }
+            _ => scan_fs::file_tier::dedupe::DedupeIndex::build(&components),
+        };
+        let walker_cfg = scan_fs::file_tier::walker::WalkerConfig {
+            size_limit_bytes: args.file_inventory_size_limit,
+            exclusion_globs: &exclusion_globs,
+            dedupe_index: &dedupe_index,
+        };
+        let (entries, stats) =
+            scan_fs::file_tier::walker::walk_file_tier(&root_path, &walker_cfg);
+        tracing::info!(
+            file_tier_components = entries.len(),
+            mode = ?file_inventory_mode,
+            shape_skipped = stats.shape_skipped,
+            dedupe_skipped = stats.dedupe_skipped,
+            oversize_skipped = stats.oversize_skipped,
+            special_skipped = stats.special_skipped,
+            unreadable_skipped = stats.unreadable_skipped,
+            "file-tier walker complete"
+        );
+        components.extend(entries.into_iter().map(|e| e.into_resolved_component()));
+    }
+
     // Build the neutral artifacts bundle once and hand it to every
     // serializer the user requested — the single-pass guarantee of
     // FR-004 / SC-009.
@@ -3026,6 +3100,8 @@ mod tests {
             deb_codename: None,
             no_package_db: false,
             no_deep_hash: false,
+            file_inventory: "off".to_string(),
+            file_inventory_size_limit: 100 * 1024 * 1024,
             json: false,
             no_clearly_defined,
             no_deps_dev,

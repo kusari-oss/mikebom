@@ -585,19 +585,40 @@ impl CycloneDxBuilder {
                 Some(parent) => format!("{}#{}", component.purl.as_str(), parent),
                 None => component.purl.as_str().to_string(),
             };
-            let mut entry = json!({
-                "type": binary_role_to_cdx_type(component.binary_role),
-                "name": component.name,
-                "version": component.version,
-                "purl": component.purl.as_str(),
-                "bom-ref": bom_ref,
-                // Milestone 105 phase 2E: extra (None, &[]) params are
-                // the cross-reader-dedup emission slots. Wired through
-                // by US1-US6 reader phases — until then the call shape
-                // produces byte-identical output to the pre-milestone-
-                // 105 builder.
-                "evidence": build_evidence(&component.evidence, &component.occurrences, None, &[])
-            });
+            // Milestone 133 US1.B: file-tier components carry a
+            // `mikebom:component-tier = "file"` annotation. When
+            // present, override `type` to the CDX-native `"file"`
+            // (per FR-001) and OMIT `purl` (per FR-009 — the
+            // placeholder PURL is in-process identity only; the
+            // wire shape has no PURL for file-tier).
+            let is_file_tier = component
+                .extra_annotations
+                .get(crate::scan_fs::file_tier::COMPONENT_TIER_KEY)
+                .and_then(|v| v.as_str())
+                == Some(crate::scan_fs::file_tier::COMPONENT_TIER_FILE_VALUE);
+            let mut entry = if is_file_tier {
+                json!({
+                    "type": crate::scan_fs::file_tier::FILE_TIER_CDX_TYPE,
+                    "name": component.name,
+                    "version": component.version,
+                    "bom-ref": bom_ref,
+                    "evidence": build_evidence(&component.evidence, &component.occurrences, None, &[])
+                })
+            } else {
+                json!({
+                    "type": binary_role_to_cdx_type(component.binary_role),
+                    "name": component.name,
+                    "version": component.version,
+                    "purl": component.purl.as_str(),
+                    "bom-ref": bom_ref,
+                    // Milestone 105 phase 2E: extra (None, &[]) params are
+                    // the cross-reader-dedup emission slots. Wired through
+                    // by US1-US6 reader phases — until then the call shape
+                    // produces byte-identical output to the pre-milestone-
+                    // 105 builder.
+                    "evidence": build_evidence(&component.evidence, &component.occurrences, None, &[])
+                })
+            };
 
             // Milestone 052/part-2: native CDX `scope` field. Per
             // FR-010, components with non-Runtime lifecycle_scope

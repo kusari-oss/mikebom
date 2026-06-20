@@ -7,6 +7,85 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### File-tier emission opt-in via `--file-inventory=orphan` (milestone 133 US1.B — CDX MVP)
+
+Lays down the operator-facing surface and the production CDX emission
+path for orphan file-tier components — unattributed binaries / vendored
+libraries with no package metadata / embedded archives that mikebom
+silently omitted before milestone 133.
+
+**Default = OFF in US1.B** (preserves pre-milestone-133 byte-identity
+on every existing scan). US1.C flips the default to `orphan` and
+declares the SBOM-change.
+
+**New flags**:
+
+- `--file-inventory={off|orphan|full}` — gates orphan walker
+  invocation. `off` skips it entirely (default); `orphan` runs the
+  walker with the FR-011 hybrid dedupe; `full` runs with dedupe
+  bypassed (emits a component per surviving content-shape match
+  regardless of coverage).
+- `--file-inventory-size-limit <BYTES>` (default 100 MB per FR-010)
+  — files exceeding the cap are skipped; document-level skip
+  counters land in US1.C alongside the Principle-X annotations.
+
+**Emission shape** (CDX 1.6 — SPDX 2.3 + SPDX 3 polish is US1.C):
+
+- `type = "file"` (FR-001 — the CDX-native file-element shape).
+- `purl` field OMITTED (FR-009 — identity is via `bom-ref` +
+  SHA-256). The in-process `ResolvedComponent` carries a placeholder
+  `pkg:generic/file-tier?content-sha256=<hex>` PURL for type
+  uniformity; the CDX builder recognizes the
+  `mikebom:component-tier = "file"` annotation and skips the field
+  at write time.
+- `name = <basename-of-first-sorted-path>` (FR-009).
+- `hashes[]` carrying SHA-256 (FR-008).
+- `properties[]` includes:
+  - `mikebom:component-tier = "file"` (FR-002)
+  - `mikebom:file-paths = <JSON-encoded sorted array>` (FR-007 —
+    every path the entry covers, sorted lex-ascending, capped at
+    100 entries; `mikebom:file-paths-truncated = "true"` fires
+    when the cap was hit).
+
+The CDX-side flow rides through existing infrastructure — extra
+annotations land in `properties[]` via the builder's generic loop;
+no new C-row catalog entries needed in US1.B (US1.C adds them for
+cross-format parity).
+
+**Wiring**: `scan_cmd::scan` calls
+`scan_fs::file_tier::walker::walk_file_tier` AFTER every reader,
+enrichment, and `tag_components_with_layer_digest` pass — the FR-011
+hybrid dedupe index reads from `ResolvedComponent.occurrences[]`
+(populated by US2.3 for 99.96 % of audit-baseline components) AND
+from `ResolvedComponent.hashes[]` SHA-256 entries.
+
+**Tests**: 3 new integration tests (`file_tier_orphan_emit.rs`)
+asserting default-OFF preserves no file-tier emission, orphan mode
+emits the correct CDX shape (type, no purl, SHA-256, annotations),
+and invalid `--file-inventory` value exits non-zero. 4 new unit
+tests for `FileTierEntry::into_resolved_component` +
+`FileInventoryMode::parse`. Total file-tier unit count rises 38 → 42.
+
+**Coming in US1.C**:
+
+- Proper SPDX 2.3 file-tier emission (`filesAnalyzed: false`,
+  no `externalRef[purl]`).
+- Proper SPDX 3 file-element shape per FR-001 + research §SPDX 3
+  element type decision.
+- 6 new C-rows + parity extractors (`mikebom:component-tier`,
+  `mikebom:file-paths`, `mikebom:file-paths-truncated`,
+  `mikebom:file-inventory-skipped-oversize`,
+  `mikebom:file-inventory-skipped-special-files`,
+  `mikebom:file-inventory-unreadable`).
+- Default flip from `off` to `orphan`. **DECLARED BEHAVIOR CHANGE
+  on milestone 133** per the spec Q1 clarification — image-scan
+  SBOMs grow by ~180-440 file-tier components on the audit baseline
+  (SC-001 range). Operators wanting pre-133 byte-identity opt out
+  via `--file-inventory=off`.
+- Goldens regen + SC-001 / SC-002 verification.
+
+No new Cargo dependencies.
+
 ### `evidence.occurrences[]` populated for every language-ecosystem reader (milestone 133 US2.3)
 
 Closes the standards-native path-coverage gap on `evidence.occurrences[]`.

@@ -7,6 +7,72 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### `mikebom:layer-digest` per-component property for image scans (milestone 133 US2.2)
+
+Adds a new C88 catalog row + `mikebom:layer-digest` per-component property
+emitted on every component whose source path (`evidence.source_file_paths[0]`)
+falls inside an OCI layer the extractor unpacked. Closes a real trivy-style
+feature-parity gap: pre-133 mikebom emitted no layer-digest information,
+making image-diff / forensic / "which layer added this content" queries
+impossible to answer from a mikebom SBOM alone.
+
+**Layer-digest semantic** — SHA-256 of the OCI **layer blob**'s compressed
+bytes (the tar-or-gzipped-tar as stored in the docker save tarball, NOT the
+uncompressed `DiffID`). Matches trivy's `LayerDigest` convention.
+
+**OCI overlay semantics** — when the same path is written by multiple layers,
+the LAST layer in `manifest.json::Layers[]` wins. Consumers asking "which
+layer introduced this content?" want the latest writer because earlier
+writes are no longer the file at rest. Verified by the new
+`extract_layer_path_map_later_layer_wins_when_same_path` unit test.
+
+**Implementation**:
+
+- `mikebom-cli/src/scan_fs/docker_image.rs`:
+  - `ExtractedImage` gains `layer_path_map: HashMap<String, String>` (rootfs-
+    relative path → `sha256:<hex>` of the writing layer blob).
+  - `extract_layer_over_rootfs` return type changes from `Result<()>` to
+    `Result<Vec<String>>` — the paths the layer wrote (regular files +
+    symlinks + hardlinks; directory entries excluded). All 15 existing
+    docker_image tests still pass.
+  - `extract()` hashes each layer blob's bytes, calls the layer extractor,
+    and inserts every written path into `layer_path_map` with that digest.
+    Later iterations overwrite earlier entries — natural OCI overlay
+    behavior.
+
+- `mikebom-cli/src/scan_fs/mod.rs`:
+  - New `tag_components_with_layer_digest(components, layer_path_map)` helper
+    iterates components, looks up `evidence.source_file_paths[0]` in the
+    map, and stamps `mikebom:layer-digest` into the component's
+    `extra_annotations` bag when found. No-op when `layer_path_map` is
+    `None` (non-image scans).
+
+- `mikebom-cli/src/cli/scan_cmd.rs` calls the tagger after component
+  resolution + path normalization (PR US2.1) so the lookup keys agree.
+
+**Emission via existing extra_annotations bag**: CDX / SPDX 2.3 / SPDX 3 all
+already iterate `component.extra_annotations` at emission time. Stamping the
+annotation once gets it into all three formats without per-format wiring,
+and `holistic_parity` C88 SymmetricEqual asserts cross-format value
+identity.
+
+**New C-row**: C88 `mikebom:layer-digest` in `docs/reference/sbom-format-
+mapping.md` with Principle V audit clause inline (no native CDX/SPDX
+construct for "OCI layer digest containing this component's source path").
+Extractor wiring in `parity/extractors/{cdx,spdx2,spdx3,mod}.rs` mirrors
+PRs #380 / #384's patterns.
+
+**Tests**:
+- 4 unit tests on `tag_components_with_layer_digest`: stamps-when-match /
+  skips-no-match / no-op-when-None / skips-when-no-source-path.
+- 2 unit tests on `extract`'s layer-map: `extract_populates_layer_path_map` +
+  `extract_layer_path_map_later_layer_wins_when_same_path`.
+- `every_catalog_row_has_an_extractor` catalog regression passes after C88
+  wiring.
+
+**Pinned audit baseline** (carried from milestone 132):
+`767397973649.dkr.ecr.us-east-1.amazonaws.com/remediation-planner@sha256:4e7b05811ce4885d8a7183819b4e0e209662784fe24b7553ceea3d149e3c719c`.
+
 ### Fix: `mikebom:source-files` defects on CycloneDX emission (milestone 133 US2.1)
 
 Three defects discovered during milestone-133 US2 implementation prep on the

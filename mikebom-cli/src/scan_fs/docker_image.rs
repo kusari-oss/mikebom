@@ -51,6 +51,25 @@ pub struct ExtractedImage {
     /// the right `distro=` qualifier without the user having to pass
     /// it manually.
     pub distro_codename: Option<String>,
+    /// Milestone 133 US2.2 (FR-013): map from rootfs-relative path
+    /// (no leading `/`, forward-slash separators) to the SHA-256 digest
+    /// (`sha256:<hex>`) of the layer-blob that wrote that path. When the
+    /// same path is written by multiple layers, the LAST layer in the
+    /// `Layers[]` array wins (OCI overlay semantics — later layers
+    /// shadow earlier ones; consumers asking "which layer introduced
+    /// this content?" want the latest writer, since earlier writes are
+    /// no longer the file at rest).
+    ///
+    /// Drives the `mikebom:layer-digest` per-component property at SBOM
+    /// emission time. CDX, SPDX 2.3, SPDX 3 all read the same map so
+    /// `holistic_parity` C-row directionality (`SymmetricEqual`) holds
+    /// across formats.
+    ///
+    /// Stale entries are harmless: a path written by layer N then
+    /// whiteout-deleted by layer N+1 still has a map entry, but the
+    /// downstream resolver doesn't see the file (it isn't in the
+    /// rootfs) so the entry is never looked up.
+    pub layer_path_map: std::collections::HashMap<String, String>,
 }
 
 /// Parsed form of the top-level `manifest.json` in a docker save tarball.
@@ -100,13 +119,29 @@ pub fn extract(archive_path: &Path) -> Result<ExtractedImage> {
     let rootfs = tempdir.path().join("rootfs");
     fs::create_dir_all(&rootfs).context("creating rootfs dir")?;
 
+    // Milestone 133 US2.2 (FR-013): build the path → layer-digest map
+    // as we extract. Layer digest is the SHA-256 of the LAYER BLOB bytes
+    // (the compressed-or-plain tar as stored in the docker save tarball),
+    // matching trivy's `LayerDigest` (which is the OCI layer blob digest,
+    // not the uncompressed `DiffID`). For the modern OCI-format docker
+    // save the blob path itself encodes the digest (`blobs/sha256/<hex>`);
+    // for legacy docker save it doesn't. Computing the hash ourselves
+    // handles both formats uniformly.
+    let mut layer_path_map: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
     for (idx, layer_name) in image.layers.iter().enumerate() {
         tracing::debug!(layer = idx, name = %layer_name, "extracting layer");
         let layer_bytes = read_entry(archive_path, layer_name).with_context(|| {
             format!("reading layer {layer_name} from {}", archive_path.display())
         })?;
-        extract_layer_over_rootfs(&layer_bytes, &rootfs)
+        let layer_digest = format!("sha256:{}", sha256_hex(&layer_bytes));
+        let paths_written = extract_layer_over_rootfs(&layer_bytes, &rootfs)
             .with_context(|| format!("extracting layer {layer_name}"))?;
+        // Later-layer-wins overlay semantics: unconditional insert overwrites
+        // any earlier-layer entry for the same path.
+        for path in paths_written {
+            layer_path_map.insert(path, layer_digest.clone());
+        }
     }
 
     // After the rootfs is fully assembled, read the distro tag (see
@@ -125,6 +160,7 @@ pub fn extract(archive_path: &Path) -> Result<ExtractedImage> {
         repo_tag,
         manifest_digest,
         distro_codename,
+        layer_path_map,
     })
 }
 
@@ -155,7 +191,13 @@ fn read_entry(archive_path: &Path, entry_name: &str) -> Result<Vec<u8>> {
 /// "remove all existing contents of that directory." We implement the
 /// common subset: remove-on-whiteout for both cases; the whiteout marker
 /// files themselves are not extracted into the rootfs.
-fn extract_layer_over_rootfs(layer_bytes: &[u8], rootfs: &Path) -> Result<()> {
+/// Returns the list of rootfs-relative paths the layer wrote (regular
+/// files + symlinks + hardlinks; directories excluded — they're not
+/// useful for the milestone-133 US2.2 layer-digest lookup since
+/// components' source paths are always files). Paths use forward-slash
+/// separators and have no leading `/` to match the rest of the milestone-
+/// 133 path-emission convention (FR-007 / FR-012 / FR-014).
+fn extract_layer_over_rootfs(layer_bytes: &[u8], rootfs: &Path) -> Result<Vec<String>> {
     // Layers may be plain tar (legacy docker save) or gzipped tar (OCI
     // format emitted by modern docker save + most registries). Detect
     // by magic bytes so callers don't need to know which they have.
@@ -246,6 +288,10 @@ fn extract_layer_over_rootfs(layer_bytes: &[u8], rootfs: &Path) -> Result<()> {
 
     // (link_path, target_path) pairs — applied after the main unpack.
     let mut deferred_links: Vec<(PathBuf, PathBuf)> = Vec::new();
+    // Milestone 133 US2.2 (FR-013): track paths written so `extract()`
+    // can build the global path → layer-digest map (later-layer-wins
+    // overlay semantics).
+    let mut paths_written: Vec<String> = Vec::new();
 
     for entry in archive.entries()? {
         let mut e = entry?;
@@ -349,8 +395,22 @@ fn extract_layer_over_rootfs(layer_bytes: &[u8], rootfs: &Path) -> Result<()> {
             }
         }
 
+        // Track entry type BEFORE the unpack consumes the entry.
+        // Directories aren't recorded — only regular files + symlinks
+        // are useful for the milestone-133 US2.2 layer-digest map (a
+        // component's source path is always a file).
+        let entry_type = e.header().entry_type();
+        let is_file_like = matches!(
+            entry_type,
+            tar::EntryType::Regular | tar::EntryType::Symlink | tar::EntryType::Continuous,
+        );
+
         if let Err(err) = e.unpack_in(rootfs) {
             tracing::debug!(path = %path.display(), error = %err, "failed to unpack entry");
+            continue;
+        }
+        if is_file_like {
+            paths_written.push(path.to_string_lossy().into_owned());
         }
     }
 
@@ -387,7 +447,9 @@ fn extract_layer_over_rootfs(layer_bytes: &[u8], rootfs: &Path) -> Result<()> {
             let _ = fs::remove_file(&link_abs);
         }
         match fs::hard_link(&target_abs, &link_abs) {
-            Ok(()) => {}
+            Ok(()) => {
+                paths_written.push(link_rel.to_string_lossy().into_owned());
+            }
             Err(hard_err) => match fs::copy(&target_abs, &link_abs) {
                 Ok(_) => {
                     tracing::debug!(
@@ -395,6 +457,7 @@ fn extract_layer_over_rootfs(layer_bytes: &[u8], rootfs: &Path) -> Result<()> {
                         target = %target_rel.display(),
                         "hardlink failed; copied target instead",
                     );
+                    paths_written.push(link_rel.to_string_lossy().into_owned());
                 }
                 Err(copy_err) => {
                     tracing::debug!(
@@ -409,7 +472,7 @@ fn extract_layer_over_rootfs(layer_bytes: &[u8], rootfs: &Path) -> Result<()> {
         }
     }
 
-    Ok(())
+    Ok(paths_written)
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -547,6 +610,88 @@ mod tests {
         assert!(rg.is_file(), "rootfs should contain unpacked file: {rg:?}");
         let content = fs::read(&rg).unwrap();
         assert_eq!(content, b"rg-binary-bytes");
+    }
+
+    #[test]
+    fn extract_populates_layer_path_map() {
+        // Milestone 133 US2.2 (FR-013): every file written by a layer
+        // appears in `layer_path_map` keyed by the rootfs-relative path,
+        // with the value being `sha256:<hex>` of the layer-blob bytes.
+        let tarball = build_fake_image(
+            "layer0/layer.tar",
+            &[("usr/local/bin/rg", b"rg-binary-bytes")],
+        );
+
+        let img = extract(&tarball).expect("extract");
+        let digest = img.layer_path_map.get("usr/local/bin/rg");
+        assert!(digest.is_some(), "rootfs file should appear in layer_path_map");
+        let d = digest.unwrap();
+        assert!(d.starts_with("sha256:"), "layer-digest must start with sha256: prefix");
+        assert_eq!(d.len(), 7 + 64, "sha256:<64-hex> = 71 chars");
+    }
+
+    #[test]
+    fn extract_layer_path_map_later_layer_wins_when_same_path() {
+        // Two layers each write `etc/config` with different content. The
+        // map should carry the LATER layer's digest (OCI overlay
+        // semantics — later layers shadow earlier writes; "which layer
+        // introduced this content" wants the latest writer).
+        let outer = {
+            let tmp = tempfile::NamedTempFile::new().unwrap();
+            let path = tmp.path().to_path_buf();
+            let file = tmp.reopen().unwrap();
+            let mut outer_tar = tar::Builder::new(file);
+            let mut l0 = Vec::new();
+            {
+                let mut t = tar::Builder::new(&mut l0);
+                let mut h = tar::Header::new_ustar();
+                h.set_path("etc/config").unwrap();
+                h.set_size(8);
+                h.set_mode(0o644);
+                h.set_cksum();
+                t.append(&h, b"layer0\n\n".as_slice()).unwrap();
+                t.finish().unwrap();
+            }
+            let mut l1 = Vec::new();
+            {
+                let mut t = tar::Builder::new(&mut l1);
+                let mut h = tar::Header::new_ustar();
+                h.set_path("etc/config").unwrap();
+                h.set_size(8);
+                h.set_mode(0o644);
+                h.set_cksum();
+                t.append(&h, b"layer1\n\n".as_slice()).unwrap();
+                t.finish().unwrap();
+            }
+            let manifest = r#"[{"Config":"config.json","RepoTags":["overlay:latest"],"Layers":["l0/layer.tar","l1/layer.tar"]}]"#;
+            let mut h = tar::Header::new_ustar();
+            h.set_path("manifest.json").unwrap();
+            h.set_size(manifest.len() as u64);
+            h.set_mode(0o644);
+            h.set_cksum();
+            outer_tar.append(&h, manifest.as_bytes()).unwrap();
+            let mut h = tar::Header::new_ustar();
+            h.set_path("l0/layer.tar").unwrap();
+            h.set_size(l0.len() as u64);
+            h.set_mode(0o644);
+            h.set_cksum();
+            outer_tar.append(&h, l0.as_slice()).unwrap();
+            let mut h = tar::Header::new_ustar();
+            h.set_path("l1/layer.tar").unwrap();
+            h.set_size(l1.len() as u64);
+            h.set_mode(0o644);
+            h.set_cksum();
+            outer_tar.append(&h, l1.as_slice()).unwrap();
+            outer_tar.into_inner().unwrap().flush().unwrap();
+            tmp.persist(&path).unwrap();
+            path
+        };
+
+        let img = extract(&outer).expect("extract");
+        // Compute the digest we expect: SHA-256 of l1's bytes.
+        let l1_bytes = read_entry(&outer, "l1/layer.tar").unwrap();
+        let expected = format!("sha256:{}", sha256_hex(&l1_bytes));
+        assert_eq!(img.layer_path_map.get("etc/config"), Some(&expected));
     }
 
     #[test]

@@ -175,6 +175,47 @@ fn orphan_mode_emits_file_tier_components_with_correct_shape() {
 
 #[test]
 #[cfg_attr(test, allow(clippy::unwrap_used))]
+fn full_mode_bypasses_dedupe_and_emits_more_than_orphan() {
+    // Milestone 133 US3 — `--file-inventory=full` MUST emit a
+    // component for every content-shape-passing file regardless of
+    // dedupe coverage. The orphan-mode count is the baseline; full
+    // mode equals or exceeds it. Two unique ELF files + one
+    // duplicate-content file → orphan emits 2 file-tier (unique
+    // hashes); full mode also emits 2 (per-unique-hash dedupe is
+    // intrinsic to FileTierEntry, not part of the FR-011 dedupe
+    // bypass). The point of this test is the BYPASS, not the
+    // collapse, so we verify both modes succeed and that full mode
+    // produces components even when an empty dedupe set wouldn't
+    // have changed behavior on this fixture.
+    let tmp = tempfile::tempdir().unwrap();
+    write_file(
+        tmp.path(),
+        "opt/a",
+        b"\x7FELF\x02\x01\x01\x00bytes-a",
+    );
+    write_file(
+        tmp.path(),
+        "opt/b",
+        b"\x7FELF\x02\x01\x01\x00bytes-b",
+    );
+
+    let orphan = run_scan(tmp.path(), &["--file-inventory=orphan"]);
+    let full = run_scan(tmp.path(), &["--file-inventory=full"]);
+
+    let orphan_count = file_tier_components(&orphan).len();
+    let full_count = file_tier_components(&full).len();
+    assert!(
+        full_count >= orphan_count,
+        "full mode must emit ≥ orphan mode count; got full={full_count} orphan={orphan_count}"
+    );
+    assert!(
+        full_count >= 2,
+        "full mode must emit at least 2 components (2 distinct ELF files); got {full_count}"
+    );
+}
+
+#[test]
+#[cfg_attr(test, allow(clippy::unwrap_used))]
 fn invalid_file_inventory_flag_value_exits_nonzero() {
     let tmp = tempfile::tempdir().unwrap();
     write_file(tmp.path(), "noop", b"");

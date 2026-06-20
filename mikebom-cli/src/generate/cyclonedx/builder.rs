@@ -101,6 +101,10 @@ pub struct CycloneDxBuilder {
     /// only).
     sbom_type_override:
         Option<crate::generate::lifecycle_phases::SbomType>,
+    /// Milestone 133 US3 — file-tier walker diagnostic counters. `None`
+    /// when `--file-inventory=off`; `Some(_)` for orphan/full modes.
+    file_inventory_stats:
+        Option<crate::scan_fs::file_tier::walker::WalkerStats>,
 }
 
 impl CycloneDxBuilder {
@@ -117,7 +121,19 @@ impl CycloneDxBuilder {
             root_override: crate::generate::RootComponentOverride::default(),
             user_metadata: mikebom::binding::user_metadata::UserMetadata::default(),
             sbom_type_override: None,
+            file_inventory_stats: None,
         }
+    }
+
+    /// Milestone 133 US3 — record the file-tier walker's diagnostic
+    /// counters so the CDX `metadata.properties[]` emitter can surface
+    /// non-zero skip counts as Principle-X transparency annotations.
+    pub fn with_file_inventory_stats(
+        mut self,
+        stats: Option<crate::scan_fs::file_tier::walker::WalkerStats>,
+    ) -> Self {
+        self.file_inventory_stats = stats;
+        self
     }
 
     /// Milestone 081 — record the operator-supplied CISA SBOM Type
@@ -343,6 +359,7 @@ impl CycloneDxBuilder {
             &self.root_override,
             &self.user_metadata,
             self.sbom_type_override,
+            self.file_inventory_stats.as_ref(),
         );
         // Milestone 076 — track per-component identifier matches so
         // we can emit a warn for any selector that matched zero

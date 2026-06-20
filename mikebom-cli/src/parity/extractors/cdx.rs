@@ -761,6 +761,10 @@ cdx_anno!(c87_cdx, "mikebom:assembly-version-informational-stripped", component)
 cdx_anno!(c88_cdx, "mikebom:layer-digest", component);
 cdx_anno!(c91_cdx, "mikebom:component-tier", component);
 cdx_anno!(c92_cdx, "mikebom:file-paths", component);
+cdx_anno!(c93_cdx, "mikebom:file-inventory-skipped-oversize", document);
+cdx_anno!(c94_cdx, "mikebom:file-inventory-skipped-special-files", document);
+cdx_anno!(c95_cdx, "mikebom:file-inventory-unreadable", document);
+cdx_anno!(c96_cdx, "mikebom:file-paths-truncated", component);
 
 // ============================================================
 // Section D — Evidence (D1, D2 — CDX-native shape)

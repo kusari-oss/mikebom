@@ -534,6 +534,10 @@ spdx23_anno!(c87_spdx23, "mikebom:assembly-version-informational-stripped", comp
 spdx23_anno!(c88_spdx23, "mikebom:layer-digest", component);
 spdx23_anno!(c91_spdx23, "mikebom:component-tier", component);
 spdx23_anno!(c92_spdx23, "mikebom:file-paths", component);
+spdx23_anno!(c93_spdx23, "mikebom:file-inventory-skipped-oversize", document);
+spdx23_anno!(c94_spdx23, "mikebom:file-inventory-skipped-special-files", document);
+spdx23_anno!(c95_spdx23, "mikebom:file-inventory-unreadable", document);
+spdx23_anno!(c96_spdx23, "mikebom:file-paths-truncated", component);
 
 // C67 — `mikebom:assertion-conflict` (milestone 119). Per-Package
 // envelope carrying the JSON-encoded array of conflict records.

@@ -7,6 +7,57 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### File-tier transparency annotations + full-mode polish (milestone 133 US3)
+
+Closes Phase 5 of milestone 133. No new behavior change — adds the
+deferred Principle-X transparency annotations and the catalog rows
+needed to make `--file-inventory=full` mode a polished operator
+surface.
+
+**4 new C-rows** (`docs/reference/sbom-format-mapping.md`):
+
+| Row | Annotation | Scope | Purpose |
+|---|---|---|---|
+| C93 | `mikebom:file-inventory-skipped-oversize` | document | Count of files skipped because their size exceeded `--file-inventory-size-limit`. |
+| C94 | `mikebom:file-inventory-skipped-special-files` | document | Count of special files (devices, sockets, FIFOs) skipped. |
+| C95 | `mikebom:file-inventory-unreadable` | document | Count of files mikebom could not open / read (permissions, missing, mid-flight delete). |
+| C96 | `mikebom:file-paths-truncated` | per-component | `"true"` when a file-tier component's `mikebom:file-paths` array hit the 100-entry FR-007 cap. |
+
+Each row emits ONLY when the counter is non-zero AND the walker ran
+(default mode `orphan` or operator opt-in `full`). Default-mode scans
+where the walker finds nothing oversized / special / unreadable stay
+byte-identical.
+
+Each row's emission is symmetric across CDX 1.6
+`metadata.properties[]` (document-scope) / `components[].properties[]`
+(per-component), SPDX 2.3 `bom.annotations[]` / `Package.annotations[]`,
+SPDX 3 `Annotation` elements pointing at the `SpdxDocument` /
+per-element subject. Validated by `holistic_parity`'s
+`SymmetricEqual` directionality.
+
+**`ScanArtifacts::file_inventory_stats`** threaded through the three
+format builders. CDX wires via `CycloneDxBuilder::with_file_inventory_stats(...)`;
+SPDX 2.3 / SPDX 3 doc-level annotation builders read directly from
+the bundle. The struct field is `Option<&'a WalkerStats>` so non-walker
+code paths pass `None` cheaply.
+
+**Full-mode integration test** (`file_tier_orphan_emit::full_mode_bypasses_dedupe_and_emits_more_than_orphan`):
+verifies `--file-inventory=full` constructs an empty DedupeIndex and
+emits ≥ the orphan-mode count on a 2-distinct-ELF fixture (per
+research §"hybrid dedupe semantics", full mode's BYPASS is the
+contract, not duplicate-content collapse — the per-unique-hash
+collapse is intrinsic to `FileTierEntry`).
+
+**Constitution Principle V audit**: each new C-row's annotation is a
+parity-bridge — no native CDX / SPDX 2.3 / SPDX 3 carrier for the
+specific signal each captures (counts of files skipped during the
+file-tier walk by category; truncation flag for emit-time
+list-shortening). Per-row inline rationale lives in the catalog doc.
+
+No new Cargo dependencies. No golden churn (default-mode scans on
+the existing fixtures don't trigger any skip counters; the npm
+fixture's file-tier component fits under the 100-entry path cap).
+
 ### File-tier emission default-flip + SPDX parity (milestone 133 US1.C)
 
 **BEHAVIOR CHANGE on milestone 133**: `--file-inventory` default flips from `off` to `orphan`. Every image scan now emits file-tier components for content surviving the FR-005 content-shape allowlist AND failing the FR-011 hybrid dedupe (path coverage from US2.3's `evidence.occurrences[]` + hash coverage from binary-tier `hashes[]`).

@@ -354,6 +354,35 @@ pub fn annotate_document(
     };
     push(&mut out, "mikebom:generation-context", json!(gc));
 
+    // Milestone 133 US3 (C93/C94/C95): file-tier walker diagnostic
+    // skip counters. Constitution Principle X — operators get
+    // transparent visibility into what the orphan/full walker
+    // skipped. Per-counter emission gated on `> 0` so the document
+    // stays clean when nothing was skipped.
+    if let Some(stats) = artifacts.file_inventory_stats {
+        if stats.oversize_skipped > 0 {
+            push(
+                &mut out,
+                "mikebom:file-inventory-skipped-oversize",
+                json!(stats.oversize_skipped.to_string()),
+            );
+        }
+        if stats.special_skipped > 0 {
+            push(
+                &mut out,
+                "mikebom:file-inventory-skipped-special-files",
+                json!(stats.special_skipped.to_string()),
+            );
+        }
+        if stats.unreadable_skipped > 0 {
+            push(
+                &mut out,
+                "mikebom:file-inventory-unreadable",
+                json!(stats.unreadable_skipped.to_string()),
+            );
+        }
+    }
+
     // C22 os-release-missing-fields — CDX emits as
     // comma-joined-with-trailing-empty shape when empty; our JSON
     // value keeps the list-of-strings shape, skipped entirely when

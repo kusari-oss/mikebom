@@ -107,7 +107,9 @@ impl SbomSerializer for CycloneDxJsonSerializer {
             // element array via the equivalence table; per-component
             // `mikebom:sbom-tier` annotations preserve auto-detected
             // values per research §4.
-            .with_sbom_type_override(scan.sbom_type_override);
+            .with_sbom_type_override(scan.sbom_type_override)
+            // Milestone 133 US3 — file-tier walker diagnostic counters.
+            .with_file_inventory_stats(scan.file_inventory_stats.cloned());
         let bom = builder.build(
             scan.components,
             scan.relationships,

@@ -958,6 +958,15 @@ fn apply_go_mod_why_classification(entries: &mut [PackageDbEntry]) -> GoModWhyOu
         {
             continue;
         }
+        // Issue #364 — exclude the synthetic stdlib entry from the
+        // `go mod why` query input. Without this, `go mod why stdlib`
+        // returns Unresolved (stdlib isn't tracked in the user's import
+        // graph), which pads the FR-013 `analyzed=` / `unresolved=`
+        // counts and trips existing degrade-matrix tests. stdlib's
+        // build-inclusion stays None (= confirmed needed by default).
+        if e.name == "stdlib" {
+            continue;
+        }
         // FR-010: BuildInfo-confirmed entries are exempt from all
         // build-inclusion passes — don't spend budget on them.
         if buildinfo_present && !e.extra_annotations.contains_key("mikebom:not-linked") {

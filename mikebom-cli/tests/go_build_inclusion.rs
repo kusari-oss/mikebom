@@ -247,7 +247,10 @@ fn unknown_marker_in_all_three_formats() {
     // FR-011: the marker pass annotates in place; it never adds or
     // removes components. Pre-feature expectation for this fixture:
     // exactly the three go.sum modules (the main module collapses into
-    // metadata.component per milestone 084).
+    // metadata.component per milestone 084). Issue #364 adds one
+    // synthetic `pkg:golang/stdlib@...` component per Go scan; exclude
+    // it from the FR-011 count because it's orthogonal to the marker-
+    // pass invariant under test.
     let golang_count = cdx["components"]
         .as_array()
         .expect("components array")
@@ -255,7 +258,7 @@ fn unknown_marker_in_all_three_formats() {
         .filter(|c| {
             c["purl"]
                 .as_str()
-                .is_some_and(|p| p.starts_with("pkg:golang/"))
+                .is_some_and(|p| p.starts_with("pkg:golang/") && !p.starts_with("pkg:golang/stdlib"))
         })
         .count();
     assert_eq!(

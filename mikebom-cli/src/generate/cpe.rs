@@ -120,6 +120,22 @@ pub fn synthesize_cpes(component: &ResolvedComponent) -> Vec<String> {
             push_unique(&mut vendors, &format!("python-{name}"));
         }
         "golang" | "go" => {
+            // Issue #364 — the synthetic `pkg:golang/stdlib` component
+            // emitted for every Go-source scan carries the Go toolchain
+            // version, which NVD lists under `cpe:2.3:a:golang:go:<v>`.
+            // Special-case the vendor + product so consumers can match
+            // Go stdlib CVEs (e.g. CVE-2024-34156 big.Int overflow)
+            // directly from the synthesized CPE rather than relying on
+            // post-processing.
+            if name == "stdlib" {
+                // The version string carries the `v`-prefix from the
+                // PURL (`pkg:golang/stdlib@v1.21.5`); strip it so the
+                // CPE matches NVD's bare-version convention.
+                let bare_version = version.trim_start_matches('v');
+                return vec![format!(
+                    "cpe:2.3:a:golang:go:{bare_version}:*:*:*:*:*:*:*"
+                )];
+            }
             push_unique(&mut vendors, name);
             if let Some(namespace) = component.purl.namespace() {
                 push_unique(&mut vendors, namespace);

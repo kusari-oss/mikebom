@@ -105,6 +105,10 @@ pub struct CycloneDxBuilder {
     /// when `--file-inventory=off`; `Some(_)` for orphan/full modes.
     file_inventory_stats:
         Option<crate::scan_fs::file_tier::walker::WalkerStats>,
+    /// Milestone 133 US4 — `--file-inventory` mode label. Only
+    /// `Some("full")` triggers the document-level override marker
+    /// (Constitution Strict Boundary §5).
+    file_inventory_mode: Option<String>,
 }
 
 impl CycloneDxBuilder {
@@ -122,6 +126,7 @@ impl CycloneDxBuilder {
             user_metadata: mikebom::binding::user_metadata::UserMetadata::default(),
             sbom_type_override: None,
             file_inventory_stats: None,
+            file_inventory_mode: None,
         }
     }
 
@@ -133,6 +138,14 @@ impl CycloneDxBuilder {
         stats: Option<crate::scan_fs::file_tier::walker::WalkerStats>,
     ) -> Self {
         self.file_inventory_stats = stats;
+        self
+    }
+
+    /// Milestone 133 US4 — record the operator-supplied
+    /// `--file-inventory` mode label. Only `Some("full")` triggers
+    /// the document-level override marker.
+    pub fn with_file_inventory_mode(mut self, mode: Option<String>) -> Self {
+        self.file_inventory_mode = mode;
         self
     }
 
@@ -360,6 +373,7 @@ impl CycloneDxBuilder {
             &self.user_metadata,
             self.sbom_type_override,
             self.file_inventory_stats.as_ref(),
+            self.file_inventory_mode.as_deref(),
         );
         // Milestone 076 — track per-component identifier matches so
         // we can emit a warn for any selector that matched zero

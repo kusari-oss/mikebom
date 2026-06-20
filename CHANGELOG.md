@@ -7,6 +7,62 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### Constitution amendment + component-tiers reference doc (milestone 133 US4)
+
+Closes milestone 133. Pure docs + one new annotation:
+
+**Constitution 1.4.0 → 1.5.0** (`.specify/memory/constitution.md`):
+
+- **Strict Boundary §5 added** — "No file-tier duplicates in default
+  mode." File-tier emission MUST NOT introduce duplicate components
+  in the default `--file-inventory=orphan` mode; the
+  `--file-inventory=full` flag is an explicit override that bypasses
+  the FR-011 hybrid dedupe; full-mode SBOMs MUST carry a document-
+  level `mikebom:file-inventory-mode = "full"` annotation so
+  consumers can detect the override at parse time.
+- **Principle VIII (Completeness) clarification** — unattributed
+  content (files surviving every package-DB, binary-tier, and
+  fingerprint reader) counts toward Completeness when surfaced as
+  file-tier components per the orphan-fallback contract.
+- SYNC IMPACT REPORT header updated; version line at doc tail
+  bumped to `1.5.0`.
+
+**`mikebom:file-inventory-mode` annotation (C97)**:
+
+- Emitted ONLY when the operator explicitly passes
+  `--file-inventory=full` (the dedupe-bypass override). The default
+  `orphan` mode and the byte-identity-preserving `off` mode do NOT
+  emit the marker — preserves byte-identity on every default-mode
+  SBOM.
+- Document-scope: CDX `metadata.properties[]`, SPDX 2.3
+  `bom.annotations[]`, SPDX 3 `Annotation` element with `subject`
+  pointing at the `SpdxDocument`.
+- Catalog row + symmetric extractors wired. `holistic_parity` validates
+  the SymmetricEqual directionality.
+
+**New reference doc `docs/reference/component-tiers.md`** (~280 lines):
+
+- The three tiers (package / binary / file) and how they compose
+  — precedence rules, FR-005 content-shape allowlist, FR-005
+  path-prefix exclusion list, full-mode override.
+- Worked CDX / SPDX 2.3 / SPDX 3 examples for each tier.
+- "Why mikebom rejected the alternative designs" section
+  documenting the syft (per-(path × hash)) and trivy
+  (per-(package × path)) tradeoffs.
+- Cross-linked from `docs/reference/sbom-format-mapping.md`.
+
+**`ScanArtifacts::file_inventory_mode: Option<&'a str>`** threaded
+through the three format builders. CDX wires through
+`CycloneDxBuilder::with_file_inventory_mode(...)` (new method);
+SPDX 2.3 / SPDX 3 doc-level annotation builders read the bundle
+directly.
+
+No new Cargo dependencies. No golden churn (default-mode scans
+don't trigger the marker).
+
+Pre-PR gate green: 153 result blocks ok, 0 failed; bin test count
+2213 (unchanged).
+
 ### File-tier transparency annotations + full-mode polish (milestone 133 US3)
 
 Closes Phase 5 of milestone 133. No new behavior change — adds the

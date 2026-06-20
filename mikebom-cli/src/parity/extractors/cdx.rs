@@ -765,6 +765,7 @@ cdx_anno!(c93_cdx, "mikebom:file-inventory-skipped-oversize", document);
 cdx_anno!(c94_cdx, "mikebom:file-inventory-skipped-special-files", document);
 cdx_anno!(c95_cdx, "mikebom:file-inventory-unreadable", document);
 cdx_anno!(c96_cdx, "mikebom:file-paths-truncated", component);
+cdx_anno!(c97_cdx, "mikebom:file-inventory-mode", document);
 
 // ============================================================
 // Section D — Evidence (D1, D2 — CDX-native shape)

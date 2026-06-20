@@ -733,6 +733,7 @@ mod tests {
             identifiers: &[],
             component_identifiers: &[],
             file_inventory_stats: None,
+            file_inventory_mode: None,
             root_override: crate::generate::RootComponentOverride::default(),
             user_metadata: mikebom::binding::user_metadata::UserMetadata::default(),
             sbom_type_override: None,

@@ -109,7 +109,12 @@ impl SbomSerializer for CycloneDxJsonSerializer {
             // values per research §4.
             .with_sbom_type_override(scan.sbom_type_override)
             // Milestone 133 US3 — file-tier walker diagnostic counters.
-            .with_file_inventory_stats(scan.file_inventory_stats.cloned());
+            .with_file_inventory_stats(scan.file_inventory_stats.cloned())
+            // Milestone 133 US4 — propagate `--file-inventory` mode
+            // label so `metadata.properties[]` carries the
+            // `mikebom:file-inventory-mode = "full"` override marker
+            // when the operator opted into the dedupe bypass.
+            .with_file_inventory_mode(scan.file_inventory_mode.map(String::from));
         let bom = builder.build(
             scan.components,
             scan.relationships,

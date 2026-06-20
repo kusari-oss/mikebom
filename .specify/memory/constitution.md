@@ -2,28 +2,45 @@
   ============================================================
   SYNC IMPACT REPORT
   ============================================================
-  Version change: 1.3.1 → 1.4.0
-  Bump rationale: MINOR — Principle V (Specification Compliance)
-  gains a new normative bullet codifying "standards-native
-  fields take precedence over `mikebom:`-prefixed properties".
-  Every spec proposing a new `mikebom:*` property, annotation,
-  or relationship type MUST first audit the target formats for
-  an existing native construct carrying the same semantic, and
-  reviewers MUST reject specs that don't. Prompted by milestone
-  052 (lifecycle-dep-scope), where the alpha.9
-  `mikebom:dev-dependency` annotation was found to reinvent
-  CDX `scope` + SPDX 2.3 `DEV/BUILD/TEST_DEPENDENCY_OF` + SPDX
-  3 `LifecycleScopeType` — all three formats had the native
-  field, mikebom had silently used a custom property.
+  Version change: 1.4.0 → 1.5.0
+  Bump rationale: MINOR — new Strict Boundary §5 codifying
+  "file-tier emission MUST NOT introduce duplicate components
+  in default mode; the `--file-inventory=full` flag is an
+  explicit override; full-mode SBOMs MUST carry a document-
+  level `mikebom:file-inventory-mode` annotation so consumers
+  can detect the override at parse time". Principle VIII
+  (Completeness) clarification: "unattributed content — files
+  surviving all package-DB, binary-tier, and fingerprint
+  readers — counts toward Completeness when surfaced as
+  file-tier components per the orphan-fallback contract."
+  Prompted by milestone 133 (File-tier component emission) —
+  the Completeness 1★ vs 5★ gap surfaced during milestone
+  132's audit-baseline measurement; milestone 133 is the
+  structural response.
 
   Modified sections:
-    - Principle V (Specification Compliance): new fifth bullet
-      + new paragraph in the Rationale.
+    - Principle VIII (Completeness): new clarification para
+      on unattributed-content surfacing.
+    - Strict Boundaries: new §5 covering the no-duplicate-
+      in-default-mode rule + the full-mode override marker
+      requirement.
 
-  Added sections: none
+  Added sections: Strict Boundary §5
   Removed sections: none
 
   Previous SYNC IMPACT history:
+    - 1.3.1 → 1.4.0: MINOR — Principle V (Specification Compliance)
+      gains a new normative bullet codifying "standards-native
+      fields take precedence over `mikebom:`-prefixed properties".
+      Every spec proposing a new `mikebom:*` property, annotation,
+      or relationship type MUST first audit the target formats for
+      an existing native construct carrying the same semantic, and
+      reviewers MUST reject specs that don't. Prompted by milestone
+      052 (lifecycle-dep-scope), where the alpha.9
+      `mikebom:dev-dependency` annotation was found to reinvent
+      CDX `scope` + SPDX 2.3 `DEV/BUILD/TEST_DEPENDENCY_OF` + SPDX
+      3 `LifecycleScopeType` — all three formats had the native
+      field, mikebom had silently used a custom property.
     - 1.3.0 → 1.3.1: PATCH — pre-PR Verification table updated to
       reflect the post-milestone-016 zero-warnings baseline. The
       clippy invocation now carries `-- -D warnings`; the passing
@@ -238,6 +255,19 @@ observed by the eBPF trace MUST be processed and represented
 in the output unless explicitly filtered by a user-specified
 exclusion rule.
 
+**Unattributed content also counts toward Completeness**
+(added in 1.5.0 per milestone 133). Files surviving every
+package-DB reader, every binary-tier reader, and every
+fingerprint matcher MUST be surfaced as file-tier components
+in the emitted SBOM under the orphan-fallback contract
+(`--file-inventory=orphan`, the post-milestone-133 default).
+The content-shape allowlist documented in
+`docs/reference/component-tiers.md` keeps the orphan output
+signal-dense; the file-tier components themselves carry no
+PURL and identify content by SHA-256 + observed paths. An
+operator who explicitly opts out via `--file-inventory=off`
+accepts the resulting false-negative surface.
+
 When completeness cannot be guaranteed (e.g., ring buffer
 overflow, partial trace window), the tool MUST signal the
 gap per Principle X (Transparency).
@@ -245,7 +275,12 @@ gap per Principle X (Transparency).
 **Rationale**: An SBOM that omits real dependencies creates a
 false sense of security. Consumers making vulnerability or
 license decisions based on an incomplete SBOM inherit
-unquantified risk.
+unquantified risk. Unattributed content (custom binaries,
+vendored libraries with no manifest, embedded archives) is
+the long-tail completeness gap that milestone 132's
+audit-baseline measurement surfaced; milestone 133's
+file-tier emission closes it without inventing a PURL where
+none exists.
 
 ### IX. Accuracy
 
@@ -382,6 +417,23 @@ optional modes:
    `.unwrap()` for brevity; production code MUST use proper
    error propagation (Principle IV).
 
+5. **No file-tier duplicates in default mode.** File-tier
+   emission (milestone 133) MUST NOT introduce duplicate
+   components in the default `--file-inventory=orphan` mode.
+   The FR-011 hybrid dedupe (path coverage from package-tier
+   components' `evidence.occurrences[].location` field OR hash
+   coverage from binary-tier components' `hashes[]` SHA-256
+   entries) MUST suppress every file already claimed by a
+   package or binary reader. The `--file-inventory=full` flag
+   is an explicit override that bypasses the dedupe; full-mode
+   SBOMs MUST carry a document-level
+   `mikebom:file-inventory-mode = "full"` annotation
+   (CycloneDX `metadata.properties[]`, SPDX 2.3 / SPDX 3
+   document-scope `Annotation`) so consumers can detect the
+   override at parse time and filter the file-tier set when
+   the duplication is unwanted. Added 1.5.0 per milestone
+   133.
+
 ## Development Workflow
 
 ### Build & Test Commands
@@ -469,4 +521,4 @@ changes do not violate any principle. Violations require
 either a code fix or a constitution amendment — never silent
 deviation.
 
-**Version**: 1.4.0 | **Ratified**: 2026-04-15 | **Last Amended**: 2026-05-01
+**Version**: 1.5.0 | **Ratified**: 2026-04-15 | **Last Amended**: 2026-06-20

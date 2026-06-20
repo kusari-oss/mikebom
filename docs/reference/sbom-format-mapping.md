@@ -4,6 +4,8 @@
 
 This document is the contract that the SPDX 2.3 serializer (and the SPDX 3 stub) MUST honor. Per FR-013, FR-014, FR-015, every data element mikebom emits in CycloneDX has a row here naming its target location in each format and a one-line justification.
 
+For the broader **component-tier model** (package-tier vs binary-tier vs file-tier, content-shape allowlist, full-mode override, behavior across `--file-inventory` modes), see `docs/reference/component-tiers.md`. That doc cites this catalog for per-annotation wire-shape details; this doc cites the tier model for behavior questions.
+
 ## Conventions
 
 - **CycloneDX location**: JSON Pointer-style path into the CycloneDX 1.6 document (`/components/{i}/<field>` etc.).
@@ -137,6 +139,7 @@ These rows have no native SPDX 2.3 home. Per clarification Q2 (Option A) and FR-
 | C94 | `mikebom:file-inventory-skipped-special-files` | document-scope counter — decimal string of files the walker skipped because they were special files (devices, sockets, FIFOs, char/block specials). Emitted gating same as C93. | Document-scope annotation, same envelope. | Document-scope Annotation element. | **Principle V audit**: no native field for "count of special files skipped during file-tier walk". Principle X transparency. Parity-bridge. Milestone 133 US3. |
 | C95 | `mikebom:file-inventory-unreadable` | document-scope counter — decimal string of files the walker couldn't open or read (permissions, missing, mid-flight delete). Emitted gating same as C93. | Document-scope annotation. | Document-scope Annotation. | **Principle V audit**: no native field. Principle X transparency — flags I/O issues that prevented complete inventory. Parity-bridge. Milestone 133 US3. |
 | C96 | `mikebom:file-paths-truncated` | per-component `properties[]` entry — string `"true"` carrying the flag that the component's `mikebom:file-paths` array hit the 100-entry FR-007 cap and some paths were dropped from the wire shape. Emitted ONLY on file-tier components when the truncation fired. | Annotation on Package. | Annotation on `software_File`. | **Principle V audit**: native fields don't carry "this list-valued field was truncated at emission". Companion to C92 — keeps the cap behavior auditable. Parity-bridge. Milestone 133 US3 FR-007. |
+| C97 | `mikebom:file-inventory-mode` | document-scope `metadata.properties[]` entry — string carrying `"full"` ONLY when the operator opted into `--file-inventory=full` (the explicit FR-011 hybrid-dedupe bypass). The default `orphan` mode and the byte-identity-preserving `off` mode do NOT emit this marker. Per Constitution Strict Boundary §5 (added in 1.5.0), full-mode SBOMs MUST carry this marker so consumers can detect at parse time that the file-tier set may duplicate package/binary tier coverage. | Document-scope annotation via `MikebomAnnotationCommentV1` envelope. | Document-scope `Annotation` element with `subject` pointing at the `SpdxDocument` element. | **Principle V audit**: no CDX 1.6 / SPDX 2.3 / SPDX 3.0.1 native field for "consumer-visible override marker indicating that file-tier emission bypassed dedupe". Required by Strict Boundary §5 as the auditable signal of the override. Parity-bridge. Milestone 133 US4 FR-019 (a). |
 
 ## Section D — Evidence (CycloneDX 1.6 has native model; SPDX 2.3 does not)
 

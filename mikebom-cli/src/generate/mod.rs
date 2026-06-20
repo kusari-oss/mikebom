@@ -129,6 +129,16 @@ pub struct ScanArtifacts<'a> {
     /// document-level annotation per Constitution Principle X.
     pub file_inventory_stats:
         Option<&'a crate::scan_fs::file_tier::walker::WalkerStats>,
+    /// Milestone 133 US4 (Constitution Strict Boundary §5):
+    /// operator-supplied `--file-inventory` mode label (`"off"` /
+    /// `"orphan"` / `"full"`). `Some("full")` triggers a mandatory
+    /// document-level `mikebom:file-inventory-mode` annotation so
+    /// consumers can detect when the FR-011 dedupe was bypassed.
+    /// `None` for pre-feature scans and tests; `Some("off")` /
+    /// `Some("orphan")` permit transparent passthrough without
+    /// emitting the override marker (preserves byte-identity on
+    /// default-mode SBOMs).
+    pub file_inventory_mode: Option<&'a str>,
     /// Milestone 077: operator-supplied overrides for the root
     /// component's name + version. When `name` or `version` is
     /// `Some(_)`, the override replaces the corresponding auto-derived

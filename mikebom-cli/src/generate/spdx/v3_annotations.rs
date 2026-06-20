@@ -362,6 +362,12 @@ fn push_document_fields(
     };
     push(out, "mikebom:generation-context", json!(gc));
 
+    // Milestone 133 US4 (Constitution Strict Boundary §5):
+    // `--file-inventory=full` opt-in marker.
+    if let Some("full") = scan.file_inventory_mode {
+        push(out, "mikebom:file-inventory-mode", json!("full"));
+    }
+
     // Milestone 133 US3 (C93/C94/C95): file-tier walker diagnostic
     // skip counters. Constitution Principle X. See CDX +
     // SPDX 2.3 twins.

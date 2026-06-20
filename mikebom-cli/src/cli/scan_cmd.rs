@@ -2401,6 +2401,16 @@ pub async fn execute(
         // per-format emitters which match against `components[].purl`.
         component_identifiers: &args.component_id,
         file_inventory_stats: file_inventory_stats.as_ref(),
+        // Milestone 133 US4 (Constitution Strict Boundary §5): the
+        // mode label rides as `None` when the walker didn't run
+        // (`off`), `Some("orphan")` for the default mode (silent
+        // passthrough — no doc-level marker), and `Some("full")`
+        // for the explicit override that triggers the marker.
+        file_inventory_mode: match file_inventory_mode {
+            scan_fs::file_tier::FileInventoryMode::Off => None,
+            scan_fs::file_tier::FileInventoryMode::Orphan => Some("orphan"),
+            scan_fs::file_tier::FileInventoryMode::Full => Some("full"),
+        },
         // Milestone 077: operator-supplied overrides for the root
         // component's name + version. Constructed from the new
         // `--root-name` / `--root-version` CLI flags; defaults to

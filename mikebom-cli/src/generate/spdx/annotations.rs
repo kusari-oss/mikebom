@@ -354,6 +354,12 @@ pub fn annotate_document(
     };
     push(&mut out, "mikebom:generation-context", json!(gc));
 
+    // Milestone 133 US4 (Constitution Strict Boundary §5):
+    // `--file-inventory=full` opt-in marker. CDX + SPDX 3 twins.
+    if let Some("full") = artifacts.file_inventory_mode {
+        push(&mut out, "mikebom:file-inventory-mode", json!("full"));
+    }
+
     // Milestone 133 US3 (C93/C94/C95): file-tier walker diagnostic
     // skip counters. Constitution Principle X — operators get
     // transparent visibility into what the orphan/full walker

@@ -606,6 +606,7 @@ spdx3_anno!(c93_spdx3, "mikebom:file-inventory-skipped-oversize", document);
 spdx3_anno!(c94_spdx3, "mikebom:file-inventory-skipped-special-files", document);
 spdx3_anno!(c95_spdx3, "mikebom:file-inventory-unreadable", document);
 spdx3_anno!(c96_spdx3, "mikebom:file-paths-truncated", component);
+spdx3_anno!(c97_spdx3, "mikebom:file-inventory-mode", document);
 
 // C67 — `mikebom:assertion-conflict` (milestone 119). Per-component
 // graph-element annotation carrying the JSON-encoded array of

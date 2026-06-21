@@ -18,6 +18,13 @@ Divergent-PURL is a **potential supply-chain signal**:
 
 Neither Trivy nor Syft detects this case. Surfacing it in the SBOM is a mikebom differentiator.
 
+## Clarifications
+
+### Session 2026-06-21
+
+- Q: What are the canonical names of the per-component property and the document-scope summary annotation? → A: `mikebom:duplicate-purl-divergent` (per-component on the deduped root) + `mikebom:purl-collisions-detected` (document-scope summary). Asymmetric verbs but each name is self-explanatory in isolation; matches the issue body's straw proposal and follows the existing `mikebom:graph-completeness` naming pattern (mikebom:<topic-keywords>).
+- Q: What's the structure of the diverging-deps payload in the per-component property? → A: Per-path dep-name list. Lossless and future-proof: emit `{ reason, paths[], dep_sets_by_path: { "<path>": ["dep1", ...] } }`. Consumer computes whatever diff view they want (count, symmetric diff, intersection). Same per-path-attribution shape extends naturally to the `hashes-differ` payload (`hashes_by_path: { "<path>": "<sha>" }`).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 — Operator detects an accidental shadow copy (Priority: P1)
@@ -83,8 +90,8 @@ A workspace contains multiple divergent-PURL collisions across different crates.
 
 - **FR-001**: System MUST detect when two-or-more `Cargo.toml` manifest files within a single scan resolve to the same `pkg:cargo/<name>@<version>` PURL.
 - **FR-002**: System MUST compare the declared direct dependency sets across colliding manifests, where the dep set is the union of `[dependencies]`, `[dev-dependencies]`, and `[build-dependencies]` table keys.
-- **FR-003**: When the declared direct dep sets differ across colliding manifests, system MUST emit BOTH (a) a per-component property on the deduped `pkg:<ecosystem>/<name>@<version>` component identifying the collision and its divergence reason, AND (b) a document-scope summary annotation listing every collision detected in the scan. The two surfaces are strictly additive: per-component is the primary detection signal (consumers asking "is THIS component divergent?"); document-scope is the aggregation view (consumers enumerating every collision in one query). Both surfaces follow the milestone-061 `mikebom:graph-completeness` annotation pattern (structured value carrying detection context).
-- **FR-004**: The emitted signal MUST identify every manifest path that participated in the collision and the divergence reason (`deps-differ` or `hashes-differ`).
+- **FR-003**: When the declared direct dep sets differ across colliding manifests, system MUST emit BOTH (a) a per-component property named `mikebom:duplicate-purl-divergent` on the deduped `pkg:<ecosystem>/<name>@<version>` component identifying the collision and its divergence reason, AND (b) a document-scope summary annotation named `mikebom:purl-collisions-detected` listing every collision detected in the scan. The two surfaces are strictly additive: per-component is the primary detection signal (consumers asking "is THIS component divergent?"); document-scope is the aggregation view (consumers enumerating every collision in one query). Both surfaces follow the milestone-061 `mikebom:graph-completeness` annotation pattern (structured value carrying detection context).
+- **FR-004**: The emitted signal MUST be a structured value with three required keys: (a) `reason` — one of `deps-differ`, `hashes-differ`, or `both`; (b) `paths` — an array of every manifest path that participated in the collision; (c) per-path attribution payload, namely `dep_sets_by_path` (object mapping each path to its sorted list of declared dep names) when the reason includes `deps-differ`, and `hashes_by_path` (object mapping each path to its deep-hash hex string) when the reason includes `hashes-differ`. The per-path attribution shape is lossless: downstream consumers compute count, symmetric diff, intersection, or any other diff view they need without re-reading the manifests.
 - **FR-005**: When `--deep-hash` mode is enabled and per-file SHA computation is already happening, system MUST additionally compare the deep hashes across colliding manifests and emit `hashes-differ` if they diverge.
 - **FR-006**: When colliding manifests have identical declared dep sets AND (if `--deep-hash`) identical deep hashes, system MUST NOT emit any divergence signal — current milestone-064 first-wins behavior preserved bit-for-bit.
 - **FR-007**: Default scan behavior MUST NOT fail or exit non-zero on a divergent-PURL detection — the signal is informational only. A hard-fail mode is explicitly out of scope for this milestone (follow-up CLI flag in a future milestone).

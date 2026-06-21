@@ -304,3 +304,132 @@ jobs:
             tail -3 /tmp/scan.log >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  # Issue #109 — OS-package readers (dpkg / apk / rpm) need rootfs
+  # fixtures from real container images. Split from `scan-realistic-
+  # project` because:
+  #
+  # 1. macos-latest GitHub Actions runners don't ship docker (the
+  #    `scan-realistic-project` matrix runs on both platforms), so a
+  #    matrix-merged approach would need every step gated on
+  #    `if: matrix.platform == 'ubuntu-latest'` and the macOS combos
+  #    would produce noisy empty jobs.
+  # 2. Setup shape differs — `docker pull` + `docker save` instead of
+  #    `git clone`. Keeps the two job's step lists clean and self-
+  #    contained.
+  #
+  # The dpkg / apk / rpm production readers are themselves `#[cfg(unix)]`
+  # gated (per #210 close-out) so Linux-only CI coverage matches the
+  # production code's platform scope.
+  scan-rootfs-image:
+    name: Scan ${{ matrix.image.name }} rootfs (ubuntu)
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          # Floors start conservatively low; the first CI run reveals
+          # the empirical count and a follow-up tightens (same pattern
+          # as #411 calibrated express/flask/ripgrep).
+          - name: debian-rootfs
+            tag: debian:12-slim
+            expected_min_components: 10
+          - name: alpine-rootfs
+            tag: alpine:3.19
+            expected_min_components: 5
+          - name: rockylinux-rootfs
+            tag: rockylinux:9
+            expected_min_components: 50
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable (2026-04-25)
+
+      - name: Cache cargo + build artifacts
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          prefix-key: v1-rust-rootfs
+
+      # See ci.yml::lint-and-test rationale. Same rustup-init race
+      # the `scan-realistic-project` job guards against.
+      - name: Remove rustup-init + verify cargo works
+        shell: bash
+        run: |
+          rm -f "$HOME/.cargo/bin/rustup-init"
+          if ! cargo --version > /dev/null 2>&1; then
+            echo "ERROR: cargo --version fails"
+            ls -la "$HOME/.cargo/bin/" || true
+            exit 1
+          fi
+          echo "cargo --version OK: $(cargo --version)"
+
+      # Cache the saved tarball keyed on the image tag — the docker
+      # image content is identity-stable per tag for the lifetime of
+      # the tag, so cache hits skip both `docker pull` AND `docker
+      # save` (the slower of the two on cold runners).
+      - name: Cache rootfs tarball
+        id: cache-tarball
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: /tmp/${{ matrix.image.name }}.tar
+          key: rootfs-tarball-${{ matrix.image.name }}-${{ matrix.image.tag }}-v1
+
+      - name: Pull + save ${{ matrix.image.tag }}
+        if: steps.cache-tarball.outputs.cache-hit != 'true'
+        run: |
+          docker pull "${{ matrix.image.tag }}"
+          docker save "${{ matrix.image.tag }}" -o /tmp/${{ matrix.image.name }}.tar
+          ls -lh /tmp/${{ matrix.image.name }}.tar
+
+      - name: Build mikebom
+        run: cargo +stable build -p mikebom
+
+      - name: Scan ${{ matrix.image.name }}
+        run: |
+          set -o pipefail
+          # mikebom auto-detects the `--image` argument as a tarball
+          # path (vs an OCI ref) when the value is an existing file
+          # on disk. No `--image-src` needed for the archive path.
+          # Isolate HOME so the scan doesn't pick up the runner's
+          # own caches.
+          HOME=$(mktemp -d) \
+            ./target/debug/mikebom --offline sbom scan \
+              --image /tmp/${{ matrix.image.name }}.tar \
+              --format spdx-2.3-json,cyclonedx-json \
+              --output spdx-2.3-json=/tmp/${{ matrix.image.name }}.spdx.json \
+              --output cyclonedx-json=/tmp/${{ matrix.image.name }}.cdx.json \
+              --no-deep-hash 2>&1 | tee /tmp/scan.log
+
+      - name: Validate SBOM structure + component floor
+        run: |
+          SPDX_PKG_COUNT=$(jq '.packages | length' /tmp/${{ matrix.image.name }}.spdx.json)
+          CDX_COMP_COUNT=$(jq '.components | length' /tmp/${{ matrix.image.name }}.cdx.json)
+          echo "SPDX 2.3 packages: $SPDX_PKG_COUNT"
+          echo "CDX 1.6 components: $CDX_COMP_COUNT"
+          if [ "$SPDX_PKG_COUNT" -lt "${{ matrix.image.expected_min_components }}" ]; then
+            echo "::error::SPDX 2.3 component floor missed: got $SPDX_PKG_COUNT, expected >= ${{ matrix.image.expected_min_components }}"
+            exit 1
+          fi
+          MIN_CDX=$(( ${{ matrix.image.expected_min_components }} - 5 ))
+          if [ "$CDX_COMP_COUNT" -lt "$MIN_CDX" ]; then
+            echo "::error::CDX 1.6 component floor missed: got $CDX_COMP_COUNT, expected >= $MIN_CDX"
+            exit 1
+          fi
+          jq -e 'has("spdxVersion") and has("packages") and has("relationships")' \
+            /tmp/${{ matrix.image.name }}.spdx.json > /dev/null
+          jq -e 'has("bomFormat") and has("components") and has("metadata")' \
+            /tmp/${{ matrix.image.name }}.cdx.json > /dev/null
+
+      - name: Report scan summary
+        if: always()
+        run: |
+          echo "## ${{ matrix.image.name }} (${{ matrix.image.tag }})" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f /tmp/scan.log ]; then
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -3 /tmp/scan.log >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi

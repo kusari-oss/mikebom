@@ -100,6 +100,17 @@ fn unwrap_wrapper(command: &[String]) -> Option<Vec<String>> {
     }
 }
 
+/// Read the user's home directory in a host-portable way. POSIX hosts
+/// set `HOME`; Windows hosts set `USERPROFILE`. Returns the first one
+/// that's defined, or `None` when neither is set (the function is the
+/// single source of truth — every caller in this module routes through
+/// here so the POSIX/Windows split lives in exactly one place).
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+}
+
 /// Known-tool → artifact-dir table. Each entry may additionally inspect
 /// `argv` (e.g. go only caches for `build|mod|get|install`) to decide
 /// whether the dir is actually relevant.
@@ -112,7 +123,7 @@ fn dirs_for_tool(tool: &str, command: &[String]) -> Vec<PathBuf> {
         }
         "pip" | "pip3" => {
             // Downloaded wheels live in pip's http cache.
-            if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+            if let Some(home) = home_dir() {
                 out.push(home.join(".cache/pip/http-v2"));
                 out.push(home.join(".cache/pip/http"));
             }
@@ -123,19 +134,19 @@ fn dirs_for_tool(tool: &str, command: &[String]) -> Vec<PathBuf> {
         }
         "npm" => {
             out.push(PathBuf::from("node_modules"));
-            if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+            if let Some(home) = home_dir() {
                 out.push(home.join(".npm/_cacache"));
             }
         }
         "pnpm" => {
             out.push(PathBuf::from("node_modules/.pnpm"));
-            if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+            if let Some(home) = home_dir() {
                 out.push(home.join(".pnpm-store"));
             }
         }
         "yarn" => {
             out.push(PathBuf::from("node_modules"));
-            if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+            if let Some(home) = home_dir() {
                 out.push(home.join(".yarn/cache"));
             }
         }
@@ -147,9 +158,7 @@ fn dirs_for_tool(tool: &str, command: &[String]) -> Vec<PathBuf> {
             if fetches {
                 let gopath = std::env::var_os("GOPATH")
                     .map(PathBuf::from)
-                    .or_else(|| {
-                        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("go"))
-                    });
+                    .or_else(|| home_dir().map(|h| h.join("go")));
                 if let Some(p) = gopath {
                     out.push(p.join("pkg/mod"));
                 }
@@ -174,8 +183,8 @@ fn cargo_home() -> PathBuf {
     if let Some(home) = std::env::var_os("CARGO_HOME") {
         return PathBuf::from(home);
     }
-    std::env::var_os("HOME")
-        .map(|h| PathBuf::from(h).join(".cargo"))
+    home_dir()
+        .map(|h| h.join(".cargo"))
         .unwrap_or_else(|| PathBuf::from(".cargo"))
 }
 
@@ -224,16 +233,12 @@ mod tests {
         assert!(dirs.iter().any(|p| p.to_string_lossy().contains("registry/cache")));
     }
 
-    // Milestone 100: `#[cfg(unix)]` — production code reads `$HOME`
-    // (POSIX) to derive pip/GOPATH cache locations; on Windows that
-    // env var is unset so detect() returns empty. A follow-up ticket
-    // tracks USERPROFILE/HOMEDRIVE fallback for Windows hosts.
-    #[cfg(unix)]
     #[test]
     fn python_m_pip_unwraps_to_pip() {
-        // HOME is set in the test harness
+        // POSIX hosts have `HOME` set; Windows hosts have `USERPROFILE`.
+        // `home_dir()` picks whichever is defined, so this test runs on
+        // both lanes.
         let dirs = detect(&cmd(&["python3", "-m", "pip", "install", "requests"]));
-        // At least one of pip's expected dirs should appear
         let lossy: Vec<String> =
             dirs.iter().map(|p| p.to_string_lossy().into_owned()).collect();
         assert!(
@@ -242,9 +247,6 @@ mod tests {
         );
     }
 
-    // Milestone 100: `#[cfg(unix)]` — same HOME-derivation issue as
-    // `python_m_pip_unwraps_to_pip` above. Tracked in the follow-up.
-    #[cfg(unix)]
     #[test]
     fn go_build_yields_gopath_pkg_mod() {
         let dirs = detect(&cmd(&["go", "build", "./..."]));

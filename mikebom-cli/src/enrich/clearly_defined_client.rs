@@ -8,14 +8,18 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 const DEFAULT_BASE_URL: &str = "https://api.clearlydefined.io";
 
 /// Fields mikebom actually uses out of CD's `/definitions` payload.
 /// Optional everywhere because CD returns 200 with a sparse body for
 /// "we know about this package but have no curated data yet."
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+///
+/// `Serialize` + `Deserialize` are required by the persistent disk
+/// cache (`clearly_defined_disk_cache.rs`); they're a trivial mirror
+/// of the in-memory shape.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CdDefinition {
     /// CD's curated SPDX expression for the package, taken from
     /// `licensed.declared`. `None` when the field is absent or empty.

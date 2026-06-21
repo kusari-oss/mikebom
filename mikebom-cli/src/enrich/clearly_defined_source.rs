@@ -21,6 +21,7 @@ use mikebom_common::types::license::SpdxExpression;
 
 use super::clearly_defined_client::{CdDefinition, ClearlyDefinedClient};
 use super::clearly_defined_coord::{cd_coord_for, CdCoord};
+use super::clearly_defined_disk_cache::CdDiskCache;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 5;
 /// In-flight fetch cap. Mirrors `deps_dev_graph::CONCURRENT_REQUESTS`
@@ -28,9 +29,10 @@ const DEFAULT_TIMEOUT_SECS: u64 = 5;
 /// memory + connection-pool usage predictable on large scans.
 const CONCURRENT_REQUESTS: usize = 8;
 
-/// Owns the HTTP client + cache + offline flag. Cheap to clone — the
-/// cache is `Arc`-shared so concurrent fetch tasks see the same
-/// `HashMap` (and the same miss-deduplication).
+/// Owns the HTTP client + in-memory + disk caches + offline flag.
+/// Cheap to clone — the cache and disk cache are `Arc`-shared so
+/// concurrent fetch tasks see the same `HashMap` and the same
+/// disk-handle.
 #[derive(Clone)]
 pub struct ClearlyDefinedSource {
     client: ClearlyDefinedClient,
@@ -39,6 +41,10 @@ pub struct ClearlyDefinedSource {
     /// None inside it); `None` for confirmed misses (404). Either way
     /// caching prevents the same coord from being re-fetched in a scan.
     cache: Arc<Mutex<HashMap<CdCoord, Option<CdDefinition>>>>,
+    /// Cross-scan persistent cache. The disk-cache layer is
+    /// no-op-tolerant: disabled / unwritable home dirs are silently
+    /// treated as "no disk cache available."
+    disk_cache: Arc<CdDiskCache>,
 }
 
 impl ClearlyDefinedSource {
@@ -47,11 +53,13 @@ impl ClearlyDefinedSource {
             client: ClearlyDefinedClient::new(Duration::from_secs(DEFAULT_TIMEOUT_SECS)),
             offline,
             cache: Arc::new(Mutex::new(HashMap::new())),
+            disk_cache: CdDiskCache::open(),
         }
     }
 
 
     async fn fetch_definition(&self, coord: &CdCoord) -> Option<CdDefinition> {
+        // 1. In-memory cache (the source-of-truth within a scan).
         if let Some(cached) = self
             .cache
             .lock()
@@ -60,6 +68,18 @@ impl ClearlyDefinedSource {
         {
             return cached.clone();
         }
+        // 2. Persistent disk cache (the source-of-truth across scans
+        //    within the TTL window). Hits skip the network and write
+        //    through to in-memory so subsequent lookups in the same
+        //    scan don't re-touch the disk.
+        if let Some(disk_hit) = self.disk_cache.get(coord) {
+            self.cache
+                .lock()
+                .expect("cd cache mutex poisoned")
+                .insert(coord.clone(), disk_hit.clone());
+            return disk_hit;
+        }
+        // 3. Network.
         let result = match self.client.get_definition(&coord.url_path()).await {
             Ok(Some(def)) => Some(def),
             Ok(None) => None,
@@ -72,10 +92,14 @@ impl ClearlyDefinedSource {
                 None
             }
         };
+        // 4. Write through to both caches. Disk-cache write failures
+        //    are logged + dropped inside `put` — this scan continues
+        //    regardless of whether the next scan benefits.
         self.cache
             .lock()
             .expect("cd cache mutex poisoned")
             .insert(coord.clone(), result.clone());
+        self.disk_cache.put(coord, &result);
         result
     }
 

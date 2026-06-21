@@ -90,6 +90,19 @@ jobs:
             url: https://github.com/BurntSushi/ripgrep.git
             tag: 14.1.1
             expected_min_components: 40
+          # Issue #109 — continued expansion: maven + gem. Floors
+          # start conservatively low (3-5) so the first CI run
+          # surfaces the empirical count without false-positives;
+          # a follow-up PR tightens them per the express/flask/
+          # ripgrep calibration pattern.
+          - name: jackson-databind
+            url: https://github.com/FasterXML/jackson-databind.git
+            tag: jackson-databind-3.1.4
+            expected_min_components: 5
+          - name: sinatra
+            url: https://github.com/sinatra/sinatra.git
+            tag: v4.2.1
+            expected_min_components: 3
         platform:
           - ubuntu-latest
           - macos-latest

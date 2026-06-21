@@ -194,6 +194,36 @@ Full-suite regression: `cargo test --workspace` — 871 passing, 0 failed as of 
 
 ---
 
+## Performance test architecture (milestone 094, closes issue #123)
+
+**Principle**: wall-clock performance assertions do not gate PR merges. They live in a dedicated workflow that runs on opt-in (PR label) and on a daily schedule. The default `cargo test --workspace` lane runs only deterministic structural-correctness checks.
+
+**Why**: GitHub Actions shared-CI runners (especially `macos-latest` on shared M-series instances) exhibit timing variance that no median-of-N can absorb. Two historical examples — PRs #121 and #122 — saw the same code produce ≥50% reduction on `linux-x86_64` and 6.7% / 24.8% on `macos-latest` in the same workflow run. Median-of-3 → median-of-5 → 30% → 25% threshold bumps were noise-filter patches that papered over the architectural mismatch between "deterministic CI gate" and "wall-clock measurement on shared infrastructure."
+
+**Split**:
+
+| Surface | Where | Purpose | Gating |
+|---|---|---|---|
+| Structural correctness | `mikebom-cli/tests/triple_format_structural.rs` (and equivalents) | Asserts single-pass dispatch, byte-equivalence between dual-format + sequential-format outputs, no behavior drift across format combinations. Byte-stable, runs in milliseconds. | **Blocks PR merge.** Catches real regressions in the amortization logic without depending on wall-clock. |
+| Wall-clock trends | `mikebom-cli/tests/{dual,triple}_format_perf.rs`, marked `#[ignore]` | Wall-clock measurement of the dual/triple-format amortization. ≥25–30% reduction floor. Tracks regression *trends*. | **Does not block PR merge.** Runs in `.github/workflows/perf.yml` only on `perf` label, `workflow_dispatch`, or daily 06:00 UTC cron. 3-attempt retry per test absorbs runner-noise spikes. |
+
+The `macos-latest` runner additionally skips the strict assertion inside the test itself (still emits the measurement to stderr for visibility) because its variance distribution is wide enough that even 3-attempt retry doesn't reliably absorb it. Linux runners hold the strict gate.
+
+**Pattern for new perf-adjacent tests**:
+
+1. **Default**: assert structural correctness. Byte-equivalence checks, dispatch-call counts via instrumentation, single-pass-vs-multi-pass output shape. Lives in the default lane.
+2. **Wall-clock gate only when justified**: loose budget (e.g., `< 30s`), not tight ratio. Tight ratio gates require strong justification AND must move to `perf.yml`.
+3. **Never bump thresholds to make a flake stop flaking** — that's the treadmill. If the gate is flaky, it's in the wrong workflow. Move it.
+
+**Possible future tightening** (not blocking — issue #123 explicitly leaves room):
+
+- Replace wall-clock with CPU-cycle proxy or instrumented dispatch-call counts (runner-invariant). Would re-enable a strict macOS gate.
+- Commit a production-scale fixture (e.g., `debian:12-slim.tar`, ~60 MB) so fixed CLI overhead is <2% of total scan time — caps the noise fraction below any reasonable threshold.
+
+Neither is required for the architecture to work; both are upside.
+
+---
+
 ## Filesystem walking pattern (milestone 114)
 
 All ecosystem-reader filesystem walkers under `mikebom-cli/src/scan_fs/` go through the shared `scan_fs::walk::safe_walk` helper (introduced in milestone 114; closes issue #108). The helper centralizes canonicalize-keyed visited-set + depth-bound + milestone-113 directory-exclusion + skip-cause `tracing::debug!` emission in one place. Per the milestone-054 audit history, drift between per-walker implementations was a known hazard — every new ecosystem reader copy-pasted the closest existing walker and risked dropping a loop-protection invariant.

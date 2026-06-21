@@ -22,6 +22,7 @@
 
 pub mod cpe;
 pub mod cyclonedx;
+pub mod divergence_annotation;
 pub mod lifecycle_phases;
 pub mod openvex;
 pub mod root_selector;

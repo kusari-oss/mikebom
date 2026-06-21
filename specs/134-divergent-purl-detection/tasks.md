@@ -32,7 +32,7 @@ Brownfield extension to the existing mikebom workspace. All paths are relative t
 
 **Purpose**: Branch + spec scaffolding. Already complete via `/speckit.specify` + `/speckit.clarify` + `/speckit.plan`.
 
-- [ ] T001 Verify branch `134-divergent-purl-detection` is checked out and the `specs/134-divergent-purl-detection/` directory contains `plan.md`, `spec.md`, `research.md`, `data-model.md`, `contracts/`, and `quickstart.md`. No file edits in this task — pure verification (`ls` + `git branch --show-current`).
+- [X] T001 Verify branch `134-divergent-purl-detection` is checked out and the `specs/134-divergent-purl-detection/` directory contains `plan.md`, `spec.md`, `research.md`, `data-model.md`, `contracts/`, and `quickstart.md`. No file edits in this task — pure verification (`ls` + `git branch --show-current`).
 
 ---
 
@@ -40,10 +40,10 @@ Brownfield extension to the existing mikebom workspace. All paths are relative t
 
 **Purpose**: Shared typed representation + ecosystem-agnostic annotation construction. MUST complete before any user story phase can start.
 
-- [ ] T002 Create `mikebom-common/src/divergence.rs` with the `DivergenceRecord` struct, `DivergenceReason` enum (`deps-differ`, `hashes-differ`, `both`), and `CollisionsSummary` struct per `data-model.md`. Include serde derives + the validation rules documented in data-model.md as `#[cfg(test)]` unit tests.
-- [ ] T003 Export `DivergenceRecord`, `DivergenceReason`, `CollisionsSummary` from `mikebom-common/src/lib.rs`. Add `pub mod divergence;` and re-export the public types at the crate root.
-- [ ] T004 Create `mikebom-cli/src/generate/divergence_annotation.rs` with an ecosystem-agnostic annotation-envelope builder. Accepts a `&DivergenceRecord` (or `&CollisionsSummary` for the document-scope path) and returns the JSON-string envelope shape documented in `contracts/per-component-property.md` + `contracts/document-scope-annotation.md`. Reuses the milestone-071 `MikebomAnnotationCommentV1` envelope for the SPDX 2.3 / SPDX 3 paths.
-- [ ] T005 Register the new module in `mikebom-cli/src/generate/mod.rs` with `pub mod divergence_annotation;`.
+- [X] T002 Create `mikebom-common/src/divergence.rs` with the `DivergenceRecord` struct, `DivergenceReason` enum (`deps-differ`, `hashes-differ`, `both`), and `CollisionsSummary` struct per `data-model.md`. Include serde derives + the validation rules documented in data-model.md as `#[cfg(test)]` unit tests.
+- [X] T003 Export `DivergenceRecord`, `DivergenceReason`, `CollisionsSummary` from `mikebom-common/src/lib.rs`. Add `pub mod divergence;` and re-export the public types at the crate root.
+- [X] T004 Create `mikebom-cli/src/generate/divergence_annotation.rs` with an ecosystem-agnostic annotation-envelope builder. Accepts a `&DivergenceRecord` (or `&CollisionsSummary` for the document-scope path) and returns the JSON-string envelope shape documented in `contracts/per-component-property.md` + `contracts/document-scope-annotation.md`. Reuses the milestone-071 `MikebomAnnotationCommentV1` envelope for the SPDX 2.3 / SPDX 3 paths.
+- [X] T005 Register the new module in `mikebom-cli/src/generate/mod.rs` with `pub mod divergence_annotation;`.
 
 **Checkpoint**: at this point the type vocabulary + envelope builder exist; no reader or emitter touches them yet. The workspace MUST still compile clean (`cargo +stable check --workspace`).
 

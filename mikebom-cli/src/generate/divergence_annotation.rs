@@ -3,13 +3,21 @@
 //! `mikebom:purl-collisions-detected` (document-scope) annotations.
 //!
 //! The actual per-format emission code lives in `cyclonedx/`,
-//! `spdx/document.rs`, and `spdx/v3_document.rs`. This module owns
-//! the shared JSON-shape construction so the three emitter paths
-//! agree byte-for-byte on the structured value.
+//! `spdx/annotations.rs`, and `spdx/v3_annotations.rs`. Per-component
+//! emission rides on the existing `extra_annotations` channel; the
+//! document-scope summary is threaded through
+//! `ScanArtifacts::collisions_summary`. The helpers here exist as
+//! the schema-stable construction site so future
+//! cross-CLI-process callers (parity extractors, fuzzers, the
+//! supplement-merge code path) have a canonical entry point that
+//! cannot drift from the [`DivergenceRecord`] and [`CollisionsSummary`]
+//! definitions in `mikebom_common::divergence`.
 //!
 //! Wire format specs:
 //! - `specs/134-divergent-purl-detection/contracts/per-component-property.md`
 //! - `specs/134-divergent-purl-detection/contracts/document-scope-annotation.md`
+
+#![allow(dead_code)]
 
 use mikebom_common::divergence::{CollisionsSummary, DivergenceRecord};
 

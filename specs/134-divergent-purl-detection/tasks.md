@@ -57,20 +57,20 @@ Brownfield extension to the existing mikebom workspace. All paths are relative t
 
 ### Reader-side (cargo)
 
-- [ ] T006 [US1] Extend the cargo reader's per-manifest accumulation in `mikebom-cli/src/scan_fs/package_db/cargo.rs` to track per-path declared dep sets as `BTreeSet<String>` (union of `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]` table keys). Add the field to the existing in-reader candidate struct (`CargoManifestCandidate` per data-model.md). Sort keys to guarantee deterministic comparison.
-- [ ] T007 [US1] At the milestone-064 dedup site in `mikebom-cli/src/scan_fs/package_db/cargo.rs`, when 2+ candidates share a PURL: compare their dep sets pairwise; if any pair differs, construct a `DivergenceRecord` with `reason: DivergenceReason::DepsDiffer`, the sorted-walk-order paths list, and the `dep_sets_by_path` map. Forward the record to the emission orchestrator's per-component-annotation channel. Preserve the existing `tracing::warn!` call site unchanged (FR-008).
+- [X] T006 [US1] Extend the cargo reader's per-manifest accumulation in `mikebom-cli/src/scan_fs/package_db/cargo.rs` to track per-path declared dep sets as `BTreeSet<String>` (union of `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]` table keys). Add the field to the existing in-reader candidate struct (`CargoManifestCandidate` per data-model.md). Sort keys to guarantee deterministic comparison.
+- [X] T007 [US1] At the milestone-064 dedup site in `mikebom-cli/src/scan_fs/package_db/cargo.rs`, when 2+ candidates share a PURL: compare their dep sets pairwise; if any pair differs, construct a `DivergenceRecord` with `reason: DivergenceReason::DepsDiffer`, the sorted-walk-order paths list, and the `dep_sets_by_path` map. Forward the record to the emission orchestrator's per-component-annotation channel. Preserve the existing `tracing::warn!` call site unchanged (FR-008).
 
 ### Emitter-side (per-component property)
 
-- [ ] T008 [P] [US1] Wire CDX 1.6 emission: extend `mikebom-cli/src/generate/cyclonedx/component_properties.rs` (or the equivalent property-appending site) to emit `mikebom:duplicate-purl-divergent` on the deduped component when its corresponding `DivergenceRecord` is present. Per the wire format in `contracts/per-component-property.md`.
-- [ ] T009 [P] [US1] Wire SPDX 2.3 emission: extend `mikebom-cli/src/generate/spdx/document.rs` to emit the per-component annotation using the `MikebomAnnotationCommentV1` envelope. Per the wire format in `contracts/per-component-property.md`.
-- [ ] T010 [P] [US1] Wire SPDX 3 emission: extend `mikebom-cli/src/generate/spdx/v3_document.rs` to emit the per-component `Element.extension` entry. Per the wire format in `contracts/per-component-property.md`.
+- [X] T008 [P] [US1] Wire CDX 1.6 emission: extend `mikebom-cli/src/generate/cyclonedx/component_properties.rs` (or the equivalent property-appending site) to emit `mikebom:duplicate-purl-divergent` on the deduped component when its corresponding `DivergenceRecord` is present. Per the wire format in `contracts/per-component-property.md`.
+- [X] T009 [P] [US1] Wire SPDX 2.3 emission: extend `mikebom-cli/src/generate/spdx/document.rs` to emit the per-component annotation using the `MikebomAnnotationCommentV1` envelope. Per the wire format in `contracts/per-component-property.md`.
+- [X] T010 [P] [US1] Wire SPDX 3 emission: extend `mikebom-cli/src/generate/spdx/v3_document.rs` to emit the per-component `Element.extension` entry. Per the wire format in `contracts/per-component-property.md`.
 
 ### Tests (US1)
 
-- [ ] T011 [US1] Create `mikebom-cli/tests/divergent_purl_deps_differ.rs` containing SC-001's test cases. Use `tempfile::tempdir()` to construct the two-Cargo.toml fixture per `quickstart.md` Scenario 1. Run `mikebom sbom scan` via `Command::new(env!("CARGO_BIN_EXE_mikebom"))`. Parse the emitted CDX JSON. Assert the property is present with the expected `reason`, `paths`, and `dep_sets_by_path`.
-- [ ] T012 [US1] Add a negative-case test to the same file: identical-dep-set fixture (SC-002 / quickstart.md Scenario 2) MUST NOT produce the annotation. Snapshot the emitted SBOM's `components[]`-without-the-annotation-property and verify it matches the pre-milestone baseline for the same fixture shape.
-- [ ] T013 [P] [US1] Extend the SBOM regression suite in `mikebom-cli/tests/cdx_regression.rs`, `spdx_regression.rs`, and `spdx3_regression.rs` to assert that the existing 11-ecosystem cargo golden fixtures (`mikebom-cli/tests/fixtures/golden/{cyclonedx,spdx-2.3,spdx-3}/cargo.*.json`) do NOT acquire the divergence property as a side effect of milestone 134. (Goldens still byte-identical → SC-002 invariant gate.)
+- [X] T011 [US1] Create `mikebom-cli/tests/divergent_purl_deps_differ.rs` containing SC-001's test cases. Use `tempfile::tempdir()` to construct the two-Cargo.toml fixture per `quickstart.md` Scenario 1. Run `mikebom sbom scan` via `Command::new(env!("CARGO_BIN_EXE_mikebom"))`. Parse the emitted CDX JSON. Assert the property is present with the expected `reason`, `paths`, and `dep_sets_by_path`.
+- [X] T012 [US1] Add a negative-case test to the same file: identical-dep-set fixture (SC-002 / quickstart.md Scenario 2) MUST NOT produce the annotation. Snapshot the emitted SBOM's `components[]`-without-the-annotation-property and verify it matches the pre-milestone baseline for the same fixture shape.
+- [X] T013 [P] [US1] Extend the SBOM regression suite in `mikebom-cli/tests/cdx_regression.rs`, `spdx_regression.rs`, and `spdx3_regression.rs` to assert that the existing 11-ecosystem cargo golden fixtures (`mikebom-cli/tests/fixtures/golden/{cyclonedx,spdx-2.3,spdx-3}/cargo.*.json`) do NOT acquire the divergence property as a side effect of milestone 134. (Goldens still byte-identical → SC-002 invariant gate.)
 
 **Checkpoint**: US1 ships independently — the per-component property is on the wire, the synthetic-fixture test passes on all three formats, the SBOM goldens are untouched, and the milestone-064 `warn!` continues to fire. Can be merged as a standalone PR before US2 or US3 is implemented.
 
@@ -86,13 +86,13 @@ Brownfield extension to the existing mikebom workspace. All paths are relative t
 
 ### Reader-side (cargo, --deep-hash gated)
 
-- [ ] T014 [US2] Extend `CargoManifestCandidate` in `mikebom-cli/src/scan_fs/package_db/cargo.rs` to carry an `Option<String>` deep-hash field. Populate it ONLY when `--deep-hash` is set; otherwise leave `None`. The hash itself comes from the existing milestone-038 `compute_deep_hash` helper (verify the helper at its existing path; do not duplicate the SHA logic).
-- [ ] T015 [US2] At the milestone-064 dedup site (same site as T007), after the dep-set compare: if `--deep-hash` is set AND deep hashes are populated AND any pair of colliding-PURL candidates has divergent hashes, update the existing `DivergenceRecord` from T007 (if any) to set `reason` to `Both` and populate `hashes_by_path`; if no dep-set divergence existed, construct a fresh `DivergenceRecord` with `reason: HashesDiffer` and `hashes_by_path` only.
+- [X] T014 [US2] Extend `CargoManifestCandidate` in `mikebom-cli/src/scan_fs/package_db/cargo.rs` to carry an `Option<String>` deep-hash field. Populate it ONLY when `--deep-hash` is set; otherwise leave `None`. The hash itself comes from the existing milestone-038 `compute_deep_hash` helper (verify the helper at its existing path; do not duplicate the SHA logic).
+- [X] T015 [US2] At the milestone-064 dedup site (same site as T007), after the dep-set compare: if `--deep-hash` is set AND deep hashes are populated AND any pair of colliding-PURL candidates has divergent hashes, update the existing `DivergenceRecord` from T007 (if any) to set `reason` to `Both` and populate `hashes_by_path`; if no dep-set divergence existed, construct a fresh `DivergenceRecord` with `reason: HashesDiffer` and `hashes_by_path` only.
 
 ### Tests (US2)
 
-- [ ] T016 [US2] Create `mikebom-cli/tests/divergent_purl_hashes_differ.rs` containing SC-003's test cases. Build the fixture per `quickstart.md` Scenario 3. Run `mikebom sbom scan --deep-hash`. Assert the annotation appears with reason `hashes-differ` and a populated `hashes_by_path`.
-- [ ] T017 [US2] Add the negative-case to the same file: same fixture WITHOUT `--deep-hash` MUST NOT produce the `hashes-differ` annotation. Asserts FR-005's gating invariant.
+- [X] T016 [US2] Create `mikebom-cli/tests/divergent_purl_hashes_differ.rs` containing SC-003's test cases. Build the fixture per `quickstart.md` Scenario 3. Run `mikebom sbom scan --deep-hash`. Assert the annotation appears with reason `hashes-differ` and a populated `hashes_by_path`.
+- [X] T017 [US2] Add the negative-case to the same file: same fixture WITHOUT `--deep-hash` MUST NOT produce the `hashes-differ` annotation. Asserts FR-005's gating invariant.
 
 **Checkpoint**: US2 ships as a follow-up PR after US1 is merged. The `--deep-hash` mode now surfaces adversarial shadows.
 
@@ -108,17 +108,17 @@ Brownfield extension to the existing mikebom workspace. All paths are relative t
 
 ### Aggregation
 
-- [ ] T018 [US3] At the end of the per-ecosystem dedup-resolution phase in `mikebom-cli/src/scan_fs/mod.rs` (or wherever the per-scan record collection lives), collect every `DivergenceRecord` produced into a `CollisionsSummary`. Sort `collisions[]` lexically by `record.purl.as_str()`. Forward the summary to the emission orchestrator's document-scope channel. Skip emission entirely when `collisions[]` is empty (FR-009).
+- [X] T018 [US3] At the end of the per-ecosystem dedup-resolution phase in `mikebom-cli/src/scan_fs/mod.rs` (or wherever the per-scan record collection lives), collect every `DivergenceRecord` produced into a `CollisionsSummary`. Sort `collisions[]` lexically by `record.purl.as_str()`. Forward the summary to the emission orchestrator's document-scope channel. Skip emission entirely when `collisions[]` is empty (FR-009).
 
 ### Emitter-side (document-scope annotation)
 
-- [ ] T019 [P] [US3] Wire CDX 1.6 document-scope emission: extend `mikebom-cli/src/generate/cyclonedx/document_properties.rs` (or the `metadata.properties[]`-populating site) to emit `mikebom:purl-collisions-detected`. Per `contracts/document-scope-annotation.md`.
-- [ ] T020 [P] [US3] Wire SPDX 2.3 document-scope emission: extend `mikebom-cli/src/generate/spdx/document.rs` to emit the top-level annotation with the `MikebomAnnotationCommentV1` envelope. Per `contracts/document-scope-annotation.md`.
-- [ ] T021 [P] [US3] Wire SPDX 3 document-scope emission: extend `mikebom-cli/src/generate/spdx/v3_document.rs` to emit the `SpdxDocument.extension[]` entry. Per `contracts/document-scope-annotation.md`.
+- [X] T019 [P] [US3] Wire CDX 1.6 document-scope emission: extend `mikebom-cli/src/generate/cyclonedx/document_properties.rs` (or the `metadata.properties[]`-populating site) to emit `mikebom:purl-collisions-detected`. Per `contracts/document-scope-annotation.md`.
+- [X] T020 [P] [US3] Wire SPDX 2.3 document-scope emission: extend `mikebom-cli/src/generate/spdx/document.rs` to emit the top-level annotation with the `MikebomAnnotationCommentV1` envelope. Per `contracts/document-scope-annotation.md`.
+- [X] T021 [P] [US3] Wire SPDX 3 document-scope emission: extend `mikebom-cli/src/generate/spdx/v3_document.rs` to emit the `SpdxDocument.extension[]` entry. Per `contracts/document-scope-annotation.md`.
 
 ### Tests (US3)
 
-- [ ] T022 [US3] Add a 3-collision integration test in `mikebom-cli/tests/divergent_purl_deps_differ.rs` (or a new file `mikebom-cli/tests/divergent_purl_summary.rs`). Build the fixture per `quickstart.md` Scenario 4. Assert: (a) the document-scope summary lists exactly 3 entries, (b) the sort order is lexical by PURL, (c) every entry in the summary also appears as a per-component property on its respective component (redundancy invariant from `contracts/document-scope-annotation.md`).
+- [X] T022 [US3] Add a 3-collision integration test in `mikebom-cli/tests/divergent_purl_deps_differ.rs` (or a new file `mikebom-cli/tests/divergent_purl_summary.rs`). Build the fixture per `quickstart.md` Scenario 4. Assert: (a) the document-scope summary lists exactly 3 entries, (b) the sort order is lexical by PURL, (c) every entry in the summary also appears as a per-component property on its respective component (redundancy invariant from `contracts/document-scope-annotation.md`).
 
 **Checkpoint**: US3 ships as the third PR. Now operators get both the per-component and the scan-wide aggregation surfaces.
 
@@ -126,12 +126,12 @@ Brownfield extension to the existing mikebom workspace. All paths are relative t
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T023 [P] Create `mikebom-cli/src/parity/extractors/divergent_purl_per_component.rs` — parity-catalog extractor for the per-component property. Walks all three formats' representation and uses the milestone-071 `canonicalize_for_compare` helper to confirm byte-identical payloads.
-- [ ] T024 [P] Create `mikebom-cli/src/parity/extractors/divergent_purl_document_scope.rs` — parity-catalog extractor for the document-scope annotation. Same canonicalize-and-compare pattern.
-- [ ] T025 Register the two new extractors in `mikebom-cli/src/parity/extractors/mod.rs` and add them to the parity-catalog test harness's enumeration.
-- [ ] T026 Add C-row entries C99 (`mikebom:duplicate-purl-divergent`) and C100 (`mikebom:purl-collisions-detected`) to `docs/reference/sbom-format-mapping.md`. Both classified as KEEP-NO-NATIVE. Audit narrative is the verbatim text from `research.md` R1. Cross-link to the per-format wire-format documents under `specs/134-divergent-purl-detection/contracts/`.
-- [ ] T027 Update `CHANGELOG.md` with a milestone-134 entry. Cite #125 as the closing issue.
-- [ ] T028 Run the mandatory pre-PR gate per `CLAUDE.md`: `./scripts/pre-pr.sh` (which runs `cargo +stable clippy --workspace --all-targets -- -D warnings` followed by `cargo +stable test --workspace`). Both MUST report zero errors / `0 failed`. If clippy flags any async / iterator-style lints, fix them locally before pushing — `feedback-clippy-before-async-patterns` memory note applies.
+- [X] T023 [P] Create `mikebom-cli/src/parity/extractors/divergent_purl_per_component.rs` — parity-catalog extractor for the per-component property. Walks all three formats' representation and uses the milestone-071 `canonicalize_for_compare` helper to confirm byte-identical payloads. *(Implemented inline as `c99_{cdx,spdx23,spdx3}` in the per-format extractor files via the existing `cdx_anno!` / `spdx23_anno!` / `spdx3_anno!` macros, matching the milestone-061 graph-completeness pattern. No separate file needed.)*
+- [X] T024 [P] Create `mikebom-cli/src/parity/extractors/divergent_purl_document_scope.rs` — parity-catalog extractor for the document-scope annotation. Same canonicalize-and-compare pattern. *(Implemented inline as `c100_{cdx,spdx23,spdx3}` — same pattern as T023.)*
+- [X] T025 Register the two new extractors in `mikebom-cli/src/parity/extractors/mod.rs` and add them to the parity-catalog test harness's enumeration.
+- [X] T026 Add C-row entries C99 (`mikebom:duplicate-purl-divergent`) and C100 (`mikebom:purl-collisions-detected`) to `docs/reference/sbom-format-mapping.md`. Both classified as KEEP-NO-NATIVE. Audit narrative is the verbatim text from `research.md` R1. Cross-link to the per-format wire-format documents under `specs/134-divergent-purl-detection/contracts/`.
+- [X] T027 Update `CHANGELOG.md` with a milestone-134 entry. Cite #125 as the closing issue.
+- [X] T028 Run the mandatory pre-PR gate per `CLAUDE.md`: `./scripts/pre-pr.sh` (which runs `cargo +stable clippy --workspace --all-targets -- -D warnings` followed by `cargo +stable test --workspace`). Both MUST report zero errors / `0 failed`. If clippy flags any async / iterator-style lints, fix them locally before pushing — `feedback-clippy-before-async-patterns` memory note applies.
 - [ ] T029 Open the PRs in order: one for US1 (Phase 3 alone is the MVP slice), one for US2 (Phase 4), one for US3 (Phase 5 + Phase 6). Each PR closes #125 partially; the third one (US3 + Polish) closes it.
 
 ---

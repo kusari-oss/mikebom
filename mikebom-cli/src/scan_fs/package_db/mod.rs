@@ -17,6 +17,7 @@ pub mod brew;
 pub mod cargo;
 pub mod cmake;
 pub mod conan;
+pub mod dart;
 mod control_file;
 pub mod copyright;
 pub mod dpkg;
@@ -1509,6 +1510,13 @@ pub fn read_all(
     out.extend(cmake::read(rootfs, include_vendored));
     out.extend(vcpkg::read(rootfs));
     out.extend(conan::read(rootfs));
+
+    // Milestone 137: Dart/Flutter pub ecosystem reader. One
+    // main-module per `pubspec.yaml` (FR-012) + one component per
+    // lockfile entry when sibling `pubspec.lock` present (FR-002);
+    // design-tier fallback (FR-005) when lockfile absent. Pure-Rust
+    // YAML via `serde_yaml`; zero new Cargo deps.
+    out.extend(dart::read(rootfs, include_dev, exclude_set));
 
     // G3: when a scan produced BOTH `pkg:golang` source-tier entries
     // (from `golang.rs`'s go.sum parsing) AND `pkg:golang` analyzed-

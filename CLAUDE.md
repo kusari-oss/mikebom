@@ -1,6 +1,6 @@
 # mikebom Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-06-22
+Auto-generated from all feature plans. Last updated: 2026-06-23
 
 ## Active Technologies
 - Rust stable (user-space only; no eBPF touched in this milestone) (002-python-npm-ecosystem)
@@ -154,6 +154,8 @@ Auto-generated from all feature plans. Last updated: 2026-06-22
 - Rust stable (workspace toolchain inherited from milestones 001–135; no nightly required for this user-space-only work). + Existing only — `serde`/`serde_json` (workspace; receipt + cask JSON parsing), `tracing` (warn-and-skip per FR-007), `anyhow`/`thiserror` (error propagation), `mikebom_common::types::purl::Purl` (PURL construction + validation). **No new Cargo dependencies.** Ruby-DSL `.rb` casks (pre-Homebrew-4.0) are intentionally NOT parsed per Constitution Principle I (Pure Rust, Zero C — extends to "no embedded scripting parsers" by spirit); they warn-and-skip with operator-visible diagnostic. (136-homebrew-reader)
 - N/A — all state is in-process for the duration of a single scan. Mirrors every OS-package reader since milestone 002. (136-homebrew-reader)
 - Rust stable (workspace toolchain inherited from milestones 001–135; no nightly required for this user-space-only work). + Existing only — `serde`/`serde_json` (workspace; receipt + cask JSON parsing), `tracing` (warn-and-skip per FR-007), `anyhow`/`thiserror` (error propagation), `mikebom_common::types::purl::Purl` (PURL construction + validation). **No new Cargo dependencies.** Ruby-DSL `.rb` casks (pre-Homebrew-4.0) are intentionally NOT parsed per Constitution Principle I (Pure Rust, Zero C — extends to "no embedded scripting parsers" by spirit); they warn-and-skip with operator-visible diagnostic. (136-homebrew-reader)
+- Rust stable (workspace toolchain inherited from milestones 001–136; no nightly required for this user-space-only work). + Existing only — `serde`/`serde_yaml = "0.9"` (workspace; already used by `npm/yarn_lock.rs` + `npm/pnpm_lock.rs`), `serde_json` for evidence-annotation construction, `tracing` (warn-and-skip per FR-007), `anyhow`/`thiserror` (error propagation), `mikebom_common::types::purl::Purl` (PURL construction + validation; the `pub` type is purl-spec-blessed). **No new Cargo dependencies.** (137-dart-pub-reader)
+- N/A — all state is in-process for the duration of a single scan. Mirrors every language-reader since milestone 002. (137-dart-pub-reader)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -216,9 +218,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 137-dart-pub-reader: Added Rust stable (workspace toolchain inherited from milestones 001–136; no nightly required for this user-space-only work). + Existing only — `serde`/`serde_yaml = "0.9"` (workspace; already used by `npm/yarn_lock.rs` + `npm/pnpm_lock.rs`), `serde_json` for evidence-annotation construction, `tracing` (warn-and-skip per FR-007), `anyhow`/`thiserror` (error propagation), `mikebom_common::types::purl::Purl` (PURL construction + validation; the `pub` type is purl-spec-blessed). **No new Cargo dependencies.**
 - 136-homebrew-reader: Added Rust stable (workspace toolchain inherited from milestones 001–135; no nightly required for this user-space-only work). + Existing only — `serde`/`serde_json` (workspace; receipt + cask JSON parsing), `tracing` (warn-and-skip per FR-007), `anyhow`/`thiserror` (error propagation), `mikebom_common::types::purl::Purl` (PURL construction + validation). **No new Cargo dependencies.** Ruby-DSL `.rb` casks (pre-Homebrew-4.0) are intentionally NOT parsed per Constitution Principle I (Pure Rust, Zero C — extends to "no embedded scripting parsers" by spirit); they warn-and-skip with operator-visible diagnostic.
 - 136-homebrew-reader: Added Rust stable (workspace toolchain inherited from milestones 001–135; no nightly required for this user-space-only work). + Existing only — `serde`/`serde_json` (workspace; receipt + cask JSON parsing), `tracing` (warn-and-skip per FR-007), `anyhow`/`thiserror` (error propagation), `mikebom_common::types::purl::Purl` (PURL construction + validation). **No new Cargo dependencies.** Ruby-DSL `.rb` casks (pre-Homebrew-4.0) are intentionally NOT parsed per Constitution Principle I (Pure Rust, Zero C — extends to "no embedded scripting parsers" by spirit); they warn-and-skip with operator-visible diagnostic.
-- 135-arch-alpm-reader: Added Rust stable (workspace toolchain inherited from milestones 001–134; no nightly required for this user-space-only work). + Existing only — `std::fs` (directory walk over `local/`), `tracing` (warn-and-skip on malformed per-package directories), `anyhow`/`thiserror` (error propagation), `mikebom_common::types::purl::Purl` (PURL construction + validation), the existing `mikebom-cli/src/scan_fs/os_release.rs` reader (distro detection). **No new Cargo dependencies.** The pacman `desc` and `files` formats are plain text — stdlib line iteration plus a small stanza-style state machine covers parsing.
 
 
 <!-- MANUAL ADDITIONS START -->

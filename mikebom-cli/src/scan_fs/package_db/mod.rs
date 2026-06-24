@@ -43,6 +43,7 @@ pub mod rpm;
 pub mod rpm_file;
 pub mod rpmdb_bdb;
 pub mod rpmdb_sqlite;
+pub mod scala;
 pub mod swift;
 pub mod vcpkg;
 mod workspace;
@@ -1559,6 +1560,19 @@ pub fn read_all(
     // project handling per FR-009 (one main-module per *.app.src). Zero
     // new Cargo deps.
     out.extend(erlang::read(rootfs, include_dev, exclude_set));
+
+    // Scala/SBT ecosystem reader (milestone 142). Source-tier emission
+    // from *.sbt.lock (FR-002 + Q3 content-shape gate) + design-tier
+    // fallback from build.sbt (FR-005 + Q1 Scala-version-suffix
+    // inference cascade) + per-subproject main-module emission via
+    // FR-012 + Q2 multi-project union discovery (root build.sbt lazy
+    // val parsing UNION subdir build.sbt walk; deduped by canonicalized
+    // path; lazy val name wins on collision). All components use the
+    // pkg:maven/<group>/<artifact>@<version> PURL shape (inherited
+    // from milestone 070); the Scala-version suffix (_2.13 / _3) is
+    // part of the artifactId per Maven Central convention. SHA-256
+    // hashes from schema-v2 checksums per FR-011. Zero new Cargo deps.
+    out.extend(scala::read(rootfs, include_dev, exclude_set));
 
     // G3: when a scan produced BOTH `pkg:golang` source-tier entries
     // (from `golang.rs`'s go.sum parsing) AND `pkg:golang` analyzed-

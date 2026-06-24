@@ -986,6 +986,8 @@ impl CycloneDxBuilder {
                             | "rebar-lock"
                             | "rebar-config"
                             | "app-src"
+                            | "sbt-lock"
+                            | "sbt-build"
                     ),
                     "mikebom:evidence-kind value '{kind}' is not in the canonical \
                      enum (rpm-file | rpmdb-sqlite | rpmdb-bdb | \
@@ -996,7 +998,7 @@ impl CycloneDxBuilder {
                      pubspec-lock | pubspec-yaml | composer-lock | composer-json | \
                      composer-installed-json | cocoapods-podfile-lock | \
                      cocoapods-podfile | cocoapods-manifest-lock | mix-lock | mix-exs | \
-                     rebar-lock | rebar-config | app-src)"
+                     rebar-lock | rebar-config | app-src | sbt-lock | sbt-build)"
                 );
                 properties.push(json!({
                     "name": "mikebom:evidence-kind",

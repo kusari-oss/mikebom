@@ -23,6 +23,7 @@ pub mod dart;
 mod control_file;
 pub mod copyright;
 pub mod dpkg;
+pub mod elixir;
 pub mod exclude_path;
 pub mod file_hashes;
 pub mod gem;
@@ -1533,6 +1534,16 @@ pub fn read_all(
     // design-tier fallback (FR-005) when lockfile absent. Pure-Rust
     // YAML via `serde_yaml`; zero new Cargo deps.
     out.extend(dart::read(rootfs, include_dev, exclude_set));
+
+    // Milestone 140: Elixir/Mix ecosystem reader. One main-module
+    // per `mix.exs` (FR-012) + lockfile-driven (FR-002) + design-tier
+    // from Podfile-equivalent `mix.exs` (FR-005) emission. Three
+    // source discriminators: hex (with private-org namespace +
+    // repository_url per Phase 0), git (pkg:generic/ per Phase 0),
+    // path. Dual SHA-256 (inner + outer) emission per FR-011 + Q3.
+    // Umbrella project handling per FR-009 + Q2. Conditional-flattened
+    // design-tier extraction per Q1. Zero new Cargo deps.
+    out.extend(elixir::read(rootfs, include_dev, exclude_set));
 
     // G3: when a scan produced BOTH `pkg:golang` source-tier entries
     // (from `golang.rs`'s go.sum parsing) AND `pkg:golang` analyzed-

@@ -981,6 +981,8 @@ impl CycloneDxBuilder {
                             | "cocoapods-podfile-lock"
                             | "cocoapods-podfile"
                             | "cocoapods-manifest-lock"
+                            | "mix-lock"
+                            | "mix-exs"
                     ),
                     "mikebom:evidence-kind value '{kind}' is not in the canonical \
                      enum (rpm-file | rpmdb-sqlite | rpmdb-bdb | \
@@ -990,7 +992,7 @@ impl CycloneDxBuilder {
                      alpm-local-db | brew-install-receipt | brew-cask-metadata | \
                      pubspec-lock | pubspec-yaml | composer-lock | composer-json | \
                      composer-installed-json | cocoapods-podfile-lock | \
-                     cocoapods-podfile | cocoapods-manifest-lock)"
+                     cocoapods-podfile | cocoapods-manifest-lock | mix-lock | mix-exs)"
                 );
                 properties.push(json!({
                     "name": "mikebom:evidence-kind",

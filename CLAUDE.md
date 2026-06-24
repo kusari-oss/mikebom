@@ -1,6 +1,6 @@
 # mikebom Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-06-23
+Auto-generated from all feature plans. Last updated: 2026-06-24
 
 ## Active Technologies
 - Rust stable (user-space only; no eBPF touched in this milestone) (002-python-npm-ecosystem)
@@ -158,6 +158,7 @@ Auto-generated from all feature plans. Last updated: 2026-06-23
 - N/A — all state is in-process for the duration of a single scan. Mirrors every language-reader since milestone 002. (137-dart-pub-reader)
 - Rust stable (workspace toolchain inherited from milestones 001–137; no nightly required for this user-space-only work). + Existing only — `serde`/`serde_json` (Composer artifacts are JSON; pervasive workspace dep), `mikebom_common::types::hash::ContentHash` (FR-013 SHA-1 emission; already uses `sha2` + `data-encoding` transitively), `tracing` (warn-and-skip per FR-008), `anyhow`/`thiserror` (error propagation), `mikebom_common::types::purl::Purl` (PURL construction + validation; the `composer` type is purl-spec-blessed). **No new Cargo dependencies.** (138-php-composer-reader)
 - Rust stable (workspace toolchain inherited from milestones 001–138; no nightly required for this user-space-only work). + Existing only — `serde`/`serde_yaml = "0.9"` (Podfile.lock + Manifest.lock are YAML; workspace dep per dart.rs + npm/yarn_lock.rs precedent), `serde_json` (annotation construction), `mikebom_common::types::hash::ContentHash` + `HashAlgorithm::Sha1` (FR-008 SHA-1 emission per milestone-138 precedent), `regex` (Podfile line-by-line `pod` / `target` extraction — workspace dep, already used by alpm + brew + yocto), `tracing` (warn-and-skip per FR-007), `anyhow`/`thiserror` (error propagation), `mikebom_common::types::purl::Purl` (PURL construction + validation; the `cocoapods` type is purl-spec-blessed). **No new Cargo dependencies.** (139-cocoapods-reader)
+- Rust stable (workspace toolchain inherited from milestones 001–139; no nightly required). + Existing only — `regex` (workspace dep, used by alpm/brew/yocto/cocoapods for line-format and DSL extraction), `mikebom_common::types::hash::{ContentHash, HashAlgorithm}` (FR-011 SHA-256 emission), `mikebom_common::types::purl::Purl` (PURL construction), `tracing` (warn-and-skip per FR-007), `anyhow`/`thiserror`, `serde_json` (annotation values), `std::sync::OnceLock` (regex compile-once). **No new Cargo dependencies.** (140-elixir-mix-reader)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -220,9 +221,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 140-elixir-mix-reader: Added Rust stable (workspace toolchain inherited from milestones 001–139; no nightly required). + Existing only — `regex` (workspace dep, used by alpm/brew/yocto/cocoapods for line-format and DSL extraction), `mikebom_common::types::hash::{ContentHash, HashAlgorithm}` (FR-011 SHA-256 emission), `mikebom_common::types::purl::Purl` (PURL construction), `tracing` (warn-and-skip per FR-007), `anyhow`/`thiserror`, `serde_json` (annotation values), `std::sync::OnceLock` (regex compile-once). **No new Cargo dependencies.**
 - 139-cocoapods-reader: Added Rust stable (workspace toolchain inherited from milestones 001–138; no nightly required for this user-space-only work). + Existing only — `serde`/`serde_yaml = "0.9"` (Podfile.lock + Manifest.lock are YAML; workspace dep per dart.rs + npm/yarn_lock.rs precedent), `serde_json` (annotation construction), `mikebom_common::types::hash::ContentHash` + `HashAlgorithm::Sha1` (FR-008 SHA-1 emission per milestone-138 precedent), `regex` (Podfile line-by-line `pod` / `target` extraction — workspace dep, already used by alpm + brew + yocto), `tracing` (warn-and-skip per FR-007), `anyhow`/`thiserror` (error propagation), `mikebom_common::types::purl::Purl` (PURL construction + validation; the `cocoapods` type is purl-spec-blessed). **No new Cargo dependencies.**
 - 138-php-composer-reader: Added Rust stable (workspace toolchain inherited from milestones 001–137; no nightly required for this user-space-only work). + Existing only — `serde`/`serde_json` (Composer artifacts are JSON; pervasive workspace dep), `mikebom_common::types::hash::ContentHash` (FR-013 SHA-1 emission; already uses `sha2` + `data-encoding` transitively), `tracing` (warn-and-skip per FR-008), `anyhow`/`thiserror` (error propagation), `mikebom_common::types::purl::Purl` (PURL construction + validation; the `composer` type is purl-spec-blessed). **No new Cargo dependencies.**
-- 137-dart-pub-reader: Added Rust stable (workspace toolchain inherited from milestones 001–136; no nightly required for this user-space-only work). + Existing only — `serde`/`serde_yaml = "0.9"` (workspace; already used by `npm/yarn_lock.rs` + `npm/pnpm_lock.rs`), `serde_json` for evidence-annotation construction, `tracing` (warn-and-skip per FR-007), `anyhow`/`thiserror` (error propagation), `mikebom_common::types::purl::Purl` (PURL construction + validation; the `pub` type is purl-spec-blessed). **No new Cargo dependencies.**
 
 
 <!-- MANUAL ADDITIONS START -->

@@ -713,6 +713,23 @@ pub fn build_metadata(
                 "value": value_str,
             }));
         }
+        // Milestone 140 — propagate `mikebom:umbrella-root` when the
+        // Elixir umbrella root main-module is promoted to
+        // `metadata.component` (small umbrella scans with the root as
+        // the dominant project). Multi-member umbrellas emit via
+        // components[] and pick up the property automatically.
+        // Mirrors the milestone-116 + milestone-134 propagation
+        // patterns above.
+        if let Some(value) = c.extra_annotations.get("mikebom:umbrella-root") {
+            let value_str = match value {
+                serde_json::Value::String(s) => s.clone(),
+                other => serde_json::to_string(other).unwrap_or_default(),
+            };
+            comp_props.push(json!({
+                "name": "mikebom:umbrella-root",
+                "value": value_str,
+            }));
+        }
         metadata["component"]["properties"] = json!(comp_props);
 
         // Propagate the supplier so the parity Section A `cdx_supplier`

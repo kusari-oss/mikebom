@@ -730,6 +730,25 @@ pub fn build_metadata(
                 "value": value_str,
             }));
         }
+        // Milestone 142 (Scala/SBT) — propagate `mikebom:scala-version-source`
+        // when the SBT main-module is promoted to `metadata.component`.
+        // Required by the F6 remediation contract: operators must be
+        // able to distinguish a `_2.13` suffix derived from explicit
+        // `scalaVersion := "..."` from one defaulted via the Q1 cascade's
+        // rung-3 fallback. Without this propagation, the annotation is
+        // visible on the main-module ONLY in the components[] array path
+        // (multi-subproject scans), not on the promoted subject path.
+        // Mirrors the milestone-140 `mikebom:umbrella-root` pattern above.
+        if let Some(value) = c.extra_annotations.get("mikebom:scala-version-source") {
+            let value_str = match value {
+                serde_json::Value::String(s) => s.clone(),
+                other => serde_json::to_string(other).unwrap_or_default(),
+            };
+            comp_props.push(json!({
+                "name": "mikebom:scala-version-source",
+                "value": value_str,
+            }));
+        }
         metadata["component"]["properties"] = json!(comp_props);
 
         // Propagate the supplier so the parity Section A `cdx_supplier`

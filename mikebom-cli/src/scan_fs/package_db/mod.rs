@@ -24,6 +24,7 @@ mod control_file;
 pub mod copyright;
 pub mod dpkg;
 pub mod elixir;
+pub mod erlang;
 pub mod exclude_path;
 pub mod file_hashes;
 pub mod gem;
@@ -1544,6 +1545,20 @@ pub fn read_all(
     // Umbrella project handling per FR-009 + Q2. Conditional-flattened
     // design-tier extraction per Q1. Zero new Cargo deps.
     out.extend(elixir::read(rootfs, include_dev, exclude_set));
+
+    // Erlang/OTP rebar3 ecosystem reader (milestone 141). Source-tier
+    // emission from rebar.lock (FR-002) + design-tier fallback from
+    // rebar.config (FR-005) + main-module emission from *.app.src
+    // (FR-012). Four source discriminators: hex (with private-org
+    // namespace + repository_url per research §R1), git (pkg:generic/
+    // per the milestone-140 convention), otp-runtime (pkg:generic/
+    // placeholder per Q1 over-emission contract), main-module
+    // (pkg:hex/<app>@<vsn>). Inner SHA-256 hash emission per FR-011.
+    // Q3 keyword family discrimination via mikebom:erlang-app-dep-kind
+    // annotation (required > included > optional precedence). Umbrella
+    // project handling per FR-009 (one main-module per *.app.src). Zero
+    // new Cargo deps.
+    out.extend(erlang::read(rootfs, include_dev, exclude_set));
 
     // G3: when a scan produced BOTH `pkg:golang` source-tier entries
     // (from `golang.rs`'s go.sum parsing) AND `pkg:golang` analyzed-

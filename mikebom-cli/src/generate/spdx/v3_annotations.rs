@@ -28,7 +28,7 @@ use sha2::{Digest, Sha256};
 use mikebom_common::attestation::metadata::GenerationContext;
 use mikebom_common::resolution::{ResolutionTechnique, ResolvedComponent};
 
-use super::annotations::MikebomAnnotationCommentV1;
+use super::annotations::{coerce_envelope_value, MikebomAnnotationCommentV1};
 use crate::generate::ScanArtifacts;
 
 /// Build the `Annotation` elements for component-level mikebom
@@ -120,7 +120,7 @@ fn build_annotation(
     field: &str,
     value: serde_json::Value,
 ) -> Value {
-    let envelope = MikebomAnnotationCommentV1::new(field, value);
+    let envelope = MikebomAnnotationCommentV1::new(field, coerce_envelope_value(value));
     let statement = envelope.to_comment_string();
     // ID derivation MUST NOT include `statement` — that string carries
     // workspace-relative source-file paths for `mikebom:source-files`,
@@ -537,4 +537,45 @@ fn hash_prefix(input: &[u8], chars: usize) -> String {
     let digest = Sha256::digest(input);
     let encoded = BASE32_NOPAD.encode(&digest);
     encoded[..chars].to_string()
+}
+
+#[cfg(test)]
+#[cfg_attr(test, allow(clippy::unwrap_used))]
+mod tests {
+    use super::*;
+
+    /// SPDX 3 mirror of the SPDX 2.3 regression test in
+    /// `annotations.rs::build_annotation_with_bool_value_produces_string_envelope_value`.
+    /// Both emitters MUST coerce non-String envelope values to strings
+    /// so the wire output matches CDX's `serde_json::to_string(other)`
+    /// coercion. Caught by the 2026-06 sbom-conformance audit on
+    /// `mikebom:detected-cargo-auditable` + `mikebom:not-linked`.
+    #[test]
+    fn v3_build_annotation_with_bool_value_produces_string_envelope_value() {
+        let anno = build_annotation(
+            "https://example.org/doc#SPDXRef-comp-1",
+            "https://example.org/doc",
+            "_:creationinfo",
+            "mikebom:not-linked",
+            serde_json::json!(true),
+        );
+        let statement = anno
+            .get("statement")
+            .and_then(|s| s.as_str())
+            .expect("annotation must carry a statement field");
+        let parsed: MikebomAnnotationCommentV1 = serde_json::from_str(statement).unwrap();
+        assert_eq!(
+            parsed.value,
+            serde_json::Value::String("true".to_string()),
+            "SPDX 3 envelope value must be a String, not a Bool",
+        );
+        assert!(
+            statement.contains(r#""value":"true""#),
+            "statement must serialize bool as string-true: {statement}",
+        );
+        assert!(
+            !statement.contains(r#""value":true"#),
+            "statement must NOT serialize bool as bare true: {statement}",
+        );
+    }
 }

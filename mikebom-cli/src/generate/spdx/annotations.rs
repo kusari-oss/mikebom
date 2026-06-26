@@ -68,6 +68,55 @@ impl MikebomAnnotationCommentV1 {
     }
 }
 
+/// Coerce a raw `extra_annotations` SCALAR value into the canonical
+/// form the envelope's `value` field carries when CDX would have
+/// stringified it. Applies to `Value::Bool` + `Value::Number` +
+/// `Value::Null` only. Strings pass through unchanged. Arrays and
+/// objects pass through with their structure preserved.
+///
+/// **Cross-format parity contract (scalar coercion only)**:
+/// CycloneDX 1.6's `property.value` is spec-typed as a string
+/// (`<simpleType name="propertyValue">` → `xs:string` in the schema),
+/// so the CDX emitter at
+/// `mikebom-cli/src/generate/cyclonedx/builder.rs:1092` calls
+/// `serde_json::to_string(other)` on non-String JSON values, coercing
+/// `Value::Bool(true)` → the 4-char string `"true"`, `Value::Number(N)`
+/// → its JSON-numeric form, etc. This SPDX-side helper mirrors that
+/// stringification ONLY for scalars so external parity audits that
+/// don't run mikebom's compare-time canonicalizer
+/// (`parity/extractors/common.rs::canonicalize_atomic_values`) see the
+/// same string representation across all three format outputs.
+///
+/// **Why arrays + objects pass through structured**: when CDX
+/// stringifies an array like `mikebom:identifiers`, it produces a
+/// JSON-literal string `"[{\"scheme\":...}]"`. The SPDX 2.3 + SPDX 3
+/// envelopes are not spec-constrained to strings the way CDX
+/// property.value is; their `value` field is free-form JSON. Internal
+/// consumers (`identifiers_determinism.rs::extract_spdx23_identifiers`,
+/// the parity extractors at `parity/extractors/{spdx2,spdx3}.rs`) and
+/// external consumers walking the structured array directly depend on
+/// the array shape being preserved. Stringifying arrays here would
+/// break that machine-readable contract for no audit benefit (the
+/// audit's complaint surfaced specifically on boolean annotations:
+/// `mikebom:detected-cargo-auditable`, `mikebom:not-linked`).
+///
+/// Caught originally by the sbom-conformance harness 2026-06 audit;
+/// the array-preservation carve-out caught by
+/// `identifiers_determinism::cross_format_consistency_same_identifier_set`
+/// during this fix's first-pass test run.
+pub fn coerce_envelope_value(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        // Scalars CDX stringifies — mirror that.
+        serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::Null => serde_json::Value::String(
+            serde_json::to_string(&value).unwrap_or_default(),
+        ),
+        // Strings + structured (Array/Object): pass through unchanged.
+        _ => value,
+    }
+}
+
 /// Build an `SpdxAnnotation` whose `comment` is a mikebom-namespaced
 /// v1 envelope. `annotator` and `date` are passed through — callers
 /// typically use `"Tool: mikebom-<version>"` (matching
@@ -80,7 +129,7 @@ pub fn build_annotation(
     field: &str,
     value: serde_json::Value,
 ) -> SpdxAnnotation {
-    let envelope = MikebomAnnotationCommentV1::new(field, value);
+    let envelope = MikebomAnnotationCommentV1::new(field, coerce_envelope_value(value));
     SpdxAnnotation {
         annotator: annotator.to_string(),
         date: date.to_string(),
@@ -667,6 +716,102 @@ mod tests {
             serde_json::json!({"technique": "hash-comparison", "confidence": 1.0}),
         );
         assert!(obj.value.as_object().is_some());
+    }
+
+    // -- coerce_envelope_value: cross-format parity regression guards --
+    //
+    // These tests pin the contract that `build_annotation` always
+    // produces an envelope whose `value` field is a `Value::String`,
+    // mirroring CDX's `serde_json::to_string(other)` coercion at
+    // `mikebom-cli/src/generate/cyclonedx/builder.rs:1092`. External
+    // parity audits (sbom-conformance harness, 2026-06) caught the
+    // pre-coercion mismatch on `mikebom:detected-cargo-auditable`
+    // (`Value::Bool(true)` → CDX `"true"` string vs SPDX `true` bool).
+
+    #[test]
+    fn coerce_envelope_value_passes_strings_through() {
+        let v = coerce_envelope_value(serde_json::json!("instrumentation"));
+        assert_eq!(v, serde_json::Value::String("instrumentation".to_string()));
+    }
+
+    #[test]
+    fn coerce_envelope_value_stringifies_bool_true() {
+        let v = coerce_envelope_value(serde_json::json!(true));
+        assert_eq!(v, serde_json::Value::String("true".to_string()));
+    }
+
+    #[test]
+    fn coerce_envelope_value_stringifies_bool_false() {
+        let v = coerce_envelope_value(serde_json::json!(false));
+        assert_eq!(v, serde_json::Value::String("false".to_string()));
+    }
+
+    #[test]
+    fn coerce_envelope_value_stringifies_number() {
+        let v = coerce_envelope_value(serde_json::json!(42));
+        assert_eq!(v, serde_json::Value::String("42".to_string()));
+        let v = coerce_envelope_value(serde_json::json!(0.92));
+        assert_eq!(v, serde_json::Value::String("0.92".to_string()));
+    }
+
+    #[test]
+    fn coerce_envelope_value_stringifies_null() {
+        let v = coerce_envelope_value(serde_json::Value::Null);
+        assert_eq!(v, serde_json::Value::String("null".to_string()));
+    }
+
+    #[test]
+    fn coerce_envelope_value_preserves_arrays_and_objects() {
+        // Arrays + objects pass through structured. SPDX envelopes are
+        // free-form JSON (unlike CDX property.value which is spec-typed
+        // as a string), so consumers walking the structured array
+        // shape — e.g., mikebom:identifiers — must see the original
+        // Value::Array. Stringifying these would break the
+        // identifiers_determinism cross-format extractor and any
+        // external consumer depending on machine-readable array
+        // structure.
+        let arr_in = serde_json::json!(["a", "b"]);
+        let arr_out = coerce_envelope_value(arr_in.clone());
+        assert_eq!(arr_out, arr_in, "arrays must pass through structured");
+        let obj_in = serde_json::json!({"scheme": "git", "value": "abc"});
+        let obj_out = coerce_envelope_value(obj_in.clone());
+        assert_eq!(obj_out, obj_in, "objects must pass through structured");
+    }
+
+    #[test]
+    fn build_annotation_with_bool_value_produces_string_envelope_value() {
+        // Regression for the wire-format divergence the sbom-conformance
+        // harness caught: pre-fix, `Value::Bool(true)` flowed through
+        // build_annotation unchanged and the envelope serialized as
+        // `"value":true` (JSON boolean), while CDX emitted the same
+        // datum as the string `"true"`. Post-fix, both formats carry
+        // the string `"true"`.
+        let a = build_annotation(
+            "Tool: mikebom-test",
+            "2026-06-26T12:00:00Z",
+            "mikebom:not-linked",
+            serde_json::json!(true),
+        );
+        let parsed: MikebomAnnotationCommentV1 =
+            serde_json::from_str(&a.comment).unwrap();
+        assert_eq!(
+            parsed.value,
+            serde_json::Value::String("true".to_string()),
+            "envelope value must be a String, not a Bool — cross-format parity contract",
+        );
+        // Belt-and-suspenders: the serialized comment string must contain
+        // the literal `"value":"true"` substring (quotes around the
+        // value), not `"value":true` (bare bool).
+        assert!(
+            a.comment.contains(r#""value":"true""#),
+            "comment must serialize bool as string-true: {}",
+            a.comment,
+        );
+        assert!(
+            !a.comment.contains(r#""value":true"#),
+            "comment must NOT serialize bool as bare true: {}",
+            a.comment,
+        );
     }
 
     /// Structural drift guard: the Rust envelope and the committed

@@ -963,7 +963,7 @@
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-X776CWTOFYUYTMYUCIHEW7L4/anno-JBS6LZ2NLSZHXM4D",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-events-dropped\",\"value\":0}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-events-dropped\",\"value\":\"0\"}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-X776CWTOFYUYTMYUCIHEW7L4",
       "type": "Annotation"
     },
@@ -979,7 +979,7 @@
       "annotationType": "other",
       "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-X776CWTOFYUYTMYUCIHEW7L4/anno-JJJU57YL3I7BVYBS",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-ring-buffer-overflows\",\"value\":0}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-ring-buffer-overflows\",\"value\":\"0\"}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-X776CWTOFYUYTMYUCIHEW7L4",
       "type": "Annotation"
     },

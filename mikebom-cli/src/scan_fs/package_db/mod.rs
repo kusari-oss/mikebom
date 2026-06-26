@@ -1448,10 +1448,27 @@ pub fn read_all(
     // after the G3/G4/G5 chain finishes.
     let go_binary_entries_count = go_binary_entries.len();
     out.extend(go_binary_entries);
-    // Milestone 004 US1: standalone `.rpm` artefact reader (stub until
-    // T015–T018 land). No-op today; wiring in place so the dispatcher
-    // is settled and future story work only touches rpm_file.rs.
-    out.extend(rpm_file::read(rootfs, distro_version.as_deref()));
+    // Milestone 004 US1: standalone `.rpm` artefact reader.
+    // Milestone 144: build per-scan `RpmReaderConfig` from env vars
+    // populated by `scan_cmd.rs` (`MIKEBOM_MAX_RPM_BYTES`,
+    // `MIKEBOM_RPM_DISTRO`) — same plumbing pattern as the existing
+    // `MIKEBOM_INCLUDE_VENDORED` (milestone 102) and `MIKEBOM_DEEP_HASH`
+    // (milestone 134) knobs; avoids churning the 75-callsite
+    // `scan_path -> read_all -> rpm_file::read` signature chain for
+    // a pair of scan-wide config values. Tests pass
+    // `&RpmReaderConfig::default()` directly via `rpm_file::read`'s
+    // explicit arg, bypassing env-var coupling.
+    let rpm_config = rpm_file::RpmReaderConfig {
+        cap_bytes: std::env::var("MIKEBOM_MAX_RPM_BYTES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .filter(|&v: &u64| v > 0)
+            .unwrap_or(rpm_file::DEFAULT_RPM_FILE_BYTES),
+        distro_override: std::env::var("MIKEBOM_RPM_DISTRO")
+            .ok()
+            .filter(|s| !s.is_empty()),
+    };
+    out.extend(rpm_file::read(rootfs, distro_version.as_deref(), &rpm_config));
     // Milestone 004 US4: legacy BDB rpmdb reader (stub until T061–T065
     // land). Gated behind --include-legacy-rpmdb; no-op when flag unset.
     out.extend(rpmdb_bdb::read(rootfs, include_legacy_rpmdb));

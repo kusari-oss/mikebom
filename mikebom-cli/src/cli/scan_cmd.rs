@@ -217,6 +217,24 @@ pub struct ScanArgs {
     #[arg(long, default_value_t = scan_fs::walker::DEFAULT_SIZE_CAP_BYTES)]
     pub max_file_size: u64,
 
+    /// Milestone 144 — per-file size cap for standalone `.rpm` files,
+    /// in bytes. Files exceeding the cap are skipped with a structured
+    /// WARN log (`reason="size-cap-exceeded"`). Useful for Yocto debug
+    /// RPMs (kernel-dbg, gcc-dbg) which can exceed the 512 MiB default.
+    /// Default: 536870912 (512 MiB).
+    #[arg(long, value_name = "BYTES", value_parser = parse_nonzero_u64)]
+    pub max_rpm_bytes: Option<u64>,
+
+    /// Milestone 144 — override the distro identifier for RPM PURL
+    /// namespaces. When set, overrides `/etc/os-release` `ID=` AND
+    /// per-RPM RPMTAG_VENDOR/RPMTAG_PACKAGER metadata across the
+    /// entire scan. Typical Yocto use: `--rpm-distro poky` to encode
+    /// the build's DISTRO variable in emitted PURLs. Default:
+    /// auto-detect (CLI override > /etc/os-release > per-RPM header
+    /// > empty namespace).
+    #[arg(long, value_name = "ID", value_parser = parse_non_empty_lowercase_distro_id)]
+    pub rpm_distro: Option<String>,
+
     /// Omit per-component content hashes from the SBOM.
     #[arg(long)]
     pub no_hashes: bool,
@@ -985,6 +1003,30 @@ pub(crate) fn validate_root_purl(value: &str) -> Result<String, String> {
 /// clear error pointing at the right flag instead of a
 /// soft-fail-to-opaque downgrade. The `--id` flag is for
 /// user-defined namespaces only.
+/// Milestone 144 T005: `--rpm-distro <ID>` value parser. Rejects empty
+/// strings at clap parse time (FR-003). Lowercases the input so the
+/// resulting PURL namespace is canonical per purl-spec §lower-case-rules.
+fn parse_non_empty_lowercase_distro_id(s: &str) -> Result<String, String> {
+    if s.is_empty() {
+        return Err("must be non-empty".to_string());
+    }
+    Ok(s.to_lowercase())
+}
+
+/// Milestone 144 T005: `--max-rpm-bytes <N>` value parser. Rejects
+/// zero AND non-numeric input at clap parse time (FR-005). Operators
+/// wanting "no cap" should pass a very large number; absence of the
+/// flag uses the 512 MiB default.
+fn parse_nonzero_u64(s: &str) -> Result<u64, String> {
+    let v: u64 = s
+        .parse()
+        .map_err(|e: std::num::ParseIntError| e.to_string())?;
+    if v == 0 {
+        return Err("must be > 0".to_string());
+    }
+    Ok(v)
+}
+
 fn parse_user_defined_id_flag(
     raw: &str,
 ) -> Result<mikebom::binding::identifiers::Identifier, String> {
@@ -1909,6 +1951,12 @@ pub async fn execute(
         // `maven::read_with_claims` and docs/design-notes.md "Scan
         // target identity" for rationale.
         Some(&target_name),
+        // Milestone 144: pass `--max-rpm-bytes` + `--rpm-distro` through
+        // to the rpm-file reader. `scan_path` sets the corresponding
+        // env vars before calling `package_db::read_all`, which builds
+        // the per-scan `RpmReaderConfig` from them.
+        args.max_rpm_bytes,
+        args.rpm_distro.as_deref(),
         &exclude_set,
     )
     .with_context(|| format!("scan failed for {}", root_path.display()))?;
@@ -3276,6 +3324,11 @@ mod tests {
             output: vec![],
             format: vec![],
             max_file_size: 256 * 1024 * 1024,
+            // Milestone 144 — test helper preserves default-cap behavior
+            // (RpmReaderConfig::default() at 512 MiB) and no distro
+            // override; equivalent to operator omitting both flags.
+            max_rpm_bytes: None,
+            rpm_distro: None,
             no_hashes: false,
             deb_codename: None,
             no_package_db: false,
@@ -4151,5 +4204,102 @@ mod tests {
         assert_eq!(components.len(), 2);
         assert_eq!(components[0].purl.as_str(), "pkg:generic/baz-cli");
         assert_eq!(components[1].purl.as_str(), "pkg:generic/baz-daemon");
+    }
+
+    // ----- Milestone 144: clap-parser tests for --max-rpm-bytes
+    // and --rpm-distro (T025-T027 + T032-T034). -----
+
+    /// T025 (FR-005): valid unsigned integer is accepted; `parsed.inner.max_rpm_bytes`
+    /// carries the operator-supplied value.
+    #[test]
+    fn max_rpm_bytes_accepts_valid_unsigned() {
+        let parsed = <ScanArgsForTest as clap::Parser>::try_parse_from([
+            "scan",
+            "--path",
+            ".",
+            "--max-rpm-bytes",
+            "1073741824",
+        ])
+        .unwrap();
+        assert_eq!(parsed.inner.max_rpm_bytes, Some(1073741824));
+    }
+
+    /// T026 (FR-005 + US3-3): zero is rejected at clap parse time with
+    /// the "must be > 0" error message.
+    #[test]
+    fn max_rpm_bytes_rejects_zero() {
+        let err = <ScanArgsForTest as clap::Parser>::try_parse_from([
+            "scan",
+            "--path",
+            ".",
+            "--max-rpm-bytes",
+            "0",
+        ])
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("must be > 0"), "got: {err}");
+    }
+
+    /// T027 (FR-005): non-numeric input is rejected at clap parse time.
+    #[test]
+    fn max_rpm_bytes_rejects_non_numeric() {
+        let err = <ScanArgsForTest as clap::Parser>::try_parse_from([
+            "scan",
+            "--path",
+            ".",
+            "--max-rpm-bytes",
+            "abc",
+        ])
+        .unwrap_err();
+        // Error message will mention parsing failure; exact wording is
+        // clap-version-dependent, so just assert it failed at parse time.
+        let s = err.to_string();
+        assert!(!s.is_empty(), "expected a parse error");
+    }
+
+    /// T032 (FR-003): a lowercase slug is accepted unchanged.
+    #[test]
+    fn rpm_distro_accepts_lowercase_slug() {
+        let parsed = <ScanArgsForTest as clap::Parser>::try_parse_from([
+            "scan",
+            "--path",
+            ".",
+            "--rpm-distro",
+            "poky",
+        ])
+        .unwrap();
+        assert_eq!(parsed.inner.rpm_distro.as_deref(), Some("poky"));
+    }
+
+    /// T033 (FR-003 + US4-3): empty string is rejected at clap parse time
+    /// with the "must be non-empty" error message.
+    #[test]
+    fn rpm_distro_rejects_empty_string() {
+        let err = <ScanArgsForTest as clap::Parser>::try_parse_from([
+            "scan",
+            "--path",
+            ".",
+            "--rpm-distro",
+            "",
+        ])
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("must be non-empty"), "got: {err}");
+    }
+
+    /// T034 (FR-003 + assumption 2): mixed-case input is lowercased by
+    /// the `value_parser` closure so the resulting PURL namespace is
+    /// canonical per purl-spec §lower-case-rules.
+    #[test]
+    fn rpm_distro_lowercases_input() {
+        let parsed = <ScanArgsForTest as clap::Parser>::try_parse_from([
+            "scan",
+            "--path",
+            ".",
+            "--rpm-distro",
+            "Poky",
+        ])
+        .unwrap();
+        assert_eq!(parsed.inner.rpm_distro.as_deref(), Some("poky"));
     }
 }

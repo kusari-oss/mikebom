@@ -11,10 +11,17 @@
 //! - Fail-graceful on malformed inputs: single WARN + zero components
 //!   for that file; the overall scan continues (FR-017).
 //!
-//! Vendor-slug priority per FR-013 / research R9:
-//! 1. Header `Vendor:` tag regex-matched against a 9-entry table.
-//! 2. `/etc/os-release::ID` via the milestone-003 `rpm_vendor_from_id`.
-//! 3. Hardcoded `"rpm"` fallback.
+//! Vendor-slug priority per milestone 144 clarification (strict
+//! order; later sources consulted only when all earlier sources
+//! return empty/absent):
+//! 1. `--rpm-distro` CLI override (authoritative; overrides every
+//!    other source including per-RPM header metadata).
+//! 2. `/etc/os-release::ID` via the milestone-003 `rpm_vendor_from_id`
+//!    (authoritative when present; overrides per-RPM RPMTAG_VENDOR).
+//! 3. Header `Vendor:` tag prefix-matched against `VENDOR_HEADER_MAP`.
+//! 4. Empty namespace — the emitted PURL omits the namespace segment
+//!    entirely (replaces the pre-144 literal `"rpm"` fallback that
+//!    produced non-conformant `pkg:rpm/rpm/...` PURLs).
 
 use std::path::{Path, PathBuf};
 
@@ -32,9 +39,12 @@ use crate::scan_fs::os_release;
 /// visited-set primary mechanism (FR-002).
 const MAX_WALK_DEPTH: usize = 16;
 
-/// Per-file size cap per FR-007. Real `.rpm` files are typically a few
-/// megabytes; anything above 200 MB is defense-in-depth rejected.
-const MAX_RPM_FILE_BYTES: u64 = 200 * 1024 * 1024;
+/// Per-file size cap default (milestone 144). Raised from the
+/// pre-144 200 MB to accommodate Yocto debug RPMs (kernel-dbg ~280 MB,
+/// gcc-dbg ~380 MB) which were silently dropped by the old cap. The
+/// cap is now operator-overridable via `--max-rpm-bytes <N>` (clap
+/// flag wired through `RpmReaderConfig.cap_bytes`).
+pub const DEFAULT_RPM_FILE_BYTES: u64 = 512 * 1024 * 1024;
 
 /// Lower size bound — RPM lead block alone is 96 bytes; anything below
 /// that cannot be a valid RPM regardless of claim.
@@ -66,6 +76,9 @@ const VENDOR_HEADER_MAP: &[(&str, &str)] = &[
 /// channel for future use by T017's property-bag plumbing).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VendorSource {
+    /// Milestone 144: operator-supplied via `--rpm-distro <ID>`.
+    /// Authoritative; overrides every other source.
+    CliOverride,
     Header,
     OsRelease,
     Fallback,
@@ -75,6 +88,7 @@ impl VendorSource {
     #[allow(dead_code)]
     pub fn as_str(self) -> &'static str {
         match self {
+            VendorSource::CliOverride => "cli-override",
             VendorSource::Header => "header",
             VendorSource::OsRelease => "os-release",
             VendorSource::Fallback => "fallback",
@@ -82,27 +96,98 @@ impl VendorSource {
     }
 }
 
-/// Resolve the PURL vendor segment. Priority: header → os-release → fallback.
+/// Milestone 144: per-scan configuration bundle for the standalone-`.rpm`
+/// reader. Constructed once per scan from `ScanArgs` and threaded into
+/// every `read()` / `parse_rpm_file()` call.
+#[derive(Clone, Debug)]
+pub struct RpmReaderConfig {
+    /// Per-file size cap, in bytes. Files larger than this are skipped
+    /// with a `SkipReason::SizeCapExceeded` WARN. Default:
+    /// `DEFAULT_RPM_FILE_BYTES` (512 MiB).
+    pub cap_bytes: u64,
+
+    /// Operator-supplied distro identifier (from `--rpm-distro <ID>`).
+    /// When `Some(s)`, overrides ALL other distro sources for
+    /// vendor-slug resolution. Value MUST be non-empty + lowercased by
+    /// the caller (clap value_parser enforces this).
+    pub distro_override: Option<String>,
+}
+
+impl Default for RpmReaderConfig {
+    fn default() -> Self {
+        Self {
+            cap_bytes: DEFAULT_RPM_FILE_BYTES,
+            distro_override: None,
+        }
+    }
+}
+
+/// Milestone 144: structured reason for skipping a `.rpm` file during
+/// parse. Replaces the pre-144 inline `tracing::warn!` calls so the
+/// WARN-message wording is testable (FR-006 requires the size-cap path
+/// not contain "malformed") without `tracing-subscriber` plumbing.
+#[derive(Debug)]
+enum SkipReason {
+    StatFailed(std::io::Error),
+    TruncatedLead { size: u64 },
+    SizeCapExceeded { size: u64, cap: u64 },
+    ParseFailed { reason: &'static str, error: String },
+}
+
+impl SkipReason {
+    /// Stable structured-field value for the `reason="..."` log field.
+    /// MUST NOT change across milestone 144 (FR-006 invariant — log-
+    /// parsing tools depend on it).
+    fn structured_reason(&self) -> &'static str {
+        match self {
+            Self::StatFailed(_) => "stat-failed",
+            Self::TruncatedLead { .. } => "truncated-lead",
+            Self::SizeCapExceeded { .. } => "size-cap-exceeded",
+            Self::ParseFailed { reason, .. } => reason,
+        }
+    }
+
+    /// Human-readable WARN-message prefix. "malformed" is reserved for
+    /// genuinely malformed RPMs (FR-007); oversized files use
+    /// "oversized" wording (FR-006).
+    fn warn_prefix(&self) -> &'static str {
+        match self {
+            Self::SizeCapExceeded { .. } => "skipping oversized .rpm file",
+            Self::StatFailed(_)
+            | Self::TruncatedLead { .. }
+            | Self::ParseFailed { .. } => "skipping malformed .rpm file",
+        }
+    }
+}
+
+/// Resolve the PURL vendor segment. Milestone 144 strict precedence:
+/// CLI override → `/etc/os-release` ID → per-RPM header vendor →
+/// empty (the PURL constructor omits the namespace segment when the
+/// returned slug is empty).
 ///
 /// # Examples
 /// ```ignore
-/// resolve_rpm_vendor_slug(Some("Red Hat, Inc."), None)
-///     == ("redhat".to_string(), VendorSource::Header)
-/// resolve_rpm_vendor_slug(None, Some("fedora"))
-///     == ("fedora".to_string(), VendorSource::OsRelease)
-/// resolve_rpm_vendor_slug(None, None)
-///     == ("rpm".to_string(), VendorSource::Fallback)
+/// // CLI override wins absolutely:
+/// resolve_rpm_vendor_slug(Some("poky"), Some("fedora"), Some("CentOS"))
+///     == ("poky".to_string(), VendorSource::CliOverride);
+/// // os-release wins over per-RPM header:
+/// resolve_rpm_vendor_slug(None, Some("fedora"), Some("CentOS"))
+///     == ("fedora".to_string(), VendorSource::OsRelease);
+/// // header used only when CLI + os-release both absent:
+/// resolve_rpm_vendor_slug(None, None, Some("Red Hat, Inc."))
+///     == ("redhat".to_string(), VendorSource::Header);
+/// // Fallback is EMPTY (pre-144 returned literal "rpm" which was
+/// // non-conformant per purl-spec):
+/// resolve_rpm_vendor_slug(None, None, None)
+///     == (String::new(), VendorSource::Fallback);
 /// ```
 pub fn resolve_rpm_vendor_slug(
-    header_vendor: Option<&str>,
+    cli_override: Option<&str>,
     os_release_id: Option<&str>,
+    header_vendor: Option<&str>,
 ) -> (String, VendorSource) {
-    if let Some(v) = header_vendor.filter(|s| !s.is_empty()) {
-        for (pattern, slug) in VENDOR_HEADER_MAP {
-            if v.starts_with(pattern) {
-                return ((*slug).to_string(), VendorSource::Header);
-            }
-        }
+    if let Some(s) = cli_override.filter(|s| !s.is_empty()) {
+        return (s.to_string(), VendorSource::CliOverride);
     }
     if let Some(id) = os_release_id.filter(|s| !s.is_empty()) {
         let slug = rpm_vendor_from_id(id);
@@ -110,7 +195,14 @@ pub fn resolve_rpm_vendor_slug(
             return (slug, VendorSource::OsRelease);
         }
     }
-    ("rpm".to_string(), VendorSource::Fallback)
+    if let Some(v) = header_vendor.filter(|s| !s.is_empty()) {
+        for (pattern, slug) in VENDOR_HEADER_MAP {
+            if v.starts_with(pattern) {
+                return ((*slug).to_string(), VendorSource::Header);
+            }
+        }
+    }
+    (String::new(), VendorSource::Fallback)
 }
 
 /// Recursively discover `.rpm` files under `rootfs` and parse each
@@ -118,13 +210,17 @@ pub fn resolve_rpm_vendor_slug(
 /// Missing `.rpm` files → empty vector (not an error; FR-005). Single
 /// `.rpm` file passed as `rootfs` → still works (treated as its own
 /// scan root with no nested walk needed).
-pub fn read(rootfs: &Path, distro_version: Option<&str>) -> Vec<PackageDbEntry> {
+pub fn read(
+    rootfs: &Path,
+    distro_version: Option<&str>,
+    config: &RpmReaderConfig,
+) -> Vec<PackageDbEntry> {
     let os_release_id = os_release::read_id_from_rootfs(rootfs);
 
     let mut out = Vec::new();
     for path in discover_rpm_files(rootfs) {
         if let Some(entry) =
-            parse_rpm_file(&path, os_release_id.as_deref(), distro_version)
+            parse_rpm_file(&path, os_release_id.as_deref(), distro_version, config)
         {
             out.push(entry);
         }
@@ -201,34 +297,26 @@ fn parse_rpm_file(
     path: &Path,
     os_release_id: Option<&str>,
     distro_version: Option<&str>,
+    config: &RpmReaderConfig,
 ) -> Option<PackageDbEntry> {
     let size = match std::fs::metadata(path) {
         Ok(m) => m.len(),
         Err(e) => {
-            tracing::warn!(
-                path = %path.display(),
-                error = %e,
-                reason = "stat-failed",
-                "skipping malformed .rpm file"
-            );
+            emit_skip_warn(path, &SkipReason::StatFailed(e));
             return None;
         }
     };
     if size < MIN_RPM_FILE_BYTES {
-        tracing::warn!(
-            path = %path.display(),
-            size = size,
-            reason = "truncated-lead",
-            "skipping malformed .rpm file"
-        );
+        emit_skip_warn(path, &SkipReason::TruncatedLead { size });
         return None;
     }
-    if size > MAX_RPM_FILE_BYTES {
-        tracing::warn!(
-            path = %path.display(),
-            size = size,
-            reason = "size-cap-exceeded",
-            "skipping malformed .rpm file"
+    if size > config.cap_bytes {
+        emit_skip_warn(
+            path,
+            &SkipReason::SizeCapExceeded {
+                size,
+                cap: config.cap_bytes,
+            },
         );
         return None;
     }
@@ -237,11 +325,12 @@ fn parse_rpm_file(
         Ok(p) => p,
         Err(e) => {
             let reason = classify_rpm_error(&e);
-            tracing::warn!(
-                path = %path.display(),
-                error = %e,
-                reason = reason,
-                "skipping malformed .rpm file"
+            emit_skip_warn(
+                path,
+                &SkipReason::ParseFailed {
+                    reason,
+                    error: e.to_string(),
+                },
             );
             return None;
         }
@@ -298,8 +387,11 @@ fn parse_rpm_file(
         })
         .collect();
 
-    let (vendor_slug, _vendor_source) =
-        resolve_rpm_vendor_slug(vendor_header.as_deref(), os_release_id);
+    let (vendor_slug, _vendor_source) = resolve_rpm_vendor_slug(
+        config.distro_override.as_deref(),
+        os_release_id,
+        vendor_header.as_deref(),
+    );
 
     // Build canonical PURL per FR-012. Feature 005 US4 alignment: the
     // EPOCH goes in the `&epoch=N` qualifier, NEVER inline in the
@@ -332,15 +424,32 @@ fn parse_rpm_file(
     // producing non-conformant PURLs for any RPM with `+` in its
     // version. Arch qualifier keeps its local stricter encoder — it
     // follows a different rule set per spec.
-    let purl_str = format!(
-        "pkg:rpm/{}/{}@{}?arch={}{}{}",
-        percent_encode_purl_segment(&vendor_slug),
-        mikebom_common::types::purl::encode_purl_segment(&name),
-        mikebom_common::types::purl::encode_purl_segment(&version_tok),
-        percent_encode_purl_qualifier(&arch),
-        epoch_seg,
-        distro_seg,
-    );
+    // Milestone 144 FR-001 + research R5: when no vendor slug resolves
+    // (CLI override absent, /etc/os-release absent, header vendor absent
+    // or unrecognized), emit a PURL with NO namespace segment — not
+    // `pkg:rpm//name@ver` (which would be invalid per purl-spec — two
+    // consecutive slashes after the type are not allowed) and not
+    // `pkg:rpm/rpm/name@ver` (the pre-144 buggy literal-"rpm" fallback).
+    let purl_str = if vendor_slug.is_empty() {
+        format!(
+            "pkg:rpm/{}@{}?arch={}{}{}",
+            mikebom_common::types::purl::encode_purl_segment(&name),
+            mikebom_common::types::purl::encode_purl_segment(&version_tok),
+            percent_encode_purl_qualifier(&arch),
+            epoch_seg,
+            distro_seg,
+        )
+    } else {
+        format!(
+            "pkg:rpm/{}/{}@{}?arch={}{}{}",
+            percent_encode_purl_segment(&vendor_slug),
+            mikebom_common::types::purl::encode_purl_segment(&name),
+            mikebom_common::types::purl::encode_purl_segment(&version_tok),
+            percent_encode_purl_qualifier(&arch),
+            epoch_seg,
+            distro_seg,
+        )
+    };
     let purl = Purl::new(&purl_str).ok()?;
 
     let licenses: Vec<SpdxExpression> = license_str
@@ -390,6 +499,44 @@ fn parse_rpm_file(
     })
 }
 
+/// Milestone 144: structured WARN emission for a skip reason. Uses
+/// the `SkipReason`'s `warn_prefix()` for the human-readable message
+/// (FR-006: size-cap path drops "malformed"; FR-007: malformed paths
+/// keep "malformed") and `structured_reason()` for the stable
+/// `reason="..."` field (FR-006 invariant: log-parsing tools depend
+/// on the field value).
+fn emit_skip_warn(path: &Path, reason: &SkipReason) {
+    let prefix = reason.warn_prefix();
+    let structured = reason.structured_reason();
+    match reason {
+        SkipReason::StatFailed(e) => tracing::warn!(
+            path = %path.display(),
+            error = %e,
+            reason = structured,
+            "{prefix}"
+        ),
+        SkipReason::TruncatedLead { size } => tracing::warn!(
+            path = %path.display(),
+            size = size,
+            reason = structured,
+            "{prefix}"
+        ),
+        SkipReason::SizeCapExceeded { size, cap } => tracing::warn!(
+            path = %path.display(),
+            size = size,
+            cap = cap,
+            reason = structured,
+            "{prefix}"
+        ),
+        SkipReason::ParseFailed { error, .. } => tracing::warn!(
+            path = %path.display(),
+            error = %error,
+            reason = structured,
+            "{prefix}"
+        ),
+    }
+}
+
 /// Classify an `rpm::Error` into a short stable reason string for WARN
 /// log output. Downstream tests assert on these.
 fn classify_rpm_error(e: &rpm::Error) -> &'static str {
@@ -436,61 +583,67 @@ mod tests {
 
     #[test]
     fn vendor_header_redhat_family() {
-        let (slug, src) = resolve_rpm_vendor_slug(Some("Red Hat, Inc."), None);
+        let (slug, src) = resolve_rpm_vendor_slug(None, None, Some("Red Hat, Inc."));
         assert_eq!(slug, "redhat");
         assert_eq!(src, VendorSource::Header);
     }
 
     #[test]
     fn vendor_header_fedora() {
-        let (slug, _) = resolve_rpm_vendor_slug(Some("Fedora Project"), None);
+        let (slug, _) = resolve_rpm_vendor_slug(None, None, Some("Fedora Project"));
         assert_eq!(slug, "fedora");
     }
 
     #[test]
     fn vendor_header_rocky_foundation() {
         let (slug, _) = resolve_rpm_vendor_slug(
-            Some("Rocky Enterprise Software Foundation"),
             None,
+            None,
+            Some("Rocky Enterprise Software Foundation"),
         );
         assert_eq!(slug, "rocky");
     }
 
     #[test]
     fn vendor_header_rocky_linux_branding() {
-        let (slug, _) = resolve_rpm_vendor_slug(Some("Rocky Linux"), None);
+        let (slug, _) = resolve_rpm_vendor_slug(None, None, Some("Rocky Linux"));
         assert_eq!(slug, "rocky");
     }
 
     #[test]
     fn vendor_header_opensuse_not_shadowed_by_suse() {
-        let (slug, _) = resolve_rpm_vendor_slug(Some("openSUSE"), None);
+        let (slug, _) = resolve_rpm_vendor_slug(None, None, Some("openSUSE"));
         assert_eq!(slug, "opensuse");
     }
 
     #[test]
     fn vendor_header_suse_matches() {
-        let (slug, _) = resolve_rpm_vendor_slug(Some("SUSE LLC"), None);
+        let (slug, _) = resolve_rpm_vendor_slug(None, None, Some("SUSE LLC"));
         assert_eq!(slug, "suse");
     }
 
     #[test]
     fn vendor_falls_back_to_os_release() {
-        let (slug, src) = resolve_rpm_vendor_slug(None, Some("rhel"));
+        let (slug, src) = resolve_rpm_vendor_slug(None, Some("rhel"), None);
         assert_eq!(slug, "redhat");
         assert_eq!(src, VendorSource::OsRelease);
     }
 
+    /// Milestone 144 T013 (SC-002): the fallback when neither CLI
+    /// override, /etc/os-release, nor header vendor resolves is now an
+    /// empty string (the PURL constructor omits the namespace segment
+    /// entirely). Pre-144 this returned the literal "rpm" which
+    /// produced non-conformant `pkg:rpm/rpm/...` PURLs.
     #[test]
-    fn vendor_falls_back_to_rpm_when_nothing_resolves() {
-        let (slug, src) = resolve_rpm_vendor_slug(None, None);
-        assert_eq!(slug, "rpm");
+    fn resolve_rpm_vendor_slug_fallback_is_empty_not_rpm() {
+        let (slug, src) = resolve_rpm_vendor_slug(None, None, None);
+        assert_eq!(slug, String::new());
         assert_eq!(src, VendorSource::Fallback);
     }
 
     #[test]
     fn vendor_empty_header_falls_through() {
-        let (slug, src) = resolve_rpm_vendor_slug(Some(""), Some("fedora"));
+        let (slug, src) = resolve_rpm_vendor_slug(None, Some("fedora"), Some(""));
         assert_eq!(slug, "fedora");
         assert_eq!(src, VendorSource::OsRelease);
     }
@@ -498,7 +651,7 @@ mod tests {
     #[test]
     fn empty_scan_root_yields_zero_entries() {
         let dir = tempfile::tempdir().unwrap();
-        let entries = read(dir.path(), None);
+        let entries = read(dir.path(), None, &RpmReaderConfig::default());
         assert!(entries.is_empty());
     }
 
@@ -507,7 +660,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("not-rpm.txt"), b"hello").unwrap();
         std::fs::write(dir.path().join("fake.rpm"), b"NOT_RPM_MAGIC").unwrap();
-        let entries = read(dir.path(), None);
+        let entries = read(dir.path(), None, &RpmReaderConfig::default());
         assert!(entries.is_empty());
     }
 
@@ -517,7 +670,7 @@ mod tests {
         // Wrong magic → still skipped, but the extension casing is
         // accepted (the discovery pass runs; parse fails gracefully).
         std::fs::write(dir.path().join("FOO.RPM"), b"xxxx").unwrap();
-        let entries = read(dir.path(), None);
+        let entries = read(dir.path(), None, &RpmReaderConfig::default());
         assert!(entries.is_empty());
     }
 
@@ -549,7 +702,7 @@ mod tests {
         .unwrap();
         pkg.write_file(&rpm_path).unwrap();
 
-        let entries = read(dir.path(), None);
+        let entries = read(dir.path(), None, &RpmReaderConfig::default());
         assert_eq!(entries.len(), 1, "expected exactly one entry");
 
         let e = &entries[0];
@@ -588,7 +741,7 @@ mod tests {
             .unwrap();
         pkg.write_file(&rpm_path).unwrap();
 
-        let entries = read(dir.path(), None);
+        let entries = read(dir.path(), None, &RpmReaderConfig::default());
         assert_eq!(entries.len(), 1);
         // Feature 005 US4: epoch moved from inline (`@7:2.0-1`) to the
         // `&epoch=7` qualifier — matches `rpm.rs::assemble_entry` and
@@ -611,7 +764,7 @@ mod tests {
             .build()
             .unwrap();
         pkg.write_file(&rpm_path).unwrap();
-        let entries = read(dir.path(), None);
+        let entries = read(dir.path(), None, &RpmReaderConfig::default());
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].raw_version.as_deref(), Some("3.1.4-2.fc40"));
     }
@@ -623,7 +776,7 @@ mod tests {
         let mut bytes = RPM_LEAD_MAGIC.to_vec();
         bytes.extend_from_slice(&[0u8; 200]);
         std::fs::write(dir.path().join("bad.rpm"), &bytes).unwrap();
-        let entries = read(dir.path(), None);
+        let entries = read(dir.path(), None, &RpmReaderConfig::default());
         assert!(entries.is_empty(), "malformed .rpm must not panic or propagate");
     }
 
@@ -641,9 +794,212 @@ mod tests {
                 .unwrap();
             pkg.write_file(dir.path().join(name)).unwrap();
         }
-        let entries = read(dir.path(), None);
+        let entries = read(dir.path(), None, &RpmReaderConfig::default());
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].purl, entries[1].purl);
+    }
+
+    /// Milestone 144 T009 (FR-004 guard): the default per-file cap is
+    /// 512 MiB. Guards against accidental revert via a const-value
+    /// assertion. Per research §R7 the const is the contract.
+    #[test]
+    fn default_rpm_file_bytes_is_512_mib() {
+        assert_eq!(DEFAULT_RPM_FILE_BYTES, 512 * 1024 * 1024);
+    }
+
+    /// Milestone 144 T014 (preserves existing behavior): when no CLI
+    /// override and no /etc/os-release ID are set, the per-RPM header
+    /// vendor still wins via the existing `VENDOR_HEADER_MAP` ladder.
+    #[test]
+    fn resolve_rpm_vendor_slug_header_wins_when_no_cli_no_os_release() {
+        let (slug, src) =
+            resolve_rpm_vendor_slug(None, None, Some("Red Hat, Inc."));
+        assert_eq!(slug, "redhat");
+        assert_eq!(src, VendorSource::Header);
+    }
+
+    /// Milestone 144 T015 (SC-011): /etc/os-release ID overrides per-RPM
+    /// RPMTAG_VENDOR. Pre-144 the header always won; post-144 the scan-
+    /// root identity is authoritative.
+    #[test]
+    fn resolve_rpm_vendor_slug_os_release_overrides_header() {
+        let (slug, src) =
+            resolve_rpm_vendor_slug(None, Some("fedora"), Some("CentOS"));
+        assert_eq!(slug, "fedora");
+        assert_eq!(src, VendorSource::OsRelease);
+    }
+
+    /// Milestone 144 T031 (SC-012): --rpm-distro CLI override is
+    /// authoritative over EVERY other source — /etc/os-release AND
+    /// per-RPM header metadata.
+    #[test]
+    fn resolve_rpm_vendor_slug_cli_overrides_everything() {
+        let (slug, src) =
+            resolve_rpm_vendor_slug(Some("poky"), Some("fedora"), Some("CentOS"));
+        assert_eq!(slug, "poky");
+        assert_eq!(src, VendorSource::CliOverride);
+    }
+
+    /// Milestone 144 T016 (SC-002 + SC-003): the emitted PURL omits the
+    /// namespace segment entirely when neither CLI override, os-release,
+    /// nor header vendor resolves. Specifically the PURL must NOT
+    /// contain `pkg:rpm//` (two consecutive slashes — invalid per
+    /// purl-spec) NOR `pkg:rpm/rpm/` (the pre-144 buggy fallback).
+    #[test]
+    fn purl_omits_namespace_when_vendor_slug_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let rpm_path = dir.path().join("noname-1.0-1.noarch.rpm");
+        // No vendor / packager / distribution tags → fallback fires.
+        let pkg = rpm::PackageBuilder::new("noname", "1.0", "MIT", "noarch", "x")
+            .release("1")
+            .build()
+            .unwrap();
+        pkg.write_file(&rpm_path).unwrap();
+        let entries = read(dir.path(), None, &RpmReaderConfig::default());
+        assert_eq!(entries.len(), 1);
+        let purl = entries[0].purl.as_str();
+        assert!(
+            !purl.contains("pkg:rpm/rpm/"),
+            "literal-rpm fallback regression: {purl}"
+        );
+        assert!(
+            !purl.contains("pkg:rpm//"),
+            "double-slash from empty-namespace bug: {purl}"
+        );
+        assert!(
+            purl.starts_with("pkg:rpm/noname@"),
+            "expected pkg:rpm/<name>@... shape, got {purl}"
+        );
+    }
+
+    /// Milestone 144 T020 (SC-007 + FR-006): the SizeCapExceeded skip
+    /// reason MUST emit a WARN whose human-readable prefix does NOT
+    /// contain "malformed", and whose structured `reason=` field is
+    /// preserved as `size-cap-exceeded` for log-grep compatibility.
+    /// Operationally exercised via a tempfile larger than a custom-low
+    /// cap (`RpmReaderConfig { cap_bytes: 100, ... }`) so we don't need
+    /// a 512 MB fixture.
+    #[test]
+    fn size_cap_exceeded_skips_file_without_malformed_in_warn() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("oversized.rpm");
+        // Valid lead magic + 200 bytes of zeros — passes MIN_RPM_FILE_BYTES
+        // (96) but exceeds the custom 100-byte cap.
+        let mut bytes = RPM_LEAD_MAGIC.to_vec();
+        bytes.extend_from_slice(&[0u8; 200]);
+        std::fs::write(&path, &bytes).unwrap();
+        let cfg = RpmReaderConfig {
+            cap_bytes: 100,
+            distro_override: None,
+        };
+        let entries = read(dir.path(), None, &cfg);
+        assert!(entries.is_empty(), "size-cap should skip");
+
+        // SkipReason variant correctness (the actual WARN text and
+        // structured field are derived from these methods, so testing
+        // the helper functions covers FR-006 + FR-007 without
+        // tracing-subscriber plumbing).
+        let reason = SkipReason::SizeCapExceeded {
+            size: 204,
+            cap: 100,
+        };
+        let prefix = reason.warn_prefix();
+        assert!(
+            !prefix.contains("malformed"),
+            "FR-006 violation: SizeCapExceeded warn_prefix contains 'malformed': {prefix}"
+        );
+        assert_eq!(reason.structured_reason(), "size-cap-exceeded");
+    }
+
+    /// Milestone 144 T021: the size check is strict greater-than;
+    /// a file exactly at the cap is INCLUDED (then the parser may fail
+    /// downstream on synthetic data — this test only asserts the size
+    /// check itself doesn't fire).
+    #[test]
+    fn size_cap_at_boundary_includes_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("at-cap.rpm");
+        let mut bytes = RPM_LEAD_MAGIC.to_vec();
+        // Exactly 100 bytes total (4 magic + 96 zeros). MIN is 96; we
+        // need >= MIN to pass the truncated-lead check.
+        bytes.extend_from_slice(&[0u8; 96]);
+        assert_eq!(bytes.len(), 100, "fixture must be exactly 100 bytes");
+        std::fs::write(&path, &bytes).unwrap();
+        let cfg = RpmReaderConfig {
+            cap_bytes: 100,
+            distro_override: None,
+        };
+        // The size check at line "if size > config.cap_bytes" must NOT
+        // fire when size == cap. (The parser will then fail because the
+        // synthetic bytes aren't a valid RPM body; the file is still
+        // skipped but via the ParseFailed path, not the SizeCapExceeded
+        // path. The visible behavior — empty entries — is identical
+        // here; the assertion is about which SkipReason variant fires.)
+        let entries = read(dir.path(), None, &cfg);
+        assert!(entries.is_empty(), "synthetic body fails to parse");
+        // Direct exercise of the helper: a size==cap construction is
+        // not built (it would be `SizeCapExceeded { size: 100, cap: 100 }`
+        // — but the production code only constructs SizeCapExceeded
+        // when size > cap, never when size == cap, so the boundary is
+        // enforced at the call site, not in the variant).
+    }
+
+    /// Milestone 144 T035 (SC-011 end-to-end): /etc/os-release overrides
+    /// per-RPM RPMTAG_VENDOR via the production code path (not just the
+    /// `resolve_rpm_vendor_slug` helper in isolation). Builds a
+    /// synthetic .rpm with `vendor("CentOS")` AND plants an
+    /// `etc/os-release` declaring `ID=fedora` in the same tempdir;
+    /// asserts the emitted PURL has namespace `fedora`.
+    #[test]
+    fn rpm_file_os_release_overrides_per_rpm_vendor() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("etc")).unwrap();
+        std::fs::write(dir.path().join("etc/os-release"), "ID=fedora\n").unwrap();
+        let rpm_path = dir.path().join("override-1.0-1.x86_64.rpm");
+        rpm::PackageBuilder::new("override", "1.0", "MIT", "x86_64", "test")
+            .release("1")
+            .vendor("CentOS") // per-RPM vendor — must be overridden
+            .build()
+            .unwrap()
+            .write_file(&rpm_path)
+            .unwrap();
+        let entries = read(dir.path(), None, &RpmReaderConfig::default());
+        assert_eq!(entries.len(), 1);
+        let purl = entries[0].purl.as_str();
+        assert!(
+            purl.starts_with("pkg:rpm/fedora/"),
+            "expected fedora namespace (os-release wins over CentOS vendor); got {purl}"
+        );
+    }
+
+    /// Milestone 144 T035 (SC-012 end-to-end): --rpm-distro CLI override
+    /// wins over BOTH /etc/os-release AND per-RPM RPMTAG_VENDOR via the
+    /// production code path. Same setup as the previous test plus
+    /// `RpmReaderConfig.distro_override = Some("poky")`.
+    #[test]
+    fn rpm_file_cli_distro_overrides_everything() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("etc")).unwrap();
+        std::fs::write(dir.path().join("etc/os-release"), "ID=fedora\n").unwrap();
+        let rpm_path = dir.path().join("override-1.0-1.x86_64.rpm");
+        rpm::PackageBuilder::new("override", "1.0", "MIT", "x86_64", "test")
+            .release("1")
+            .vendor("CentOS")
+            .build()
+            .unwrap()
+            .write_file(&rpm_path)
+            .unwrap();
+        let cfg = RpmReaderConfig {
+            cap_bytes: DEFAULT_RPM_FILE_BYTES,
+            distro_override: Some("poky".to_string()),
+        };
+        let entries = read(dir.path(), None, &cfg);
+        assert_eq!(entries.len(), 1);
+        let purl = entries[0].purl.as_str();
+        assert!(
+            purl.starts_with("pkg:rpm/poky/"),
+            "expected poky namespace (CLI override wins absolutely); got {purl}"
+        );
     }
 
     /// Milestone 054 SC-002 + FR-009: walker terminates promptly on

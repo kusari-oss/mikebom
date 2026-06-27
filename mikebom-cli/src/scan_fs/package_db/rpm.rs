@@ -35,8 +35,13 @@ pub struct RpmFileEntry {
 }
 
 /// Hard cap on rpmdb.sqlite size — an honest RHEL rpmdb is ~5 MB;
-/// anything above 200 MB is refused as defense-in-depth.
-const MAX_RPMDB_BYTES: u64 = 200 * 1024 * 1024;
+/// anything above 512 MB is refused as defense-in-depth.
+/// Milestone 144 FR-008: raised from 200 MB → 512 MB symmetric with
+/// the standalone-`.rpm`-file reader's default cap (operator-overridable
+/// there via `--max-rpm-bytes`; not overridable here per FR-008
+/// rationale — no production rpmdb >200 MB has been observed in any
+/// corpus we are aware of).
+const MAX_RPMDB_BYTES: u64 = 512 * 1024 * 1024;
 
 /// Wall-clock budget for iterating the packages table. If exceeded we
 /// abort iteration and return whatever we've collected, logging a WARN
@@ -670,6 +675,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let entries = read(dir.path(), false, None);
         assert!(entries.is_empty());
+    }
+
+    /// Milestone 144 T022 (FR-008 guard): the rpmdb cap is 512 MiB
+    /// post-144 (raised from 200 MB, symmetric with the standalone-
+    /// `.rpm`-file reader's default cap). Guards against accidental
+    /// revert. The operator-override of this cap is deliberately out
+    /// of scope per FR-008 — no production corpus has surfaced an
+    /// rpmdb >200 MB.
+    #[test]
+    fn max_rpmdb_bytes_is_512_mib() {
+        assert_eq!(MAX_RPMDB_BYTES, 512 * 1024 * 1024);
     }
 
     #[test]

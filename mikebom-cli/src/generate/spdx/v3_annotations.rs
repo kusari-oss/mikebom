@@ -263,6 +263,16 @@ fn push_component_fields(
     if let Some(ref v) = c.raw_version {
         push(out, "mikebom:raw-version", json!(v));
     }
+    // C42 mikebom:lifecycle-scope — DELIBERATELY OMITTED in SPDX 3.
+    // SPDX 3 carries scope natively via `LifecycleScopedRelationship.
+    // scope` (set in `v3_relationships.rs` for Dev/Build/TestDependsOn
+    // edges). Per Constitution Principle V, the native field is the
+    // primary signal and mikebom MUST NOT add a redundant annotation.
+    // Issue #228 + spdx3_annotation_fidelity test enforces this contract.
+    // Milestone 145 US2 originally tried to emit here; reverted after the
+    // fidelity test caught the Principle-V violation. The 261 audit
+    // findings flagged on this annotation are false positives from the
+    // harness misreading the SPDX 3 scope mechanism.
     // C18 source-files
     if include_source_files && !c.evidence.source_file_paths.is_empty() {
         push(
@@ -330,7 +340,13 @@ fn push_component_fields(
     // `mikebom:is-workspace-root` signal that drives root-selector
     // logic but is NOT meant to surface in emitted SBOMs).
     for (key, value) in &c.extra_annotations {
-        if crate::generate::root_selector::is_internal_emission_key(key) {
+        if crate::generate::root_selector::is_internal_emission_key(key)
+            || crate::generate::root_selector::is_field_owned_annotation_key(key)
+        {
+            // Milestone 145 US3 (FR-009): skip keys already emitted
+            // from a field-derived source (e.g., `mikebom:source-files`
+            // comes from `c.evidence.source_file_paths` at line ~267
+            // above) — re-emitting from the bag double-stamps.
             continue;
         }
         push(out, key, value.clone());
@@ -578,4 +594,161 @@ mod tests {
             "statement must NOT serialize bool as bare true: {statement}",
         );
     }
+
+    // -----------------------------------------------------------------
+    // Milestone 145 US2 (T007/T008/T009): SPDX 3 lifecycle-scope
+    // emission parity with CDX + SPDX 2.3.
+    // -----------------------------------------------------------------
+
+    /// Helper: construct a minimal valid `ResolvedComponent` for tests.
+    /// Only `purl` is required; everything else defaults. The caller
+    /// overrides specific fields (e.g., `lifecycle_scope`) before use.
+    fn synthetic_resolved_component(
+        lifecycle_scope: Option<mikebom_common::resolution::LifecycleScope>,
+    ) -> ResolvedComponent {
+        use mikebom_common::resolution::{
+            ResolutionEvidence, ResolutionTechnique, ResolvedComponent,
+        };
+        let purl = mikebom_common::types::purl::Purl::new("pkg:npm/test@1.0.0").unwrap();
+        ResolvedComponent {
+            build_inclusion: None,
+            name: "test".to_string(),
+            version: "1.0.0".to_string(),
+            purl,
+            evidence: ResolutionEvidence {
+                technique: ResolutionTechnique::PackageDatabase,
+                confidence: 0.9,
+                source_connection_ids: vec![],
+                source_file_paths: vec![],
+                deps_dev_match: None,
+            },
+            licenses: vec![],
+            concluded_licenses: vec![],
+            hashes: vec![],
+            supplier: None,
+            cpes: vec![],
+            advisories: vec![],
+            occurrences: vec![],
+            lifecycle_scope,
+            requirement_range: None,
+            source_type: None,
+            sbom_tier: None,
+            buildinfo_status: None,
+            evidence_kind: None,
+            binary_class: None,
+            binary_stripped: None,
+            linkage_kind: None,
+            detected_go: None,
+            confidence: None,
+            binary_packed: None,
+            npm_role: None,
+            raw_version: None,
+            parent_purl: None,
+            co_owned_by: None,
+            shade_relocation: None,
+            external_references: vec![],
+            extra_annotations: Default::default(),
+            binary_role: None,
+        }
+    }
+
+    /// Returns the parsed `MikebomAnnotationCommentV1` envelopes from a
+    /// vector of SPDX 3 annotation graph elements whose `field` matches
+    /// the supplied predicate.
+    fn envelopes_for_field(
+        annos: &[Value],
+        field_name: &str,
+    ) -> Vec<MikebomAnnotationCommentV1> {
+        annos
+            .iter()
+            .filter_map(|a| a.get("statement").and_then(|s| s.as_str()))
+            .filter_map(|s| serde_json::from_str::<MikebomAnnotationCommentV1>(s).ok())
+            .filter(|env| env.field == field_name)
+            .collect()
+    }
+
+    /// Milestone 145 US2 REVERTED (Principle V): SPDX 3 carries
+    /// lifecycle scope natively via `LifecycleScopedRelationship.scope`.
+    /// Asserts the `mikebom:lifecycle-scope` annotation is NOT emitted
+    /// at the Package level — issue #228's existing design contract.
+    /// Guards against future reintroduction of the redundant emission.
+    #[test]
+    fn spdx3_lifecycle_scope_not_emitted_as_annotation_md145() {
+        use mikebom_common::resolution::LifecycleScope;
+        for scope in [
+            Some(LifecycleScope::Development),
+            Some(LifecycleScope::Build),
+            Some(LifecycleScope::Test),
+            Some(LifecycleScope::Runtime),
+            None,
+        ] {
+            let c = synthetic_resolved_component(scope);
+            let mut out = Vec::new();
+            push_component_fields(
+                &mut out,
+                "https://example.org/doc#SPDXRef-comp-1",
+                "https://example.org/doc",
+                "_:creationinfo",
+                &c,
+                true,
+                true,
+            );
+            let envs = envelopes_for_field(&out, "mikebom:lifecycle-scope");
+            assert!(
+                envs.is_empty(),
+                "Principle V violation: SPDX 3 carries scope natively via \
+                 LifecycleScopedRelationship.scope — mikebom:lifecycle-scope \
+                 annotation MUST NOT appear on Package elements. Got: {envs:?} (scope={scope:?})"
+            );
+        }
+    }
+
+    /// T016 (US3 + FR-009 + SC-009): when a component has BOTH a
+    /// field-derived `mikebom:source-files` (from
+    /// `c.evidence.source_file_paths`) AND a legacy stamping in
+    /// `extra_annotations["mikebom:source-files"]` (the pre-145 Maven
+    /// nested-JAR pattern), the SPDX 3 emitter MUST emit EXACTLY ONE
+    /// `mikebom:source-files` annotation — the field-derived one.
+    /// Guards against regression of the per-emitter double-emission
+    /// bug that caused 51 audit findings on polyglot-builder-image.
+    #[test]
+    fn spdx3_source_files_dedup_no_double_emission_md145() {
+        let mut c = synthetic_resolved_component(None);
+        c.evidence.source_file_paths =
+            vec!["root/.m2/repository/test/foo/1.0/foo-1.0.jar".to_string()];
+        // Pre-145 the Maven reader stamped THIS key (now renamed to
+        // mikebom:source-files-nested-url per Option 2b); we replicate
+        // the pre-145 shape to PROVE the emitter-side guard (Option 1)
+        // would suppress the double-emission even if a future reader
+        // recreated the trap.
+        c.extra_annotations.insert(
+            "mikebom:source-files".to_string(),
+            serde_json::json!("root/.m2/.../foo-1.0.jar!META-INF/MANIFEST.MF"),
+        );
+        let mut out = Vec::new();
+        push_component_fields(
+            &mut out,
+            "https://example.org/doc#SPDXRef-comp-1",
+            "https://example.org/doc",
+            "_:creationinfo",
+            &c,
+            /* include_dev = */ true,
+            /* include_source_files = */ true,
+        );
+        let envs = envelopes_for_field(&out, "mikebom:source-files");
+        assert_eq!(
+            envs.len(),
+            1,
+            "FR-009 violation: SPDX 3 emitted {} mikebom:source-files entries; \
+             expected EXACTLY ONE (the field-derived one wins). envs={envs:?}",
+            envs.len()
+        );
+        // The surviving entry MUST be the field-derived rootfs-relative
+        // JAR path, NOT the legacy `<outer>!<inner>!...` URL string.
+        assert_eq!(
+            envs[0].value,
+            serde_json::json!(["root/.m2/repository/test/foo/1.0/foo-1.0.jar"])
+        );
+    }
+
 }

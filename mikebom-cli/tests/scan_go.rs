@@ -235,14 +235,31 @@ fn scan_go_source_tree_emits_transitive_edges_when_cache_present() {
         eprintln!("skipping: no GOMODCACHE or HOME/go/pkg/mod");
         return;
     };
-    let cached_cobra_mod = cache_root
-        .join("cache/download/github.com/spf13/cobra/@v/v1.10.2.mod");
-    if !cached_cobra_mod.is_file() {
-        eprintln!(
-            "skipping: no cached cobra/@v/v1.10.2.mod at {}",
-            cached_cobra_mod.display()
-        );
-        return;
+    // Verify the FULL closure of `.mod` files the two assertions below
+    // depend on, not just cobra. The `≥3 components with outbound edges`
+    // check at line 270 needs BOTH cobra's and logrus's `.mod` files
+    // (each declares its own requires, contributing one outbound edge).
+    // The `logrus → x/sys` edge assertion at line 292 specifically needs
+    // logrus's `.mod` AND x/sys's `.mod` to be present so the resolver
+    // can land the transitive edge. Before this widening (PR after
+    // milestone 148's CI flake) the predicate gated only on cobra; a CI
+    // runner with a half-populated cache (cobra present, logrus or x/sys
+    // evicted) would proceed past the skip and fail at the assertions
+    // even though the partial-cache behavior is correct mikebom output.
+    let cached_mods = [
+        ("cobra", "github.com/spf13/cobra/@v/v1.10.2.mod"),
+        ("logrus", "github.com/sirupsen/logrus/@v/v1.9.4.mod"),
+        ("x/sys", "golang.org/x/sys/@v/v0.28.0.mod"),
+    ];
+    for (label, rel) in &cached_mods {
+        let path = cache_root.join("cache/download").join(rel);
+        if !path.is_file() {
+            eprintln!(
+                "skipping: no cached {label} `.mod` at {}",
+                path.display()
+            );
+            return;
+        }
     }
 
     let sbom = scan_path(&fixture("simple-module"));

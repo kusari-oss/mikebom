@@ -7,6 +7,71 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### RPM license expressions: preserve known operands when one is unknown (closes #481)
+
+Follow-up to #475 (closed in `eb75853` via PR #478). The milestone-478
+BitBake `&`/`|` operator normalization recovered 5 of the 10
+`NOASSERTION` cases the maintainer observed on the `core-image-minimal`
+qemux86-64 scarthgap-LTS testbed. The remaining 5 (`busybox`,
+`busybox-hwclock`, `busybox-syslog`, `busybox-udhcpc`, `liblzma5`) still
+collapsed to `NOASSERTION` because their compound `License:` headers
+contain at least one operand that isn't a registered SPDX identifier
+(e.g., `bzip2-1.0.4` for busybox-family, `PD` for liblzma5).
+
+mikebom now wraps each unrecognized operand as a SPDX 2.3-spec-blessed
+`LicenseRef-<sanitized>` escape-hatch identifier instead of collapsing
+the whole expression. The recognized portion survives; the unknown
+portion is preserved as structured-but-uncanonicalized signal that
+downstream tooling can ignore, resolve via deps.dev / Clearly Defined,
+or escalate to source review.
+
+**Per-package fix:**
+
+| Package | Pre-152 `licenseDeclared` | Post-152 `licenseDeclared` |
+|---|---|---|
+| `busybox*` | `NOASSERTION` | `GPL-2.0-only AND LicenseRef-bzip2-1.0.4` |
+| `liblzma5` | `NOASSERTION` | `LicenseRef-PD` |
+
+**Sanitization rule** (per Clarifications Q1 — replace + collapse + strip):
+replace each character outside `[a-zA-Z0-9-.]` with `-`, collapse
+consecutive `-` to a single `-`, then strip leading and trailing `-`.
+The algorithm is idempotent. Worked examples:
+
+| Raw token | Sanitized form |
+|---|---|
+| `bzip2-1.0.4` | `LicenseRef-bzip2-1.0.4` (unchanged — already valid) |
+| `PD` | `LicenseRef-PD` |
+| `GPLv2+` | `LicenseRef-GPLv2` |
+| `My License v2` | `LicenseRef-My-License-v2` |
+| `(custom)` | `LicenseRef-custom` |
+
+**Pipeline ordering**: the new fallback composes after the milestone-478
+operator normalizer. The full pipeline: raw RPM `License:` header →
+`normalize_bitbake_license_operators` (M478) → `try_canonical`
+first-pass → (on failure) → operand-by-operand `LicenseRef-<sanitized>`
+wrapping (M152) → `try_canonical` second-pass → (on failure) →
+`NOASSERTION` (existing fail-closed behavior). Happy-path expressions
+(every operand a recognized SPDX id) take the first-pass path and are
+byte-identical to pre-152 output.
+
+**WITH-clause behavior** (per Clarifications Q2): when the LEFT side of
+a `WITH` clause is unrecognized, mikebom wraps it as
+`LicenseRef-<sanitized>` and preserves the exception. When the
+EXCEPTION (right side) is unrecognized, mikebom conservatively collapses
+the entire surrounding compound expression to `NOASSERTION` — SPDX 2.3
+does not define an `ExceptionRef-` carrier, and silently dropping an
+unknown exception would misrepresent the license's legal meaning (e.g.,
+GCC runtime library exception relaxes GPL terms).
+
+**Scope**: RPM reader only this milestone. Other readers (deb, apk,
+npm, etc.) that exhibit the same NOASSERTION-on-unknown-operand
+collapse are out of scope; if they surface in operator feedback,
+they'll be addressed in a follow-up milestone.
+
+**Constitution Principle V**: the SPDX 2.3 `LicenseRef-<idstring>`
+escape hatch is the standards-native carrier for unknown license
+identifiers — no new `mikebom:*` annotation key introduced.
+
 ### Homebrew (brew + Linuxbrew) package detection (closes #432)
 
 mikebom gains a sixth OS package-DB reader alongside dpkg, apk, rpm,

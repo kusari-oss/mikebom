@@ -2067,6 +2067,7 @@ dependencies = [
  "serde_yaml",
  "sha2",
  "sigstore",
+ "spdx",
  "tar",
  "tempfile",
  "thiserror 2.0.18",

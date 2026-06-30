@@ -1,6 +1,6 @@
 # mikebom Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-06-29
+Auto-generated from all feature plans. Last updated: 2026-06-30
 
 ## Active Technologies
 - Rust stable (user-space only; no eBPF touched in this milestone) (002-python-npm-ecosystem)
@@ -175,6 +175,8 @@ Auto-generated from all feature plans. Last updated: 2026-06-29
 - N/A — Markdown documentation. The mikebom binary is unchanged. + None. The doc is static reference Markdown. (150-sbom-consumer-guide)
 - N/A — Markdown documentation only. No Rust source touched. (The mikebom binary is unchanged; its CLI surface, library APIs, and emitted SBOM wire formats are all stable across this milestone per FR-016 / FR-017.) + Existing only — `jq` (for recipe verification at authoring time), the released `mikebom` binary at workspace HEAD (for generating real SBOMs the recipes run against), `bash` (for `verify-recipes.sh`). No new Cargo, Python, or Node dependencies. (151-expand-consumer-guide)
 - N/A — purely documentation. The verify-recipes.sh harness writes scratch SBOMs to `mktemp -d` and cleans up on exit (matches milestone 150's harness pattern). (151-expand-consumer-guide)
+- Rust stable (workspace toolchain inherited from milestones 001–151; no nightly required for this user-space-only RPM-reader extension). + Existing only — `spdx = "0.10"` (workspace; already used by `SpdxExpression::try_canonical` at `mikebom-common/src/types/license.rs:135`), `mikebom_common::types::license::SpdxExpression` newtype (`try_canonical` + `as_str` + `Display`), `tracing`, `anyhow`. **No new Cargo dependencies.** No subprocess calls. No network access. (152-preserve-license-operands)
+- N/A — pure-function transformation; the new helper takes a `&str` and returns `Option<String>`. No caches, no persistence (matches the milestone-478 pattern at `rpm_file.rs:603`). (152-preserve-license-operands)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -237,9 +239,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 152-preserve-license-operands: Added Rust stable (workspace toolchain inherited from milestones 001–151; no nightly required for this user-space-only RPM-reader extension). + Existing only — `spdx = "0.10"` (workspace; already used by `SpdxExpression::try_canonical` at `mikebom-common/src/types/license.rs:135`), `mikebom_common::types::license::SpdxExpression` newtype (`try_canonical` + `as_str` + `Display`), `tracing`, `anyhow`. **No new Cargo dependencies.** No subprocess calls. No network access.
 - 151-expand-consumer-guide: Added N/A — Markdown documentation only. No Rust source touched. (The mikebom binary is unchanged; its CLI surface, library APIs, and emitted SBOM wire formats are all stable across this milestone per FR-016 / FR-017.) + Existing only — `jq` (for recipe verification at authoring time), the released `mikebom` binary at workspace HEAD (for generating real SBOMs the recipes run against), `bash` (for `verify-recipes.sh`). No new Cargo, Python, or Node dependencies.
 - 150-sbom-consumer-guide: Added N/A — Markdown documentation. The mikebom binary is unchanged. + None. The doc is static reference Markdown.
-- 149-demote-manifest-mainmod: Added Rust stable (workspace toolchain inherited from milestones 001–148; no nightly required for this user-space-only work). + Existing only — `clap` for the new boolean flag (via `Args`-derive — already used pervasively for milestones 077 / 081 / 119 / 134 flags), `serde`/`serde_json` for the annotation value, `tracing` for the INFO-level diagnostics on the no-op edge cases. `mikebom_common::resolution::ResolvedComponent` is the existing workspace type; `mikebom_common::types::purl::Purl` for the demoted entry's PURL (unchanged from pre-demote). **No new Cargo dependencies.**
 
 
 <!-- MANUAL ADDITIONS START -->

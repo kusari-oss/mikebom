@@ -102,6 +102,15 @@ tempfile = "3"
 toml = "0.8"
 uuid = { version = "1", features = ["v4"] }
 
+# Milestone 152 (closes issue #481) — per-operand SPDX license id /
+# exception id / imprecise-synonym lookups for the new LicenseRef
+# escape-hatch fallback in `scan_fs/package_db/rpm_file.rs`. Already a
+# transitive dep via `mikebom-common`'s `std` feature; promoted to a
+# direct dep per Constitution Principle VI "no new runtime crates"
+# (already in the lockfile). Pinned to the same version mikebom-common
+# uses to avoid lockfile fork.
+spdx = "0.10"
+
 base64 = "0.22"
 # Milestone 010 — RFC 4648 base32 encoding for deterministic SPDX IDs
 # (SPDXRef-Package-<base32(SHA-256(purl))[..16]>) and document

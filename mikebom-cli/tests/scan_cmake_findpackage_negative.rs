@@ -1,10 +1,12 @@
-//! Dedicated test for FR-007 negative-emission contract — `find_package(X)`
-//! MUST NOT emit components attributed to the cmake reader.
+//! Dedicated test for milestone 155's REVERSAL of milestone-102 FR-007
+//! — `find_package(X)` NOW emits `pkg:generic/x` tagged with
+//! `mikebom:source-mechanism = "cmake-find-package"`.
 //!
 //! Fixture combines: (a) a FetchContent_Declare for googletest to prove
 //! the cmake reader RAN, with (b) a `find_package(zlib REQUIRED)` line.
 //! The test asserts ≥1 googletest component exists (reader ran) AND
-//! zero zlib components (find_package negative-emission).
+//! exactly ONE `pkg:generic/zlib` component (find_package emission
+//! per milestone 155).
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -43,7 +45,7 @@ fn scan_fixture() -> serde_json::Value {
 }
 
 #[test]
-fn findpackage_only_no_emission() {
+fn findpackage_emits_since_milestone_155() {
     let sbom = scan_fixture();
     let comps = sbom["components"].as_array().expect("components array");
 
@@ -62,23 +64,27 @@ fn findpackage_only_no_emission() {
          got {googletest_count} googletest components"
     );
 
-    // (b) find_package(zlib REQUIRED) MUST NOT emit pkg:*/zlib per FR-007.
-    let zlib_from_cmake_reader = comps
+    // (b) Milestone 155 REVERSAL of FR-007: find_package(zlib REQUIRED)
+    // MUST now emit exactly one pkg:generic/zlib component tagged with
+    // mikebom:source-mechanism = "cmake-find-package".
+    let zlib_from_find_package: Vec<&serde_json::Value> = comps
         .iter()
+        .filter(|c| c["purl"].as_str() == Some("pkg:generic/zlib"))
         .filter(|c| {
-            c["purl"]
-                .as_str()
-                .is_some_and(|p| {
-                    let lower = p.to_lowercase();
-                    // Match any zlib PURL EXCEPT the vcpkg/conan ones
-                    // (those come from different readers and are not in this fixture).
-                    lower.contains("zlib")
+            c["properties"].as_array().is_some_and(|arr| {
+                arr.iter().any(|p| {
+                    p["name"].as_str() == Some("mikebom:source-mechanism")
+                        && p["value"].as_str() == Some("cmake-find-package")
                 })
+            })
         })
-        .count();
+        .collect();
     assert_eq!(
-        zlib_from_cmake_reader, 0,
-        "find_package(zlib REQUIRED) MUST NOT emit any pkg:*/zlib component per FR-007; \
-         got {zlib_from_cmake_reader} zlib components"
+        zlib_from_find_package.len(),
+        1,
+        "milestone 155 REVERSAL of FR-007: find_package(zlib REQUIRED) MUST now emit \
+         exactly one pkg:generic/zlib component tagged cmake-find-package; \
+         got {}",
+        zlib_from_find_package.len()
     );
 }

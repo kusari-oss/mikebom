@@ -181,6 +181,8 @@ Auto-generated from all feature plans. Last updated: 2026-07-02
 - N/A — pure-function sweep over the assembled `Vec<SpdxPackage>` at document-serialization time. No caches, no persistence. (153-spdx-license-refs-conformance)
 - Rust stable (workspace toolchain inherited from milestones 001–153; no nightly required). + Existing only — `regex = "1"` (workspace; already direct dep since milestone 013; here used identically to milestone 153's sweep), `serde_json` (used by v3_licenses.rs for `json!` macro), `std::sync::OnceLock` (regex compile), `std::collections::BTreeMap` (dedup by idstring). **No new Cargo dependencies.** (154-spdx3-custom-licenses)
 - N/A — pure-function sweep over `&[Value]` (the already-emitted `simplelicensing_LicenseExpression` elements). No caches, no persistence. (154-spdx3-custom-licenses)
+- Rust stable (workspace toolchain inherited from milestones 001–154; no nightly required for this user-space-only work). + Existing only — `regex = "1"` (workspace; already used pervasively in `cmake.rs`), `tracing` (`warn!` / `debug!` diagnostics), `anyhow`/`thiserror` (error propagation), `serde`/`serde_json` (annotation value construction). Reuses `mikebom_common::types::purl::Purl` for PURL construction + validation. **Zero new Cargo dependencies.** (155-cmake-find-package)
+- N/A — all state in-process per scan. The two-pass parser accumulates `Vec<FindPackageHit>` + `Vec<PkgCheckHit>` in a local of `read()` for the scan's duration; both are dropped at function return. Mirrors every milestone since 002. (155-cmake-find-package)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -243,9 +245,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 155-cmake-find-package: Added Rust stable (workspace toolchain inherited from milestones 001–154; no nightly required for this user-space-only work). + Existing only — `regex = "1"` (workspace; already used pervasively in `cmake.rs`), `tracing` (`warn!` / `debug!` diagnostics), `anyhow`/`thiserror` (error propagation), `serde`/`serde_json` (annotation value construction). Reuses `mikebom_common::types::purl::Purl` for PURL construction + validation. **Zero new Cargo dependencies.**
 - 154-spdx3-custom-licenses: Added Rust stable (workspace toolchain inherited from milestones 001–153; no nightly required). + Existing only — `regex = "1"` (workspace; already direct dep since milestone 013; here used identically to milestone 153's sweep), `serde_json` (used by v3_licenses.rs for `json!` macro), `std::sync::OnceLock` (regex compile), `std::collections::BTreeMap` (dedup by idstring). **No new Cargo dependencies.**
 - 153-spdx-license-refs-conformance: Added Rust stable (workspace toolchain inherited from milestones 001–152; no nightly required). + Existing only — `regex = "1"` (workspace; already a direct dep for the milestone-013 catalog parser; here used to extract LicenseRef- substrings), `serde`/`serde_json` (JSON emission), `mikebom_common::types::license::SpdxExpression` (unchanged), `spdx = "0.10"` (workspace; already a direct dep since milestone 152). **No new Cargo dependencies.**
-- 152-preserve-license-operands: Added Rust stable (workspace toolchain inherited from milestones 001–151; no nightly required for this user-space-only RPM-reader extension). + Existing only — `spdx = "0.10"` (workspace; already used by `SpdxExpression::try_canonical` at `mikebom-common/src/types/license.rs:135`), `mikebom_common::types::license::SpdxExpression` newtype (`try_canonical` + `as_str` + `Display`), `tracing`, `anyhow`. **No new Cargo dependencies.** No subprocess calls. No network access.
 
 
 <!-- MANUAL ADDITIONS START -->

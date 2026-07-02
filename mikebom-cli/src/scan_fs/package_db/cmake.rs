@@ -393,9 +393,14 @@ fn emit_pkg_check_module_entries(hits: Vec<PkgCheckHit>) -> Vec<PackageDbEntry> 
 /// regardless of filesystem walk order (SC-010).
 ///
 /// IMPORTANT: this fn does NOT emit components. It only collects
-/// target names. Milestone 102's FR-007 (`find_package_does_not_emit_components`
-/// regression test) remains green — the collector is a parallel pass
-/// that reads the same files but only populates a name set.
+/// target names for the milestone-105 US6 `git-submodule` classification
+/// pipeline. Milestone 155 later added a SEPARATE emission path
+/// (`parse_find_package_calls` + `emit_find_package_entries`) that
+/// DOES emit `pkg:generic/<name>` PackageDbEntry instances from the
+/// same `find_package(...)` call sites. The two pipelines are
+/// orthogonal — this collector populates a name set for submodule
+/// classification, while the emitter produces the SBOM components.
+/// Both walk the same discovered CMake files.
 ///
 /// Dynamic aliases set inside CMake macros / functions are not
 /// chased (per spec edge case "target aliases"). Only statically

@@ -111,12 +111,16 @@ fn cmake_includes_walked() {
     );
 }
 
-/// Contract 7 (FR-007): find_package(OpenSSL REQUIRED) MUST NOT emit
-/// `pkg:*/OpenSSL` components attributed to the cmake reader.
+/// Contract 7 (milestone 155 REVERSAL of milestone-102 FR-007):
+/// `find_package(OpenSSL REQUIRED)` in the milestone-090 cmake fixture
+/// now emits a `pkg:generic/openssl` component tagged with
+/// `mikebom:source-mechanism = "cmake-find-package"`. Pre-milestone-155
+/// this test asserted 0 emissions per the FR-007 refusal; post-155 it
+/// asserts exactly one emission with the correct annotation shape.
 #[test]
-fn cmake_find_package_not_emitted() {
+fn cmake_find_package_emits_since_milestone_155() {
     let sbom = scan_fixture();
-    let openssl = sbom["components"]
+    let openssl_from_find_package: Vec<&serde_json::Value> = sbom["components"]
         .as_array()
         .expect("components array")
         .iter()
@@ -125,13 +129,30 @@ fn cmake_find_package_not_emitted() {
                 .as_str()
                 .is_some_and(|p| {
                     let lower = p.to_lowercase();
-                    lower.contains("openssl") && !p.starts_with("pkg:conan/")
+                    lower.contains("openssl")
+                        && !p.starts_with("pkg:conan/")
                         && !p.starts_with("pkg:vcpkg/")
                 })
         })
-        .count();
+        .filter(|c| {
+            component_property(c, "mikebom:source-mechanism") == Some("cmake-find-package")
+        })
+        .collect();
     assert_eq!(
-        openssl, 0,
-        "find_package(OpenSSL REQUIRED) MUST NOT emit components per FR-007"
+        openssl_from_find_package.len(),
+        1,
+        "milestone 155 REVERSAL of FR-007: find_package(OpenSSL REQUIRED) MUST now emit \
+         exactly one pkg:generic/openssl component tagged cmake-find-package; got {}",
+        openssl_from_find_package.len()
+    );
+    let purl = openssl_from_find_package[0]["purl"].as_str().expect("purl");
+    assert_eq!(
+        purl, "pkg:generic/openssl",
+        "no version constraint declared → no @version segment"
+    );
+    assert_eq!(
+        component_property(openssl_from_find_package[0], "mikebom:cmake-find-package-name"),
+        Some("OpenSSL"),
+        "milestone 155 FR-008: original casing preserved when it differs from lowercased PURL"
     );
 }

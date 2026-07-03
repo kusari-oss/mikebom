@@ -205,24 +205,29 @@ pub(crate) fn parse_pnpm_lock(
             .map(|h| vec![h])
             .unwrap_or_default();
 
-        // Milestone 157 F3-remediated depends construction:
-        // - v6/v7 path: `walk_pnpm_dep_sections` walks the 3-section
-        //   union (dependencies + peerDependencies +
-        //   optionalDependencies) directly off the packages entry.
-        //   When any inline sub-mapping is populated, inline WINS
-        //   per FR-004 (backward-compat for pnpm v6/v7 lockfiles
-        //   that predate the snapshots: section design).
-        // - v9 path: `packages:` entries carry only identity +
-        //   integrity metadata; deps live in `snapshots:`. Fall
-        //   through to the pre-scanned snapshots_lookup.
+        // Milestone 157 depends construction — branched by lockfileVersion:
+        // - v9 path: `packages:` entries carry ONLY identity + integrity
+        //   metadata plus (for 225/1329 entries in the argo-cd testbed)
+        //   a `peerDependencies:` sub-mapping whose VALUES ARE SEMVER
+        //   SPECIFIERS (e.g. `^7.0.0`, `^7.4.0 || ^8.0.0-0 <8.0.0`), NOT
+        //   resolved versions. Resolved dep-graph edges live EXCLUSIVELY
+        //   in `snapshots:`. Reading inline `packages:` sub-mappings on
+        //   v9 emits WRONG edges (the specifier's dep-NAME happens to
+        //   match a real component so the graph looks plausible, but
+        //   the 7-of-8 real edges from snapshots are silently dropped).
+        //   Verified empirically 2026-07-03 on argo-cd/ui pre-fix:
+        //   `@babel/helper-create-class-features-plugin@7.29.3` was
+        //   emitting 1 edge (@babel/core, from the specifier) instead
+        //   of 8 (from snapshots).
+        // - v6/v7 path: `packages:` entries carry inline `dependencies:`
+        //   with RESOLVED versions (matches milestone-147 npm parity).
+        //   Walk the 3-section union directly.
         // - Empty on both sides = leaf semantics (FR-005).
         //
-        // The two-branch shape below distinguishes "snapshots
-        // lookup HIT but was empty (leaf)" from "snapshots lookup
-        // MISS" — only the HIT case increments fell_back_count
-        // (feeds the FR-007 info-level diagnostic below).
-        let inline_deps = walk_pnpm_dep_sections(tbl);
-        let depends: Vec<String> = if inline_deps.is_empty() {
+        // On v9 the snapshots_lookup HIT case (deps or empty leaf)
+        // increments fell_back_count. On v6/v7 fell_back_count stays 0
+        // (as expected — no fallback happened).
+        let depends: Vec<String> = if is_v9_or_later {
             let canonical = format!("{name}@{version}");
             if let Some(snap_deps) = snapshots_lookup.get(&canonical) {
                 fell_back_count += 1;
@@ -231,7 +236,7 @@ pub(crate) fn parse_pnpm_lock(
                 Vec::new()
             }
         } else {
-            inline_deps
+            walk_pnpm_dep_sections(tbl)
         };
 
         out.push(PackageDbEntry {
@@ -532,18 +537,25 @@ packages:
     }
 
     #[test]
-    fn pnpm_v9_inline_wins_over_snapshots_fallback() {
-        // FR-004 precedence: when packages: entry has ANY inline
-        // sub-mapping populated, snapshots fallback is skipped —
-        // even if snapshots has a matching entry with different edges.
+    fn pnpm_v9_snapshots_authoritative_ignoring_packages_specifiers() {
+        // Empirical bug 2026-07-03 (post-T014 argo-cd/ui audit): on a
+        // real pnpm v9 lockfile, `packages:` entries carry ONLY
+        // identity/integrity metadata plus (for a subset) a
+        // `peerDependencies:` sub-mapping whose values are SEMVER
+        // SPECIFIERS, not resolved versions. Resolved dep-graph edges
+        // live EXCLUSIVELY in `snapshots:`. Reading `packages:` inline
+        // sub-mappings on v9 emits WRONG edges (the specifier's
+        // dep-NAME may coincidentally match a real component). Correct
+        // behavior: on v9, ALWAYS use snapshots and IGNORE inline
+        // packages: sub-mappings.
         let yaml = r#"
 lockfileVersion: '9.0'
 
 packages:
   foo@1.0.0:
     resolution: {integrity: sha512-aaaa}
-    dependencies:
-      only-inline: 1.0.0
+    peerDependencies:
+      only-specifier: ^7.0.0
 
 snapshots:
   foo@1.0.0:
@@ -553,7 +565,12 @@ snapshots:
         let parsed: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
         let out = parse_pnpm_lock(&parsed, "/pnpm-lock.yaml", false);
         let foo = entry_by_name(&out, "foo").expect("foo emitted");
-        assert_eq!(foo.depends, vec!["only-inline"]);
+        assert_eq!(
+            foo.depends,
+            vec!["only-snapshots"],
+            "v9 MUST read edges from snapshots and MUST NOT emit \
+             the specifier-only edge from packages:.peerDependencies"
+        );
     }
 
     #[test]

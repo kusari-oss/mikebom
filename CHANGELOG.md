@@ -21,9 +21,15 @@ every non-root component had empty `dependsOn`).
 
 **Fix**: `parse_pnpm_lock` now pre-scans `snapshots:` into a lookup
 keyed by canonical `name@version` (peer-dep suffix stripped via the
-existing `parse_pnpm_key` helper), then the packages loop pulls edges
-from that lookup when the entry's own inline `dependencies:` is empty
-(v9 case) or walks its own inline sub-mappings (v6/v7 case).
+existing `parse_pnpm_key` helper), then branches on `lockfileVersion`:
+on v9, edges come EXCLUSIVELY from `snapshots:` and `packages:` sub-
+mappings are ignored; on v6/v7/v8, edges come inline from `packages:`
+(matches milestone-147 npm parity). The v9 branch shape is required
+because pnpm v9's `packages:` `peerDependencies:` values are SEMVER
+SPECIFIERS (`^7.0.0`), not resolved versions — treating them as
+resolved edges emits wrong (but plausible-looking) dep-graph output.
+This was the root cause of a Round-1 mismatch discovered during
+post-T014 accuracy auditing against the argo-cd/ui testbed.
 
 **Q1 clarification 2026-07-03** (Constitution Principle VIII —
 Completeness): milestone 157 also brings pnpm to full parity with
@@ -45,8 +51,13 @@ occurred in practice.
   additive helper + self-test proving the helper catches missing-edge
   violations; T010 Step-3 real-golden verification via
   `MIKEBOM_PRE157_SNAPSHOT_DIR`.
-- SC-001 argo-cd testbed: 110 → measured-at-implementation edges (see
-  PR description for actual count).
+- SC-001 argo-cd testbed accuracy audit (Round-2, post-lockfileVersion
+  branch fix): **1328/1328 registry-resolvable packages have EXACT-MATCH
+  `dependsOn` to the pnpm-lock.yaml `snapshots:` section (100% accuracy;
+  0 false positives; 0 false negatives).** 3016 total edges (vs pre-157:
+  110 edges + zero non-root with dependsOn). 1 non-emitted canonical
+  (`argo-ui@https://…tar.gz`) is a git-URL dep correctly excluded from
+  emitted components.
 
 **Diagnostic emissions** (Constitution Principle X — Transparency):
 - FR-007 info-level: `pnpm-lock parsed` with `packages_count` +

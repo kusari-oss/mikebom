@@ -71,7 +71,7 @@ Rust workspace (`Cargo.toml` at repo root). Source under `mikebom-cli/src/`, tes
   - The classification logic: build seed set (T006) → BFS (T006) → count reachable vs orphans → dispatch to reason codes → apply Q1 caution-first fallback (if orphans exist but no classifier fired, emit `unknown` not `partial`).
   - **Unit tests** (T004's `mod tests`): 3 classification tests — (a) empty components → `Complete` + zero counts; (b) all reachable + no losers → `Complete`; (c) unclassifiable gap → caution-first `unknown` (constructive: manually pass a broken edges map that leaves an orphan without any classifier match — asserts value is `Unknown`, not `Partial`).
 
-- [ ] T008 Wire `compute_graph_completeness` into the CDX emission call site at `mikebom-cli/src/cli/scan_cmd.rs` — invoke immediately AFTER `select_root(...)` at line ~2067 and BEFORE `build_metadata(...)`. Thread the resulting `GraphCompletenessResult` into `build_metadata` as a new required parameter `graph_completeness: &GraphCompletenessResult`. Similarly thread into `spdx/v3_document.rs:870` (SPDX 3 emission call site) and the SPDX 2.3 emission call site (grep for `annotations::build_document_annotations` or similar). All three callers pass the SAME `GraphCompletenessResult` — one BFS pass per scan; result reused across formats.
+- [ ] T008 Wire `compute_graph_completeness` into the CDX emission call site at `mikebom-cli/src/cli/scan_cmd.rs` — invoke immediately AFTER `select_root(...)` at line ~2067 and BEFORE `build_metadata(...)`. Thread the resulting `GraphCompletenessResult` into `build_metadata` as a new required parameter `graph_completeness: &GraphCompletenessResult`. Similarly thread into the four confirmed SPDX call sites (verified 2026-07-03 during analyze): `spdx/document.rs:549` (SPDX 2.3 document emission), `spdx/annotations.rs:501` (SPDX 2.3 annotations), `spdx/v3_document.rs:870` (SPDX 3 document emission), `spdx/v3_annotations.rs:463` (SPDX 3 annotations). All 4 SPDX call sites currently invoke `select_root` independently (matching the pre-milestone-158 pattern); wire `compute_graph_completeness` at scan_cmd ONCE and pass the result down to `build_metadata` + all 4 SPDX emitters via new required parameters to avoid running BFS multiple times per scan.
 
 - [ ] T009 Add FR-013 tracing log line in `mikebom-cli/src/cli/scan_cmd.rs` at the same point where `compute_graph_completeness` is called. Log shape per research §R8:
   ```rust
@@ -107,28 +107,38 @@ Rust workspace (`Cargo.toml` at repo root). Source under `mikebom-cli/src/`, tes
 - [ ] T013 [US1] Unit test in `mikebom-cli/src/generate/graph_completeness/tests.rs` — synthesize a 2-peer workspace (root + 2 peers, each peer with 2 deps). After running the full emission pipeline, assert:
   - Root's `dependsOn` in CDX contains both peer PURLs (sorted).
   - BFS reachability from root = 5/5 components (2 peers + 2 deps of peer1 + 2 deps of peer2, but peer2's deps may overlap peer1's — use unique dep names).
-  - `GraphCompletenessResult.value == Complete`.
+  - `GraphCompletenessResult.value == Complete`. (satisfies SC-007(b))
 
 - [ ] T014 [US1] Unit test — synthesize a 12-peer workspace (test-podman-desktop-shape). Simulate the podman-desktop losers list: 12 unique peer PURLs. Assert:
   - CDX root's `dependsOn` contains all 12 peer PURLs.
   - Multi-root BFS visits root + 12 peers + their transitive closure.
-  - Reachability count matches the synthesized total component count.
+  - Reachability count matches the synthesized total component count. (satisfies SC-007(c))
+
+  As a lightweight FR-008 sanity check (not a hard perf gate — CI variability makes tight bounds fragile), wrap the `compute_graph_completeness` invocation with `std::time::Instant::now()` and assert elapsed time < 1s. This is a ~500x margin over R7's mathematical bound and catches only pathological regressions (e.g. accidental O(V²)); the real-world FR-008 <100ms empirical measurement happens at T035 on `test-podman-desktop`.
 
 - [ ] T015 [US1] Unit test for peer-already-present dedup (test-podman-desktop currently already links 1 of 12 peers). Synthesize: root already has peer1 in dependsOn; losers list contains peer1 (again) + peer2 + peer3. Assert:
   - Final root dependsOn contains peer1, peer2, peer3 — each exactly once.
-  - Sort order stable (peer1, peer2, peer3 in lex order).
+  - Sort order stable (peer1, peer2, peer3 in lex order). (satisfies SC-007(d))
 
 - [ ] T016 [US1] Unit test for leaf peer (peer with zero deps of its own). Synthesize: root + 1 peer that has NO outbound edges. Assert:
   - Peer is in root's dependsOn.
   - BFS reaches the peer (it's a reachable leaf, not an orphan).
-  - Reachability = 2/2 → `Complete`.
+  - Reachability = 2/2 → `Complete`. (satisfies SC-007(e))
 
 - [ ] T017 [US1] Unit test for URL-shaped peer version (milestone-157 `argo-ui@https://…tar.gz` regression). Synthesize a peer with `pkg:npm/argo-ui@https://codeload.github.com/foo/tar.gz/abc123`. Assert:
   - Peer emits correctly as a component (no PURL rejection).
   - Peer appears in root's dependsOn.
-  - Reachable via BFS.
+  - Reachable via BFS. (satisfies SC-007(f))
 
-**Checkpoint**: End of US1. The concrete workspace-peer linkage works end-to-end. `test-podman-desktop` scan (run at T027 in Polish) should now show ≥99% BFS reachability.
+- [ ] T017a [US1] Unit test in `mikebom-cli/src/generate/graph_completeness/tests.rs` for SC-007 case (a) — single-package repo with no losers. Synthesize: 1 root component + 3 direct deps, `RootSelectionResult { subject: MainModule(0), heuristic: None, losers: vec![] }`. Assert:
+  - `GraphCompletenessResult.value == Complete`.
+  - `GraphCompletenessResult.reason_codes.is_empty()`.
+  - `GraphCompletenessResult.reachable_count == 4` (root + 3 deps).
+  - `GraphCompletenessResult.orphan_count == 0`.
+  - Root's `dependsOn` unchanged by the emission-time linkage step (FR-009: no fabricated peer relationships).
+  This test satisfies BOTH SC-007(a) AND FR-009 verification (closes analyze finding A5).
+
+**Checkpoint**: End of US1. The concrete workspace-peer linkage works end-to-end. `test-podman-desktop` scan (run at T035 in Polish) should now show ≥99% BFS reachability.
 
 ---
 
@@ -182,23 +192,23 @@ Rust workspace (`Cargo.toml` at repo root). Source under `mikebom-cli/src/`, tes
 
 - [ ] T026 [US2] Q1 caution-first unit test in `graph_completeness/tests.rs` — synthesize a `RootSelectionResult` with `subject = ResolvedRootSubject::MainModule(idx)` where `idx` points to a component NOT in `components[]` (impossible state; caution-first should catch it). Assert:
   - `GraphCompletenessResult.value == Unknown`.
-  - No `partial` emission.
+  - No `partial` emission. (satisfies SC-007(h))
 
 - [ ] T027 [US2] Q2 orphan-classification unit test — synthesize: root + 3 reachable components + 1 orphan component (in `components[]`, not in losers, no edges to it). Assert:
   - `value == Partial`.
   - `reason_codes` contains exactly one `OrphanedComponentsDetected { orphan_count: 1 }`.
-  - `join_reason_codes(...)` produces `orphaned-components-detected: 1 component(s) not reachable from root`.
+  - `join_reason_codes(...)` produces `orphaned-components-detected: 1 component(s) not reachable from root`. (satisfies SC-007(g))
 
 - [ ] T028 [US2] Q3 multi-root BFS unit test — synthesize 2-ecosystem repo (npm + gem), each with a main-module. npm root reaches 3 components; gem root reaches 2 components. Assert:
   - Total = 7 (1 npm root + 1 gem root + 3 npm deps + 2 gem deps).
   - Reachable = 7 via multi-source BFS.
   - `value == Complete`.
-  - No reason codes.
+  - No reason codes. (satisfies SC-007(i))
 
 - [ ] T029 [US2] Q3 combined-reason unit test — synthesize a repo where npm root can't be identified (no npm main-module component) + orphan exists. Assert:
   - `value == Partial`.
   - `reason_codes` contains BOTH `MultiEcosystemPartialRoot { ecosystems: vec!["npm".to_string()] }` AND `OrphanedComponentsDetected`.
-  - `join_reason_codes(...)` produces `multi-ecosystem-partial-root: npm; orphaned-components-detected: N`.
+  - `join_reason_codes(...)` produces `multi-ecosystem-partial-root: npm; orphaned-components-detected: N`. (satisfies SC-007(j))
 
 - [ ] T030 [US2] SC-008 integration test at `mikebom-cli/tests/graph_completeness_workspace_bfs.rs`. Synthesize a `test-podman-desktop`-shape workspace testbed via `tempfile::tempdir()` + `std::fs::write` (mirrors milestone-157's `pnpm_v9_synthetic_argo_cd_shape` at line 58). Invoke the release binary; parse the emitted CDX; assert:
   - `.metadata.properties[] | select(.name == "mikebom:graph-completeness") | .value == "complete"`.
@@ -215,11 +225,7 @@ Rust workspace (`Cargo.toml` at repo root). Source under `mikebom-cli/src/`, tes
 
 **Independent Test**: `diff /tmp/158-pre-goldens/<eco>.cdx.json mikebom-cli/tests/fixtures/golden/cyclonedx/<eco>.cdx.json | grep -E '^[<>]' | wc -l == 2` (one `<`, one `>` for the property line).
 
-- [ ] T031 [US3] Regenerate all 11 milestone-090 CDX goldens (`alpine`, `apk`, `cargo`, `cyclonedx-source`, `deb`, `gem`, `maven`, `npm`, `pip`, `rpm`, `spdx-source`) by running the existing `./scripts/regenerate-golden.sh <ecosystem>` (or equivalent — grep for `regenerate-golden` in `Makefile` / `scripts/` / `justfile`).
-
-- [ ] T032 [US3] Regenerate all 11 milestone-090 SPDX 2.3 goldens (same 11 ecosystems).
-
-- [ ] T033 [US3] Regenerate all 11 milestone-090 SPDX 3 goldens (same 11 ecosystems).
+- [ ] T031 [US3] Regenerate all 33 goldens (11 ecosystems × 3 formats) by running `./scripts/regen-goldens.sh` from repo root (verified 2026-07-03 during analyze). The script runs the whole workspace test suite under the three documented `MIKEBOM_UPDATE_*` env vars and writes pinned goldens in place. Covers CDX + SPDX 2.3 + SPDX 3 in one invocation — no per-format loop needed. See the script header for the full mechanism (issue #361 reference).
 
 - [ ] T034 [US3] SC-002 byte-identity guard: for each of the 33 regenerated goldens, run `diff /tmp/158-pre-goldens/<path> <new-path> | grep -cE '^[<>]'` and confirm the count is EXACTLY 2 for CDX (one `<`, one `>` — the added property line pair) OR the equivalent minimal delta for SPDX 2.3/3. If ANY golden shows more than 2 diff lines (or the wrong delta), STOP and investigate — this signals an unintended byte change per SC-002.
 
@@ -312,15 +318,15 @@ Every task above has:
 - ✅ `[US1]` / `[US2]` / `[US3]` labels on the correct story-phase tasks; no story label on Setup / Foundational / Polish tasks.
 - ✅ Exact file paths in every description (either an existing file to modify OR a new file to create).
 
-42 tasks total. 20 tasks parallelizable ([P] marker or in independent files per phase). 8 SC-001 through SC-011 verification steps embedded in Polish.
+41 tasks total (post-analyze remediation). 20 tasks parallelizable ([P] marker or in independent files per phase). 8 SC-001 through SC-011 verification steps embedded in Polish.
 
-## Task counts per phase
+## Task counts per phase (post-analyze remediation 2026-07-03)
 
 - Phase 1 (Setup): 3 tasks (T001–T003).
 - Phase 2 (Foundational): 6 tasks (T004–T009).
-- Phase 3 (US1, P1): 8 tasks (T010–T017).
+- Phase 3 (US1, P1): 9 tasks (T010–T017 + T017a — closes analyze A2/A5 by adding the SC-007(a) single-package test).
 - Phase 4 (US2, P2): 13 tasks (T018–T030).
-- Phase 5 (US3, P3): 4 tasks (T031–T034).
+- Phase 5 (US3, P3): 2 tasks (T031 + T034 — consolidated per analyze A3; T031 covers all 33 goldens via `./scripts/regen-goldens.sh` single invocation).
 - Phase 6 (Polish): 8 tasks (T035–T042).
 
-**Total**: 42 tasks.
+**Total**: 41 tasks (net −1 from A3 consolidation of T031/T032/T033 into T031, +1 from A2 addition of T017a).

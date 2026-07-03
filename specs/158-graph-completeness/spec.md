@@ -130,6 +130,8 @@ Users scanning single-package repos (which is the majority of milestone-090 fixt
 
 - **FR-010**: Standards-native precedence per Constitution Principle V. If either CDX 1.6 or SPDX 3.0.1 introduces an official "graph completeness" or "SBOM completeness" property, mikebom MUST prefer that property over the `mikebom:*` prefix. Milestone 158 emits under `mikebom:*` because no such standard property exists at emission time.
 
+- **FR-013 (observability, added at plan time per research §R8)**: mikebom MUST emit an info-level tracing log line at scan-emission time summarizing the graph-completeness result, with fields: `value` (`complete`/`partial`/`unknown`), `reachable_count`, `total_count`, `orphan_count`, `reason_codes`. The log message MUST be the literal string `"graph completeness computed"`. This log line is grep-friendly for CI-log analysis and follows the milestone-157 FR-007 precedent (info-level `pnpm-lock parsed` log). Not emitted to the SBOM wire format.
+
 ### Key Entities
 
 - **Workspace peer**: A component identified by mikebom's root-selection heuristic as a "loser" — a candidate root that mikebom did not select. Peers are already ecosystem-typed (npm scoped, Cargo package, Go module, etc.) and already have a `bom-ref` / `SPDXID` — no new identity is minted for them.

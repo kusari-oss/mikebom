@@ -43,7 +43,7 @@ const PNPM_DEP_SECTIONS: &[&str] = &[
 /// only strip suffixes to filter out non-registry values in the
 /// VERSION column (git URLs, tarballs, file paths) via
 /// `parse_pnpm_key` on a synthesized `"<name>@<value>"` string.
-fn walk_pnpm_dep_sections(entry_tbl: &serde_yaml::Mapping) -> Vec<String> {
+fn collect_pnpm_dep_names(entry_tbl: &serde_yaml::Mapping) -> Vec<String> {
     let mut deps: Vec<String> = Vec::new();
     for section in PNPM_DEP_SECTIONS {
         let Some(sub) = entry_tbl
@@ -101,7 +101,7 @@ fn build_snapshots_lookup(
         };
         let canonical = format!("{name}@{version}");
         let Some(tbl) = entry.as_mapping() else { continue };
-        let deps = walk_pnpm_dep_sections(tbl);
+        let deps = collect_pnpm_dep_names(tbl);
         out.insert(canonical, deps);
     }
     out
@@ -152,7 +152,7 @@ pub(crate) fn parse_pnpm_lock(
     // Milestone 157: pre-scan the v9 `snapshots:` section into a
     // lookup keyed by canonical name@version. Empty HashMap on
     // v6/v7 (no snapshots section) — the inline packages path
-    // takes precedence via walk_pnpm_dep_sections.
+    // takes precedence via collect_pnpm_dep_names.
     let snapshots_lookup = build_snapshots_lookup(root);
 
     // v6/v7 put per-package info under `packages:` keyed by
@@ -236,7 +236,7 @@ pub(crate) fn parse_pnpm_lock(
                 Vec::new()
             }
         } else {
-            walk_pnpm_dep_sections(tbl)
+            collect_pnpm_dep_names(tbl)
         };
 
         out.push(PackageDbEntry {

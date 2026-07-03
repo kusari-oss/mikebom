@@ -36,4 +36,17 @@
 - The reused milestone-155 Kamailio-shape fixture at `mikebom-cli/tests/fixtures/cmake-find-package/kamailio-shape/` already contains a depth-2 `FindLibev.cmake` file with a `find_package_handle_standard_args` call — post-milestone-156 this file becomes discoverable and the FR-009 boundary verification at depth-2 comes for free (no new fixture needed for that specific case).
 - `/speckit-clarify` session 2026-07-02 locked in one decision:
   - Q1 (`third_party/` recursive walking): **Depth-1 default; opt-in flag `--cmake-third-party-recursive` for full recursion**. FR-001 refined to name only `cmake/` + `Modules/` as recursive-by-default; new FR-019 + FR-020 codify the CLI flag. Assumption 5 + Edge Cases updated. New SC-011 verifies flag on/off behavior. SC-010 diff-file-list expanded to include the CLI arg-struct source.
-- Ready for `/speckit-plan`.
+- `/speckit-analyze` session 2026-07-02 surfaced + remediated 5 findings:
+  - F1 (MEDIUM): unbounded-vs-max_depth-16 inconsistency — resolved during impl by using `max_depth=16` (research §R4's rationale) and updating spec Assumption 8 to name safe_walk's defensive backstop.
+  - F2 (MEDIUM): SC-008 grep off-by-one — resolved by naming test #6 `discover_cmake_files_emits_find_package_at_depth2`. Empirical verification: 6/6 match.
+  - F3 (LOW): FR-016 Cargo.toml/lock guard — added to T017 verification (Cargo.toml/lock diff empty).
+  - F5 (LOW): FR-007 depth-2+ test — added to T010's depth-3 fixture (pkg_check_modules at depth-3 emits correctly).
+  - F6 (LOW): FR-017 src/ boundary test — added to T012's exclude-path fixture (find_package in src/CMakeLists.txt NOT emitted).
+- Implementation completed 2026-07-02:
+  - All 19 tasks executed.
+  - 6 unit tests + 7 integration tests all pass (SC-008 floor cleared: 6).
+  - SC-002 byte-identity verified: zero golden regens across CDX/SPDX 2.3/SPDX 3 (33 golden tests) + milestone-155 Kamailio-shape + dedup integration tests.
+  - Pre-PR gate + --no-fail-fast enumeration: only documented `sbomqs_parity` env-only flake fails.
+  - SC-010 wire-format guard: 6 diff commands all return empty (F3 remediation confirmed no Cargo.toml/lock changes).
+  - SC-001 EMPIRICALLY REVISED to ≥4 (from ≥10): Kamailio's Find*.cmake files turned out to be CMake module DEFINITIONS not `find_package` call sites — the milestone-155 F1 remediation misread the tree layout. Milestone 156 delivers 1 → 4 for Kamailio (4x improvement); the general walker-depth capability is verified via synthetic SC-004 fixtures. Spec.md + CHANGELOG updated to reflect empirical reality.
+- Ready for PR review + merge.

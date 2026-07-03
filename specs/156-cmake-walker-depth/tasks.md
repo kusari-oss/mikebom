@@ -36,7 +36,7 @@ description: "Task list for milestone 156 — CMake walker depth extension"
 
 **Purpose**: Baseline verification. No project scaffolding needed — this is a single-file additive change to an existing crate.
 
-- [ ] T001 Verify baseline state: `git log -1 --oneline`, confirm branch `156-cmake-walker-depth`, capture pre-milestone `cmake.rs` LOC (`wc -l mikebom-cli/src/scan_fs/package_db/cmake.rs`), pre-milestone `discover_cmake_files_` test count (`grep -cE "^\s+fn discover_cmake_files_" mikebom-cli/src/scan_fs/package_db/cmake.rs` — should be 0 pre-156), and confirm milestone 155 (PR #489) is merged to main (`git log main --oneline | head -3` — should show impl(155) or later).
+- [X] T001 Verify baseline state: `git log -1 --oneline`, confirm branch `156-cmake-walker-depth`, capture pre-milestone `cmake.rs` LOC (`wc -l mikebom-cli/src/scan_fs/package_db/cmake.rs`), pre-milestone `discover_cmake_files_` test count (`grep -cE "^\s+fn discover_cmake_files_" mikebom-cli/src/scan_fs/package_db/cmake.rs` — should be 0 pre-156), and confirm milestone 155 (PR #489) is merged to main (`git log main --oneline | head -3` — should show impl(155) or later).
 
 ---
 
@@ -46,9 +46,9 @@ description: "Task list for milestone 156 — CMake walker depth extension"
 
 **⚠️ CRITICAL**: T002 + T003 must complete before US1 work begins. T002 breaks the `cmake::read` API, so all 3 callers (T002 itself + package_db/mod.rs + binary/mod.rs) update together in one commit-block to keep the codebase compilable.
 
-- [ ] T002 Extend `pub fn read` in `mikebom-cli/src/scan_fs/package_db/cmake.rs:35` to accept `exclude_set: &super::exclude_path::ExclusionSet` as a third parameter (immediately after `include_vendored`). New signature: `pub fn read(scan_root: &Path, include_vendored: bool, exclude_set: &super::exclude_path::ExclusionSet) -> Vec<PackageDbEntry>`. In the same commit-block, update the two call sites: `mikebom-cli/src/scan_fs/package_db/mod.rs:1533` (change `cmake::read(rootfs, include_vendored)` → `cmake::read(rootfs, include_vendored, exclude_set)`; `exclude_set` is already in scope as a parameter of `read_all`); `mikebom-cli/src/scan_fs/binary/mod.rs:198` (change `cmake::read(rootfs, false)` → `cmake::read(rootfs, false, exclude_set)`; `exclude_set` is already in scope inside the binary scan loop per its `discover_binaries(rootfs, exclude_set)` invocation two lines later). Verify workspace compiles via `cargo check -p mikebom` before proceeding.
+- [X] T002 Extend `pub fn read` in `mikebom-cli/src/scan_fs/package_db/cmake.rs:35` to accept `exclude_set: &super::exclude_path::ExclusionSet` as a third parameter (immediately after `include_vendored`). New signature: `pub fn read(scan_root: &Path, include_vendored: bool, exclude_set: &super::exclude_path::ExclusionSet) -> Vec<PackageDbEntry>`. In the same commit-block, update the two call sites: `mikebom-cli/src/scan_fs/package_db/mod.rs:1533` (change `cmake::read(rootfs, include_vendored)` → `cmake::read(rootfs, include_vendored, exclude_set)`; `exclude_set` is already in scope as a parameter of `read_all`); `mikebom-cli/src/scan_fs/binary/mod.rs:198` (change `cmake::read(rootfs, false)` → `cmake::read(rootfs, false, exclude_set)`; `exclude_set` is already in scope inside the binary scan loop per its `discover_binaries(rootfs, exclude_set)` invocation two lines later). Verify workspace compiles via `cargo check -p mikebom` before proceeding.
 
-- [ ] T003 Extract three module-private helpers at the top of the `discover_cmake_files` region of `mikebom-cli/src/scan_fs/package_db/cmake.rs`:
+- [X] T003 Extract three module-private helpers at the top of the `discover_cmake_files` region of `mikebom-cli/src/scan_fs/package_db/cmake.rs`:
   - `fn is_cmake_file(p: &Path) -> bool` — extension check (`eq_ignore_ascii_case("cmake")`) OR filename check (`eq_ignore_ascii_case("CMakeLists.txt")`), preserving the exact predicates from the existing `cmake.rs:206-215`.
   - `fn collect_cmake_files_depth1(dir: &Path, out: &mut Vec<PathBuf>)` — extract the existing `read_dir → is_cmake_file → push` loop from `cmake.rs:200-221`. This helper preserves the milestone-102 behavior for `third_party/` when the opt-in flag is not set.
   - `fn collect_cmake_files_recursive(dir: &Path, exclude_set: &super::exclude_path::ExclusionSet, out: &mut Vec<PathBuf>)` — LEFT AS `todo!()` for now; T005 fills the body. Signature declared here so the T006 refactor of `discover_cmake_files` can call it. Alternatively land the empty body here and fill in T005.
@@ -67,7 +67,7 @@ description: "Task list for milestone 156 — CMake walker depth extension"
 
 ### Implementation for User Story 1
 
-- [ ] T004 [US1] At the top of `pub fn read` in `mikebom-cli/src/scan_fs/package_db/cmake.rs:35`, add the env-var read for the new opt-in flag (mirrors milestone-102 `MIKEBOM_INCLUDE_VENDORED` read at `read_all:1193`):
+- [X] T004 [US1] At the top of `pub fn read` in `mikebom-cli/src/scan_fs/package_db/cmake.rs:35`, add the env-var read for the new opt-in flag (mirrors milestone-102 `MIKEBOM_INCLUDE_VENDORED` read at `read_all:1193`):
   ```rust
   let include_third_party_recursive = std::env::var("MIKEBOM_CMAKE_THIRD_PARTY_RECURSIVE")
       .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
@@ -75,7 +75,7 @@ description: "Task list for milestone 156 — CMake walker depth extension"
   ```
   Pass `include_third_party_recursive` to `discover_cmake_files` (T006 will consume it).
 
-- [ ] T005 [US1] Fill the `collect_cmake_files_recursive` body in `mikebom-cli/src/scan_fs/package_db/cmake.rs` per research §R4:
+- [X] T005 [US1] Fill the `collect_cmake_files_recursive` body in `mikebom-cli/src/scan_fs/package_db/cmake.rs` per research §R4:
   ```rust
   fn collect_cmake_files_recursive(
       dir: &Path,
@@ -97,7 +97,7 @@ description: "Task list for milestone 156 — CMake walker depth extension"
   ```
   Reuses milestone-054's `safe_walk` at `mikebom-cli/src/scan_fs/walk.rs:174` — get symlink-cycle safety + rootfs sandbox + exclude-path integration + debug logging for free per research §R1.
 
-- [ ] T006 [US1] Refactor `fn discover_cmake_files` in `mikebom-cli/src/scan_fs/package_db/cmake.rs:195` to the new signature:
+- [X] T006 [US1] Refactor `fn discover_cmake_files` in `mikebom-cli/src/scan_fs/package_db/cmake.rs:195` to the new signature:
   ```rust
   fn discover_cmake_files(
       scan_root: &Path,
@@ -130,7 +130,7 @@ description: "Task list for milestone 156 — CMake walker depth extension"
   ```
   Update the callers of `discover_cmake_files` inside `cmake.rs` (there are 2 — `read()` at line 36 and `collect_find_package_targets()` at line 97) to pass `false` for `include_third_party_recursive` in the collector case (that helper's semantics are name-collection for milestone-105 US6 submodule classification, orthogonal to walker-depth). For `read()`, pass the value captured in T004.
 
-- [ ] T007 [US1] Add the new CLI arg field in `mikebom-cli/src/cli/scan_cmd.rs` immediately after `pub include_vendored: bool` at line 365 (per data-model.md §2):
+- [X] T007 [US1] Add the new CLI arg field in `mikebom-cli/src/cli/scan_cmd.rs` immediately after `pub include_vendored: bool` at line 365 (per data-model.md §2):
   ```rust
   /// Extend the CMake reader's recursive descent to third_party/.
   /// By default (unset) third_party/ is walked at depth-1 only
@@ -156,7 +156,7 @@ description: "Task list for milestone 156 — CMake walker depth extension"
   ```
   Also update the test helper `include_vendored: false,` default at scan_cmd.rs:3396 to include `cmake_third_party_recursive: false,` — matches the pattern from milestone-155 fix's `feedback_build_check_all_targets.md` memory (per-crate `cargo build --all-targets` catches derive-forgotten struct-literal test helpers).
 
-- [ ] T008 [US1] Add 6 unit test bodies inside the existing `#[cfg(test)] mod tests` block in `mikebom-cli/src/scan_fs/package_db/cmake.rs`, following research §R6 inventory:
+- [X] T008 [US1] Add 6 unit test bodies inside the existing `#[cfg(test)] mod tests` block in `mikebom-cli/src/scan_fs/package_db/cmake.rs`, following research §R6 inventory:
   1. `discover_cmake_files_walks_cmake_recursively` — fixture: `cmake/modules/FindFoo.cmake` (depth-2). Assert discovered.
   2. `discover_cmake_files_walks_modules_recursively` — fixture: `Modules/utils/Extra.cmake` (depth-2). Assert discovered.
   3. `discover_cmake_files_depth1_third_party_by_default` — fixture: `third_party/depth1.cmake` (depth-1) + `third_party/subdir/depth2.cmake` (depth-2). No env var set. Assert depth-1 discovered, depth-2 NOT discovered.
@@ -166,33 +166,33 @@ description: "Task list for milestone 156 — CMake walker depth extension"
 
   All 6 tests use `tempfile::tempdir()` + `std::fs::write` following the existing cmake.rs test pattern. Use `#[cfg_attr(test, allow(clippy::unwrap_used))]` on the existing `mod tests` block (already present).
 
-- [ ] T009 [P] [US1] Create SC-003 symlink cycle testbed:
+- [X] T009 [P] [US1] Create SC-003 symlink cycle testbed:
   - Fixture: `mikebom-cli/tests/fixtures/cmake-walker-depth/symlink-cycle/` containing:
     - `CMakeLists.txt` (trivial, empty content ok).
     - `cmake/defs.cmake` containing `find_package(Foo 1.0)`.
     - `cmake/loop` → symlink pointing back to `../cmake` (created at test-setup time, NOT checked in — symlinks in git are fragile; the test creates it via `std::os::unix::fs::symlink` on Unix and `std::os::windows::fs::symlink_dir` on Windows, or skips-with-warn on platforms not supporting either).
   - Integration test: `mikebom-cli/tests/cmake_walker_depth_symlink_cycle.rs`. Invokes the release binary via `Command::new(env!("CARGO_BIN_EXE_mikebom"))`; times out at 5 seconds; asserts scan completes + exactly one `pkg:generic/foo@1.0` component in the emitted CDX. Uses the same `run_scan()` pattern as milestone-155's `cmake_find_package_kamailio_shape_integration.rs`.
 
-- [ ] T010 [P] [US1] Create SC-004 depth-3 emission testbed:
+- [X] T010 [P] [US1] Create SC-004 depth-3 emission testbed:
   - Fixture: `mikebom-cli/tests/fixtures/cmake-walker-depth/depth3-emission/` containing:
     - `CMakeLists.txt` (trivial).
     - `cmake/modules/vendor/Extra.cmake` containing `find_package(Foo 2.5)`.
   - Integration test: `mikebom-cli/tests/cmake_walker_depth_deep_emission.rs`. Asserts exactly one `pkg:generic/foo@2.5` component with `mikebom:source-mechanism = "cmake-find-package"` and `mikebom:source-files` containing `cmake/modules/vendor/Extra.cmake`.
 
-- [ ] T011 [P] [US1] Create SC-005 cross-depth version consolidation testbed:
+- [X] T011 [P] [US1] Create SC-005 cross-depth version consolidation testbed:
   - Fixture: `mikebom-cli/tests/fixtures/cmake-walker-depth/cross-depth-version/` containing:
     - `CMakeLists.txt` containing `find_package(OpenSSL 1.1.0)`.
     - `cmake/modules/FindOpenSSL.cmake` containing `find_package(OpenSSL 3.0)`.
   - Integration test: `mikebom-cli/tests/cmake_walker_depth_cross_depth_version.rs`. Asserts exactly ONE `pkg:generic/openssl@3.0` component (Q1 milestone-155 highest-version-wins fires across depths). Asserts `mikebom:source-files` contains BOTH `CMakeLists.txt` AND `cmake/modules/FindOpenSSL.cmake` (milestone-148 union preserved).
 
-- [ ] T012 [P] [US1] Create SC-006 exclude-path integration testbed:
+- [X] T012 [P] [US1] Create SC-006 exclude-path integration testbed:
   - Fixture: `mikebom-cli/tests/fixtures/cmake-walker-depth/exclude-path-integration/` containing:
     - `CMakeLists.txt` (trivial).
     - `cmake/defs.cmake` containing `find_package(Bar 1.0)`.
     - `cmake/modules/FindFoo.cmake` containing `find_package(Foo)`.
   - Integration test: `mikebom-cli/tests/cmake_walker_depth_exclude_path.rs`. Invokes the release binary with `--exclude-path cmake/modules/`. Asserts exactly ONE `pkg:generic/bar@1.0` component (Bar from depth-1 defs.cmake) AND ZERO `pkg:generic/foo` components (Foo from excluded cmake/modules/).
 
-- [ ] T013 [P] [US1] Create SC-011 third-party opt-in testbed:
+- [X] T013 [P] [US1] Create SC-011 third-party opt-in testbed:
   - Fixture: `mikebom-cli/tests/fixtures/cmake-walker-depth/third-party-opt-in/` containing:
     - `CMakeLists.txt` (trivial).
     - `third_party/somedep/cmake/deps.cmake` containing `find_package(VendoredDepDep)`.
@@ -212,7 +212,7 @@ description: "Task list for milestone 156 — CMake walker depth extension"
 
 ### Verification for User Story 2
 
-- [ ] T014 [US2] Run `cargo +stable test --workspace --no-fail-fast --test cdx_regression --test spdx_regression --test spdx3_regression --test cmake_find_package_kamailio_shape_integration --test cmake_find_package_dedup_integration` and verify: (a) ALL 3 golden-regression test binaries pass (11 tests × 3 formats = 33 tests, plus the 2 milestone-155 integration tests = 35 total); (b) NO goldens require regeneration (a clean regeneration attempt via `MIKEBOM_UPDATE_CDX_GOLDENS=1 cargo test --test cdx_regression 2>&1 | grep 'wrote'` should output nothing — if any golden was rewritten, SC-002 has failed and the emission-shape needs debugging). If ANY test fails, halt US2 and open a regression investigation — most likely the milestone-155 Kamailio-shape fixture's depth-2 `FindLibev.cmake` file's `find_package_handle_standard_args(Libev ...)` regex-boundary check has drifted, OR the milestone-090 cmake fixture has picked up an unexpected depth-2 file. Do NOT regenerate goldens as a fix — investigate root cause.
+- [X] T014 [US2] Run `cargo +stable test --workspace --no-fail-fast --test cdx_regression --test spdx_regression --test spdx3_regression --test cmake_find_package_kamailio_shape_integration --test cmake_find_package_dedup_integration` and verify: (a) ALL 3 golden-regression test binaries pass (11 tests × 3 formats = 33 tests, plus the 2 milestone-155 integration tests = 35 total); (b) NO goldens require regeneration (a clean regeneration attempt via `MIKEBOM_UPDATE_CDX_GOLDENS=1 cargo test --test cdx_regression 2>&1 | grep 'wrote'` should output nothing — if any golden was rewritten, SC-002 has failed and the emission-shape needs debugging). If ANY test fails, halt US2 and open a regression investigation — most likely the milestone-155 Kamailio-shape fixture's depth-2 `FindLibev.cmake` file's `find_package_handle_standard_args(Libev ...)` regex-boundary check has drifted, OR the milestone-090 cmake fixture has picked up an unexpected depth-2 file. Do NOT regenerate goldens as a fix — investigate root cause.
 
 **Checkpoint**: US2 verified. Backward compatibility guarantee satisfied.
 
@@ -220,13 +220,13 @@ description: "Task list for milestone 156 — CMake walker depth extension"
 
 ## Phase 5: Polish & Cross-Cutting Concerns
 
-- [ ] T015 Add CHANGELOG.md entry under `## [Unreleased]` per research §R7 + SC-009. Entry names: (a) the walker-depth extension for `cmake/` + `Modules/`; (b) the new `--cmake-third-party-recursive` opt-in flag + env alias; (c) the Kamailio testbed impact (1 → ≥10 identified components); (d) reference back to milestone-155's F1 remediation as the closed debt; (e) recommendation for build-tree contamination: `--exclude-path build,cmake-build-*,out` (per FR-018). Include the consumer jq recipe from research §R7 for filtering by source-file depth. Place the entry above whatever entry is currently at the top of `[Unreleased]`.
+- [X] T015 Add CHANGELOG.md entry under `## [Unreleased]` per research §R7 + SC-009. Entry names: (a) the walker-depth extension for `cmake/` + `Modules/`; (b) the new `--cmake-third-party-recursive` opt-in flag + env alias; (c) the Kamailio testbed impact (1 → ≥10 identified components); (d) reference back to milestone-155's F1 remediation as the closed debt; (e) recommendation for build-tree contamination: `--exclude-path build,cmake-build-*,out` (per FR-018). Include the consumer jq recipe from research §R7 for filtering by source-file depth. Place the entry above whatever entry is currently at the top of `[Unreleased]`.
 
-- [ ] T016 Run SC-007 pre-PR gate. **CRITICAL** — per the milestone-155 fix memory `feedback_prepr_gate_bails_on_first_failure.md`, both commands MUST be run explicitly:
+- [X] T016 Run SC-007 pre-PR gate. **CRITICAL** — per the milestone-155 fix memory `feedback_prepr_gate_bails_on_first_failure.md`, both commands MUST be run explicitly:
   1. `./scripts/pre-pr.sh` — the mandatory gate.
   2. `cargo +stable test --workspace --no-fail-fast 2>&1 | grep -E '^---- .+ stdout ----'` — enumerate every failing test binary. Expected output: ONLY `sbomqs_spdx_score_meets_or_beats_cdx_across_ecosystems` (documented env-only flake). Any other failure name → real regression; do NOT proceed to T017. Reproduce the failure individually via `cargo test -p mikebom --test <name>` and fix.
 
-- [ ] T017 SC-010 wire-format guard verification. Run each guard command from quickstart.md Scenario 10 and confirm the expected empty output:
+- [X] T017 SC-010 wire-format guard verification. Run each guard command from quickstart.md Scenario 10 and confirm the expected empty output:
   ```bash
   git diff main --name-only -- mikebom-cli/src/generate/
   git diff main --name-only -- mikebom-cli/src/parity/
@@ -237,9 +237,9 @@ description: "Task list for milestone 156 — CMake walker depth extension"
   ```
   Each MUST return empty. Also run `git diff main --name-only` and verify the shipped file-list matches the plan.md expected shape (cmake.rs + scan_cmd.rs + 2 caller updates + 5 integration tests + 5 fixture dirs + CHANGELOG.md + CLAUDE.md + spec artifacts).
 
-- [ ] T018 SC-001 manual operator-cadence Kamailio testbed verification per quickstart.md Scenario 1. Clone or point at `/Users/mlieberman/Projects/kamailio`, build release binary `cargo +stable build --release -p mikebom`, run `./target/release/mikebom --offline sbom scan --path /Users/mlieberman/Projects/kamailio --format cyclonedx-json --output cyclonedx-json=/tmp/mikebom-m156/kamailio.cdx.json --no-deep-hash`. Run the SC-001 jq recipes to count cmake-derived components + verify expected names appear. Expected: ≥10 named components (OpenSSL, Libev, NETSNMP, MariaDBClient, LibfreeradiusClient, Radius, Ldap, Unistring, Erlang, Oracle — subset match acceptable per spec Assumption 2). Report PASS/FAIL in the PR comments. If the count is <10, investigate whether Kamailio HEAD has restructured its `cmake/modules/Find*.cmake` files.
+- [X] T018 SC-001 manual operator-cadence Kamailio testbed verification per quickstart.md Scenario 1. Clone or point at `/Users/mlieberman/Projects/kamailio`, build release binary `cargo +stable build --release -p mikebom`, run `./target/release/mikebom --offline sbom scan --path /Users/mlieberman/Projects/kamailio --format cyclonedx-json --output cyclonedx-json=/tmp/mikebom-m156/kamailio.cdx.json --no-deep-hash`. Run the SC-001 jq recipes to count cmake-derived components + verify expected names appear. Expected: ≥10 named components (OpenSSL, Libev, NETSNMP, MariaDBClient, LibfreeradiusClient, Radius, Ldap, Unistring, Erlang, Oracle — subset match acceptable per spec Assumption 2). Report PASS/FAIL in the PR comments. If the count is <10, investigate whether Kamailio HEAD has restructured its `cmake/modules/Find*.cmake` files.
 
-- [ ] T019 Update the requirements checklist at `specs/156-cmake-walker-depth/checklists/requirements.md` to mark implementation-completion notes (mirror the milestone-155 pattern) — add sub-bullets for T018 SC-001 result (PASS/FAIL + measured count) and T016 pre-PR gate result (green + only `sbomqs_parity` failing).
+- [X] T019 Update the requirements checklist at `specs/156-cmake-walker-depth/checklists/requirements.md` to mark implementation-completion notes (mirror the milestone-155 pattern) — add sub-bullets for T018 SC-001 result (PASS/FAIL + measured count) and T016 pre-PR gate result (green + only `sbomqs_parity` failing).
 
 ---
 

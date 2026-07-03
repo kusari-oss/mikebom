@@ -52,12 +52,12 @@ occurred in practice.
   violations; T010 Step-3 real-golden verification via
   `MIKEBOM_PRE157_SNAPSHOT_DIR`.
 - SC-001 argo-cd testbed accuracy audit (Round-2, post-lockfileVersion
-  branch fix): **1328/1328 registry-resolvable packages have EXACT-MATCH
-  `dependsOn` to the pnpm-lock.yaml `snapshots:` section (100% accuracy;
-  0 false positives; 0 false negatives).** 3016 total edges (vs pre-157:
-  110 edges + zero non-root with dependsOn). 1 non-emitted canonical
-  (`argo-ui@https://…tar.gz`) is a git-URL dep correctly excluded from
-  emitted components.
+  branch fix): **1329/1329 snapshots (100.00%) have EXACT-MATCH `dependsOn`
+  to the pnpm-lock.yaml `snapshots:` section — zero false positives, zero
+  false negatives, zero orphans.** 3016 total edges (vs pre-157: 110
+  edges + zero non-root with dependsOn). Git-URL tarball deps included
+  (e.g. `argo-ui@https://codeload.github.com/argoproj/argo-ui/tar.gz/…`
+  emits its 19 exact-match deps).
 
 **Diagnostic emissions** (Constitution Principle X — Transparency):
 - FR-007 info-level: `pnpm-lock parsed` with `packages_count` +

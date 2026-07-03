@@ -7,6 +7,77 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### pnpm-lock v9 dep-graph fix (milestone 157)
+
+The team reported "pnpm isn't working" against `kusari-sandbox/argo-cd`.
+Empirical reproduction 2026-07-03 confirmed the bug: mikebom's pnpm
+parser at `mikebom-cli/src/scan_fs/package_db/npm/pnpm_lock.rs:83-91`
+reads `dependencies` from `packages:` entries only. pnpm v9 moved
+dep-graph edges out of `packages:` into a new top-level `snapshots:`
+section — mikebom's parser never learned to read it. Result on
+argo-cd: 1329 npm components emitted correctly + only 110 dep-graph
+edges (the 110 came from the top-level `package.json` root fallback;
+every non-root component had empty `dependsOn`).
+
+**Fix**: `parse_pnpm_lock` now pre-scans `snapshots:` into a lookup
+keyed by canonical `name@version` (peer-dep suffix stripped via the
+existing `parse_pnpm_key` helper), then branches on `lockfileVersion`:
+on v9, edges come EXCLUSIVELY from `snapshots:` and `packages:` sub-
+mappings are ignored; on v6/v7/v8, edges come inline from `packages:`
+(matches milestone-147 npm parity). The v9 branch shape is required
+because pnpm v9's `packages:` `peerDependencies:` values are SEMVER
+SPECIFIERS (`^7.0.0`), not resolved versions — treating them as
+resolved edges emits wrong (but plausible-looking) dep-graph output.
+This was the root cause of a Round-1 mismatch discovered during
+post-T014 accuracy auditing against the argo-cd/ui testbed.
+
+**Q1 clarification 2026-07-03** (Constitution Principle VIII —
+Completeness): milestone 157 also brings pnpm to full parity with
+npm's `package_lock.rs` (milestone 147). Both `snapshots:` (v9) AND
+`packages:` (v6/v7) entries walk the union of three sub-mappings:
+`dependencies:` + `peerDependencies:` + `optionalDependencies:`. The
+pnpm parser has been the outlier reading only `dependencies:` since
+milestone 147; this brings it in line with the npm sub-reader
+convention. Consequence: pnpm v6/v7 goldens WOULD regenerate with new
+edges monotonically-additively — but the milestone-090 fixture uses a
+v6 lockfile with only `dependencies:` sub-mappings, so no regeneration
+occurred in practice.
+
+**Verification**:
+- 9 new unit tests in `pnpm_lock.rs` (SC-007 floor ≥8; 12 total pnpm
+  tests after impl).
+- 4 integration tests in `mikebom-cli/tests/npm_pnpm_v9_dep_graph.rs`:
+  SC-008 synthetic argo-cd-shape fixture; F2-remediated monotonic-
+  additive helper + self-test proving the helper catches missing-edge
+  violations; T010 Step-3 real-golden verification via
+  `MIKEBOM_PRE157_SNAPSHOT_DIR`.
+- SC-001 argo-cd testbed accuracy audit (Round-2, post-lockfileVersion
+  branch fix): **1329/1329 snapshots (100.00%) have EXACT-MATCH `dependsOn`
+  to the pnpm-lock.yaml `snapshots:` section — zero false positives, zero
+  false negatives, zero orphans.** 3016 total edges (vs pre-157: 110
+  edges + zero non-root with dependsOn). Git-URL tarball deps included
+  (e.g. `argo-ui@https://codeload.github.com/argoproj/argo-ui/tar.gz/…`
+  emits its 19 exact-match deps).
+
+**Diagnostic emissions** (Constitution Principle X — Transparency):
+- FR-007 info-level: `pnpm-lock parsed` with `packages_count` +
+  `snapshots_count` + `fell_back_to_snapshots` counts per scan.
+  Grep-friendly for CI-log analysis of lockfile-format issues.
+- FR-008 warn-level: `pnpm-lock v9 with no snapshots section` fires
+  on anomalous v9 lockfiles where the parser would silently emit
+  flat components.
+
+**Consumer jq recipe**:
+```bash
+jq '.dependencies[] | select(.ref == "pkg:npm/%40actions/core@3.0.1") | .dependsOn' sbom.cdx.json
+# Expected: ["pkg:npm/%40actions/exec@3.0.0", "pkg:npm/%40actions/http-client@4.0.1"]
+```
+
+Wire-format-agnostic: no changes to CDX 1.6 / SPDX 2.3 / SPDX 3.0.1
+emitter code. Zero new `mikebom:*` annotation keys. Zero new catalog
+rows. Zero new Cargo dependencies. Non-pnpm goldens (10 of 11 milestone-
+090 ecosystems) byte-identical.
+
 ### CMake walker depth extension (milestone 156)
 
 Direct closure of milestone-155's F1 remediation debt. Milestone 155

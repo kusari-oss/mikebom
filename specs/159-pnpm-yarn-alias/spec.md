@@ -5,6 +5,13 @@
 **Status**: Draft
 **Input**: User description: "493" (implement fix for [issue #493](https://github.com/kusari-oss/mikebom/issues/493))
 
+## Clarifications
+
+### Session 2026-07-04
+
+- Q: What shape should the alias-provenance annotation take (raw string vs. envelope JSON with additional context)? → A: Raw string, local-name only. `"mikebom:pnpm-alias" = "react-helmet-async"`. Matches milestone-158's `mikebom:graph-completeness` simplest form; keeps per-component annotation size minimal (workspace repos may have 100+ alias-resolved components); the peer-dep suffix is already implicit in the aliased-canonical PURL that mikebom emits alongside the annotation.
+- Q: For yarn multi-spec keys where multiple specs share the same local-name (e.g. `"@cosmograph/cosmos@^1.1.1", "@cosmograph/cosmos@npm:@cosmos.gl/graph":`), do we emit the alias annotation once (dedup by local-name) or once per spec-variant? → A: Once per unique local-name (dedup). Two specs sharing the local-name `@cosmograph/cosmos` produce ONE `mikebom:yarn-alias = "@cosmograph/cosmos"` annotation. jq-friendly + avoids duplicate-string noise. If a repo has TWO different local-names aliasing to the same resolved package, each unique local-name emits its own annotation per FR-012.
+
 ## Motivation
 
 Both pnpm-lock.yaml (v9 snapshots) and yarn.lock (v1) support a lockfile syntax where a local dep name aliases to a different real package. mikebom currently emits the alias-name as the edge target — no matching component exists → the graph resolver silently drops the edge. Discovered during the milestone-157 Round-2 audit of `kusari-sandbox/test-*` repos.
@@ -149,12 +156,13 @@ Users scanning repos with NO alias syntax (the vast majority of npm/pnpm/yarn pr
 
 - **FR-005**: When another dep references the local-name (e.g. `hosted-server-mgmt` depending on `@cosmograph/cosmos "^1.1.1"` per yarn edge case), mikebom MUST rewrite that edge's target to the aliased-canonical PURL so the graph is fully connected via the RESOLVED identity.
 
-- **FR-006**: For every alias-resolved component, mikebom MUST emit a component-scope annotation:
-  - CDX 1.6: `properties[]` entry `{"name": "mikebom:pnpm-alias" | "mikebom:yarn-alias", "value": "<original-local-name>"}`.
+- **FR-006 (Q1 clarification 2026-07-04)**: For every alias-resolved component, mikebom MUST emit a component-scope annotation with a RAW STRING value equal to the local-name only (no envelope JSON, no peer-suffix payload):
+  - CDX 1.6: `properties[]` entry `{"name": "mikebom:pnpm-alias" | "mikebom:yarn-alias", "value": "<original-local-name>"}` where `<original-local-name>` is a bare string.
   - SPDX 2.3: per-package `Annotation` with `comment = "mikebom:pnpm-alias=<local-name>"` OR `"mikebom:yarn-alias=<local-name>"`.
   - SPDX 3.0.1: per-package `Annotation` with `statement = "mikebom:pnpm-alias=<local-name>"` OR `"mikebom:yarn-alias=<local-name>"`.
+  Consumers who need the pnpm peer-suffix context can recover it from the aliased-canonical PURL that mikebom emits (peer-suffix bytes are implicit in the resolved-package identity). This choice matches milestone-158's `mikebom:graph-completeness` raw-string precedent and keeps per-component annotation size minimal.
 
-- **FR-007**: The `<original-local-name>` value in FR-006 annotations MUST be the exact byte-identical string as it appeared in the lockfile (preserving scope prefix `@`, hyphens, `-cjs` suffixes, etc.). No URL-encoding, no case normalization.
+- **FR-007**: The `<original-local-name>` value in FR-006 annotations MUST be the exact byte-identical string as it appeared in the lockfile (preserving scope prefix `@`, hyphens, `-cjs` suffixes, etc.). No URL-encoding, no case normalization. The bytes MUST match the LOCAL-NAME segment of the lockfile source — nothing more (no peer-suffix, no lockfile-version-string appendix, no quote characters).
 
 - **FR-008**: When NO alias is detected in a lockfile (the vast majority case), mikebom MUST NOT emit the FR-006 annotations. Byte-identity vs pre-159 is preserved (SC-002 regression guard).
 
@@ -164,7 +172,7 @@ Users scanning repos with NO alias syntax (the vast majority of npm/pnpm/yarn pr
 
 - **FR-011**: mikebom MUST emit an info-level tracing log line at the end of alias-resolution per lockfile with fields `lockfile_path`, `alias_count`, `alias_ecosystem` (`pnpm` or `yarn`). The message MUST be the literal string `"npm-alias resolution completed"`. Grep-friendly for CI-log analysis; follows the milestone-157 FR-007 / milestone-158 FR-013 precedent.
 
-- **FR-012**: If the same component is reached via MULTIPLE aliases (theoretically possible in a monorepo where two workspace peers alias the same real package under different local names), mikebom MUST emit the FR-006 annotation MULTIPLE times on the component — one per distinct local-name. Wire format: each format's native property/annotation MAY appear multiple times with the same `name` field per the format's spec.
+- **FR-012 (Q2 clarification 2026-07-04)**: The alias annotation is emitted ONCE per UNIQUE local-name that reached the component. Multi-spec yarn keys sharing the same local-name (e.g. `"@cosmograph/cosmos@^1.1.1", "@cosmograph/cosmos@npm:@cosmos.gl/graph":`) produce a SINGLE annotation. If the same resolved component is reached via TWO DIFFERENT local-names (rare: a monorepo where two workspace peers use distinct alias-shims for the same real package), mikebom MUST emit the FR-006 annotation TWICE — one per unique local-name. Wire format: each format's native property/annotation MAY appear multiple times with the same `name` field per the format's spec.
 
 - **FR-013**: The two new annotations MUST comply with FR-010 of milestone 158 (standards-native precedence per Constitution Principle V). If either CDX 1.6 or SPDX 3.0.1 later introduces an official "package-alias" property, mikebom MUST prefer that property. As of 2026-07-04, no such standard property exists; the `mikebom:*` prefix is used.
 

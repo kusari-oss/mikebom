@@ -37,7 +37,7 @@
 - The `mikebom:pnpm-alias` vs `mikebom:yarn-alias` split (rather than a single `mikebom:npm-alias`) is a deliberate assumption codified in the Assumptions section — the two lockfile grammars ARE different and downstream tooling may want to filter.
 - SC-003 byte-identity guard is verified achievable pre-authoring by empirical grep against milestone-090 fixtures (no alias syntax present).
 - The out-of-scope section explicitly names the four sibling issues from the earlier audit (#494, #495, #496, #498) so the reader knows this milestone does NOT close them.
-- Ready for `/speckit-clarify` OR `/speckit-plan`. Two candidate clarifications identified but none blocking:
-  - Q1 candidate: Should the alias-provenance annotation carry the FULL peer-dep suffix from the pnpm-value string (`"react-helmet-async(react-dom@18.3.1)"` for auditability), or just the local-name (`"react-helmet-async"`)? Recommended default per FR-007: just the local-name.
-  - Q2 candidate: For yarn's key-side alias where the same key line has MULTIPLE alias-spec forms (`"@cosmograph/cosmos@^1.1.1", "@cosmograph/cosmos@npm:@cosmos.gl/graph":`), do we emit the annotation ONCE (with the first spec's local-name) or ONCE-PER-SPEC-VARIANT? Recommended default: once per unique local-name.
-- Both are LOW-impact question — could be resolved at /speckit-clarify or deferred to plan-time.
+- `/speckit-clarify` session 2026-07-04 locked in two decisions:
+  - Q1 (annotation shape): **Raw string, local-name only.** FR-006 rewritten to state "no envelope JSON, no peer-suffix payload." Matches milestone-158 precedent + minimizes per-component annotation size.
+  - Q2 (yarn multi-spec dedup): **Once per unique local-name.** FR-012 rewritten to clarify multi-spec yarn keys sharing a local-name produce a SINGLE annotation; different local-names for the same resolved package produce multiple annotations.
+- Ready for `/speckit-plan`. No outstanding items.

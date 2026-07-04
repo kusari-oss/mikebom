@@ -7,6 +7,114 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### pnpm/yarn npm-alias syntax resolution (milestone 159)
+
+Closes issue #493 (discovered during the milestone-157 Round-2 audit
+of `kusari-sandbox/test-*` repos). Both pnpm-lock.yaml (v9 snapshots)
+and yarn.lock (v1) support a lockfile syntax where a local dep name
+aliases to a different real package. Pre-159 mikebom emitted
+components under the LOCAL name (or under alias-name-with-empty-
+version phantom PURLs), so consumers looking up the aliased-canonical
+PURL found nothing and vulnerability scans silently missed the true
+package.
+
+Empirical impact from the milestone-157 Round-2 audit against 3
+`kusari-sandbox/test-*` repos:
+
+- `test-podman-desktop` (pnpm v9): **10 dropped alias-edges**
+  (react-helmet-async, react-loadable, string-width-cjs,
+  strip-ansi-cjs, wrap-ansi-cjs, plus 5 more docusaurus-family
+  aliases).
+- `test-guac-visualizer` (yarn v1): **1 dropped alias-edge**
+  (`@cosmograph/cosmos` → `@cosmos.gl/graph`).
+- `test-rails` (yarn v1): **3 dropped alias-edges**
+  (string-width-cjs, strip-ansi-cjs, wrap-ansi-cjs).
+
+Total: **14 previously-dropped alias-edges now correctly resolved**.
+
+**Fix**:
+
+1. New `mikebom-cli/src/scan_fs/package_db/npm/alias_mapping.rs`
+   submodule with:
+   - `AliasResolution` type carrying local-name + aliased-name +
+     aliased-version + optional peer-suffix + ecosystem tag.
+   - `detect_pnpm_alias` for value-side detection in pnpm-lock v9
+     snapshot sub-mappings. Guards against bare-version + peer-
+     suffixed-version false positives via a name-shape heuristic.
+   - `detect_yarn_v1_alias` for key-side detection in yarn v1 lockfile
+     entry headers. Handles both `local@npm:aliased-name` shape
+     (test-guac-visualizer) and `local@npm:aliased-name@range` shape
+     (test-rails).
+   - `rewrite_dep_names` for edge rewriting per FR-005.
+2. Both `pnpm_lock.rs::parse_pnpm_lock` and
+   `yarn_lock.rs::parse_v1` accumulate detected aliases during the
+   parse pass, then post-process to:
+   - Emit components under the ALIASED canonical PURL (not local-name).
+   - Rewrite other entries' `depends` lists to reference the aliased
+     canonical name.
+   - Attach `mikebom:pnpm-alias` / `mikebom:yarn-alias` component-
+     scope annotations per FR-006 (raw-string local-name value per
+     Q1 clarification 2026-07-04).
+   - Emit an FR-011 info-level tracing log
+     `"npm-alias resolution completed"` with `lockfile_path`,
+     `alias_count`, `alias_ecosystem` fields.
+
+**Q1/Q2 clarifications (2026-07-04)**:
+
+- Q1: annotation shape — raw string local-name only. Matches
+  milestone-158 precedent; keeps per-component annotation size
+  minimal (workspace repos may have 100+ alias-resolved components).
+- Q2: yarn multi-spec dedup — once per unique local-name.
+
+**Data-model note (FR-012 multi-alias case)**: When the same resolved
+component is reached via two distinct local-names (rare monorepo
+case), mikebom emits the annotation with a `Value::Array` of
+sorted local-names. When only one local-name reaches the component,
+emits a plain `Value::String`. Both shapes flow through the
+milestone-127+ `extra_annotations` emission pattern at
+`builder.rs:1185-1205` (verified at plan-analyze 2026-07-04) without
+requiring new emission code.
+
+**Empirical verification** (T028–T030):
+
+| repo | ecosystem | aliases detected | aliased-canonical PURLs emitted |
+|---|---|---|---|
+| test-podman-desktop | pnpm v9 | 10 | `@slorber/react-helmet-async@1.3.0`, `@docusaurus/react-loadable@6.0.0`, `string-width@4.2.3`, `strip-ansi@6.0.1`, `wrap-ansi@7.0.0`, + 5 more |
+| test-guac-visualizer | yarn v1 | 1 | `@cosmos.gl/graph@2.6.4` |
+| test-rails | yarn v1 | 3 | `string-width@4.2.3`, `strip-ansi@6.0.1`, `wrap-ansi@7.0.0` |
+
+**Wire-format cleanliness** (SC-003 dual-side guard): all 33
+milestone-090 non-alias goldens byte-identical (0 diff lines across
+every ecosystem × format). Alias emission ships only when alias
+syntax is actually present.
+
+**Consumer jq recipe**:
+
+```bash
+# List all alias-resolved npm components
+jq '.components[] | select((.properties // [])[] | .name | test("^mikebom:(pnpm|yarn)-alias$")) | {purl, alias: (.properties[] | select(.name | test("-alias$")) | .value)}' sbom.cdx.json
+
+# Count alias-affected components per ecosystem
+jq '[.components[] | .properties // [] | .[] | .name | select(test("^mikebom:(pnpm|yarn)-alias$"))] | group_by(.) | map({(.[0]): length}) | add' sbom.cdx.json
+```
+
+**Parity catalog**: 2 new rows C106 (`mikebom:pnpm-alias`) + C107
+(`mikebom:yarn-alias`) with `Directionality::SymmetricEqual`.
+Milestone-071 parity check enforces symmetric emission across CDX +
+SPDX 2.3 + SPDX 3.
+
+Zero new Cargo dependencies. `mikebom-ebpf` untouched.
+
+Constitution alignment:
+
+- Principle VIII (Completeness): 14 previously-dropped edges now
+  correctly emitted.
+- Principle IX (Accuracy): aliased-canonical PURL matches how CVE
+  feeds key on the npm-registry identity — false positives on
+  never-matching local-name PURLs eliminated.
+- Principle X (Transparency): the two new annotations preserve the
+  local-name for audit trail.
+
 ### Workspace-root peer linkage + graph-completeness annotations (milestone 158)
 
 Closes issue #492 (surfaced during the milestone-157 Round-2 audit of

@@ -802,6 +802,11 @@ cdx_anno!(c103_cdx, "mikebom:cmake-find-package-name", component);
 cdx_anno!(c104_cdx, "mikebom:graph-completeness",        document);
 cdx_anno!(c105_cdx, "mikebom:graph-completeness-reason", document);
 
+// Milestone 159 (closes #493): C106/C107 — per-component alias-provenance
+// annotations. Raw-string local-name value per FR-006/Q1.
+cdx_anno!(c106_cdx, "mikebom:pnpm-alias",                component);
+cdx_anno!(c107_cdx, "mikebom:yarn-alias",                component);
+
 // ============================================================
 // Section D — Evidence (D1, D2 — CDX-native shape)
 // ============================================================

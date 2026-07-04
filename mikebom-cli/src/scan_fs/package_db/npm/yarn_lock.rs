@@ -142,6 +142,15 @@ fn parse_v1(text: &str, source_path: &str) -> Vec<PackageDbEntry> {
     // don't double-emit.
     let mut acc: BTreeMap<(String, String), Vec<String>> = BTreeMap::new();
 
+    // Milestone 159 (issue #493): collect all detected yarn v1
+    // aliases during the parse pass. Consumed post-loop to build the
+    // alias_map (edge rewriting) + reverse-map (annotation emission).
+    let mut aliases: Vec<super::alias_mapping::AliasResolution> = Vec::new();
+    // Per-canonical local-name list for FR-006 annotation attachment.
+    // Key = `<aliased_name>@<aliased_version>` canonical string; value
+    // = deduped-preserved-order Vec<local_name>.
+    let mut annotation_locals: BTreeMap<String, Vec<String>> = BTreeMap::new();
+
     let mut lines = text.lines().peekable();
     while let Some(line) = lines.next() {
         if !is_v1_entry_header(line) {
@@ -186,25 +195,101 @@ fn parse_v1(text: &str, source_path: &str) -> Vec<PackageDbEntry> {
         }
         if let Some(v) = version {
             if !v.is_empty() {
-                acc.entry((header_name.clone(), v))
+                // Milestone 159 — check for yarn v1 key-side alias. When
+                // detected, the entry is aggregated under the ALIASED
+                // canonical identity per FR-003, and the local-name is
+                // recorded for FR-006 annotation attachment.
+                let (name, canonical_version) =
+                    if let Some(alias) = super::alias_mapping::detect_yarn_v1_alias(
+                        line,
+                        &v,
+                        source_path,
+                    ) {
+                        let canonical =
+                            format!("{}@{}", alias.aliased_name, alias.aliased_version);
+                        let locals = annotation_locals.entry(canonical).or_default();
+                        if !locals.contains(&alias.local_name) {
+                            locals.push(alias.local_name.clone());
+                        }
+                        let aliased_name = alias.aliased_name.clone();
+                        let aliased_version = alias.aliased_version.clone();
+                        aliases.push(alias);
+                        (aliased_name, aliased_version)
+                    } else {
+                        (header_name.clone(), v)
+                    };
+                acc.entry((name, canonical_version))
                     .or_default()
                     .extend(dep_names);
             }
         }
     }
 
+    // Milestone 159 post-processing: build alias_map for edge
+    // rewriting on OTHER entries' deps that reference the local-name.
+    let mut alias_map: super::alias_mapping::AliasMap = std::collections::HashMap::new();
+    for a in &aliases {
+        alias_map.entry(a.local_name.clone()).or_insert_with(|| {
+            super::alias_mapping::AliasedIdentity {
+                aliased_name: a.aliased_name.clone(),
+                aliased_version: a.aliased_version.clone(),
+            }
+        });
+    }
+    let alias_count = aliases.len();
+
     let mut out = Vec::new();
     for ((name, version), deps) in acc {
         // De-duplicate dep names while preserving first-seen order.
         let mut seen: std::collections::BTreeSet<String> = Default::default();
-        let unique: Vec<String> = deps
+        let mut unique: Vec<String> = deps
             .into_iter()
             .filter(|d| seen.insert(d.clone()))
             .collect();
-        if let Some(entry) = build_entry(&name, &version, source_path, unique) {
+        // Milestone 159 FR-005 — rewrite any local-name refs in this
+        // entry's deps to the aliased canonical name so the graph is
+        // connected via the resolved identity.
+        if alias_count > 0 {
+            unique = super::alias_mapping::rewrite_dep_names(&unique, &alias_map);
+        }
+        if let Some(mut entry) = build_entry(&name, &version, source_path, unique) {
+            // Milestone 159 FR-006 — attach `mikebom:yarn-alias`
+            // annotation on aliased components. Single local-name
+            // emits Value::String; multi-alias (FR-012) emits
+            // Value::Array with sorted local-names.
+            let canonical = format!("{}@{}", name, version);
+            if let Some(locals) = annotation_locals.get(&canonical) {
+                let mut sorted = locals.clone();
+                sorted.sort();
+                let value = if sorted.len() == 1 {
+                    serde_json::Value::String(sorted[0].clone())
+                } else {
+                    serde_json::Value::Array(
+                        sorted
+                            .into_iter()
+                            .map(serde_json::Value::String)
+                            .collect(),
+                    )
+                };
+                entry
+                    .extra_annotations
+                    .insert("mikebom:yarn-alias".to_string(), value);
+            }
             out.push(entry);
         }
     }
+
+    // Milestone 159 FR-011 info log — emit ONLY when at least one
+    // alias was resolved.
+    if alias_count > 0 {
+        tracing::info!(
+            lockfile_path = %source_path,
+            alias_count = alias_count,
+            alias_ecosystem = "yarn",
+            "npm-alias resolution completed"
+        );
+    }
+
     out
 }
 
@@ -479,5 +564,83 @@ __metadata:
         let text = "this is { not a real } yarn lockfile";
         let entries = parse_yarn_lock(text, "yarn.lock");
         assert!(entries.is_empty());
+    }
+
+    // ─── Milestone 159 alias resolution tests (T015, T017) ───
+
+    /// T015 — real test-guac-visualizer-shape yarn alias: local
+    /// `@cosmograph/cosmos` aliases to `@cosmos.gl/graph@2.6.4`. The
+    /// aliased-canonical component is emitted (not local); the
+    /// aliased entry carries `mikebom:yarn-alias = "@cosmograph/cosmos"`;
+    /// OTHER entries referencing the local-name get their depends
+    /// rewritten to the aliased canonical.
+    #[test]
+    fn m159_yarn_alias_test_guac_visualizer_shape() {
+        let text = r#"# THIS IS AN AUTOGENERATED FILE. DO NOT EDIT THIS FILE DIRECTLY.
+# yarn lockfile v1
+
+"@cosmograph/cosmos@^1.1.1", "@cosmograph/cosmos@npm:@cosmos.gl/graph":
+  version "2.6.4"
+  resolved "https://registry.yarnpkg.com/@cosmos.gl/graph/-/graph-2.6.4.tgz#abc"
+  integrity sha512-aaaa
+
+"hosted-server-mgmt@^0.5.0":
+  version "0.5.0"
+  resolved "https://registry.yarnpkg.com/hosted-server-mgmt/-/hosted-server-mgmt-0.5.0.tgz#def"
+  integrity sha512-bbbb
+  dependencies:
+    "@cosmograph/cosmos" "^1.1.1"
+    express "^4.18.0"
+"#;
+        let entries = parse_yarn_lock(text, "yarn.lock");
+        let by_name: std::collections::HashMap<String, &PackageDbEntry> =
+            entries.iter().map(|e| (e.name.clone(), e)).collect();
+
+        // Aliased-canonical MUST be emitted.
+        assert!(
+            by_name.contains_key("@cosmos.gl/graph"),
+            "aliased-canonical @cosmos.gl/graph MUST be emitted"
+        );
+        let aliased = by_name["@cosmos.gl/graph"];
+        assert_eq!(aliased.version, "2.6.4");
+
+        // Local-name MUST NOT be emitted.
+        assert!(
+            !by_name.contains_key("@cosmograph/cosmos"),
+            "local-name @cosmograph/cosmos MUST NOT be emitted"
+        );
+
+        // Annotation carries the local-name.
+        assert_eq!(
+            aliased.extra_annotations.get("mikebom:yarn-alias"),
+            Some(&serde_json::Value::String("@cosmograph/cosmos".to_string())),
+        );
+
+        // The other entry's depends list points at the aliased canonical.
+        let host = by_name["hosted-server-mgmt"];
+        assert!(host.depends.contains(&"@cosmos.gl/graph".to_string()));
+        assert!(!host.depends.contains(&"@cosmograph/cosmos".to_string()));
+    }
+
+    /// T017 — no-alias yarn lockfile MUST NOT add mikebom:yarn-alias
+    /// annotations. Byte-identity preserved on the vast majority case.
+    #[test]
+    fn m159_yarn_no_alias_no_annotation() {
+        let text = r#"# THIS IS AN AUTOGENERATED FILE. DO NOT EDIT THIS FILE DIRECTLY.
+# yarn lockfile v1
+
+"lodash@^4.17.21":
+  version "4.17.21"
+  resolved "https://registry.yarnpkg.com/lodash/-/lodash-4.17.21.tgz#abc"
+  integrity sha512-aaaa
+"#;
+        let entries = parse_yarn_lock(text, "yarn.lock");
+        for entry in &entries {
+            assert!(
+                !entry.extra_annotations.contains_key("mikebom:yarn-alias"),
+                "no-alias yarn.lock MUST NOT add mikebom:yarn-alias; {} did",
+                entry.name
+            );
+        }
     }
 }

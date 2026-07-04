@@ -569,6 +569,7 @@ fn base64_decode(input: &str) -> Option<Vec<u8>> {
 // This file (mod.rs) hosts the orchestrator (pub fn read), error type
 // (NpmError), project-root walker, integrity-string parser, base64 helper,
 // and the cross-section build_npm_purl helper (used by every parser).
+mod alias_mapping;
 mod bun_lock;
 mod enrich;
 mod jsonc;

@@ -43,7 +43,11 @@ const PNPM_DEP_SECTIONS: &[&str] = &[
 /// only strip suffixes to filter out non-registry values in the
 /// VERSION column (git URLs, tarballs, file paths) via
 /// `parse_pnpm_key` on a synthesized `"<name>@<value>"` string.
-fn collect_pnpm_dep_names(entry_tbl: &serde_yaml::Mapping) -> Vec<String> {
+fn collect_pnpm_dep_names(
+    entry_tbl: &serde_yaml::Mapping,
+    aliases: &mut Vec<super::alias_mapping::AliasResolution>,
+    source_path: &str,
+) -> Vec<String> {
     let mut deps: Vec<String> = Vec::new();
     for section in PNPM_DEP_SECTIONS {
         let Some(sub) = entry_tbl
@@ -55,8 +59,20 @@ fn collect_pnpm_dep_names(entry_tbl: &serde_yaml::Mapping) -> Vec<String> {
         for (dep_key, dep_value) in sub {
             let Some(dep_name) = dep_key.as_str() else { continue };
             let Some(dep_ver_raw) = dep_value.as_str() else { continue };
-            // Validate that the VALUE is a registry-source string via
-            // parse_pnpm_key round-trip; drop non-registry sources.
+            // Milestone 159: detect pnpm alias syntax on the VALUE
+            // string. When the value's canonical name differs from
+            // the local dep-key, emit an AliasResolution and use the
+            // ALIASED name as the edge target (FR-003 + FR-005).
+            if let Some(alias) =
+                super::alias_mapping::detect_pnpm_alias(dep_name, dep_ver_raw, source_path)
+            {
+                deps.push(alias.aliased_name.clone());
+                aliases.push(alias);
+                continue;
+            }
+            // Non-alias path (or self-referential value). Validate the
+            // VALUE is a registry-source string via parse_pnpm_key
+            // round-trip; drop non-registry sources.
             let dep_pair_raw = format!("{dep_name}@{dep_ver_raw}");
             let stripped = dep_pair_raw
                 .strip_prefix('/')
@@ -84,6 +100,8 @@ fn collect_pnpm_dep_names(entry_tbl: &serde_yaml::Mapping) -> Vec<String> {
 /// lockfiles).
 fn build_snapshots_lookup(
     root: &serde_yaml::Value,
+    aliases: &mut Vec<super::alias_mapping::AliasResolution>,
+    source_path: &str,
 ) -> std::collections::HashMap<String, Vec<String>> {
     let mut out = std::collections::HashMap::new();
     let Some(snapshots) = root
@@ -101,7 +119,7 @@ fn build_snapshots_lookup(
         };
         let canonical = format!("{name}@{version}");
         let Some(tbl) = entry.as_mapping() else { continue };
-        let deps = collect_pnpm_dep_names(tbl);
+        let deps = collect_pnpm_dep_names(tbl, aliases, source_path);
         out.insert(canonical, deps);
     }
     out
@@ -149,11 +167,16 @@ pub(crate) fn parse_pnpm_lock(
         .map(|major| major >= 9)
         .unwrap_or(false);
 
+    // Milestone 159 accumulator: alias-detection outputs from both
+    // the snapshots first-pass AND the v6/v7 inline second-pass are
+    // collected here for later edge-rewrite + annotation emission.
+    let mut aliases: Vec<super::alias_mapping::AliasResolution> = Vec::new();
+
     // Milestone 157: pre-scan the v9 `snapshots:` section into a
     // lookup keyed by canonical name@version. Empty HashMap on
     // v6/v7 (no snapshots section) — the inline packages path
     // takes precedence via collect_pnpm_dep_names.
-    let snapshots_lookup = build_snapshots_lookup(root);
+    let snapshots_lookup = build_snapshots_lookup(root, &mut aliases, source_path);
 
     // v6/v7 put per-package info under `packages:` keyed by
     // "/<name>@<version>" (or "/@scope/name@version"). v9 removes
@@ -236,7 +259,7 @@ pub(crate) fn parse_pnpm_lock(
                 Vec::new()
             }
         } else {
-            collect_pnpm_dep_names(tbl)
+            collect_pnpm_dep_names(tbl, &mut aliases, source_path)
         };
 
         out.push(PackageDbEntry {
@@ -270,6 +293,75 @@ pub(crate) fn parse_pnpm_lock(
             extra_annotations: Default::default(),
             binary_role: None,
         });
+    }
+
+    // Milestone 159 post-processing (issue #493):
+    //
+    //   1. Build alias_map for edge rewriting (FR-005) — key = local-
+    //      name, value = AliasedIdentity{aliased_name, aliased_version}.
+    //   2. Build reverse-map for annotation emission (FR-006) — key =
+    //      `<aliased_name>@<aliased_version>` canonical, value = sorted
+    //      unique Vec<local_name> of every alias that reached that
+    //      canonical (FR-012 multi-alias case).
+    //   3. Rewrite each PackageDbEntry.depends via `rewrite_dep_names`.
+    //   4. For each PackageDbEntry whose canonical matches the reverse-
+    //      map, insert `mikebom:pnpm-alias = <local-name>` into
+    //      extra_annotations. Multi-alias emits Value::Array;
+    //      single-alias emits Value::String.
+    let mut alias_map: super::alias_mapping::AliasMap =
+        std::collections::HashMap::new();
+    let mut reverse_map: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for a in &aliases {
+        alias_map.entry(a.local_name.clone()).or_insert_with(|| {
+            super::alias_mapping::AliasedIdentity {
+                aliased_name: a.aliased_name.clone(),
+                aliased_version: a.aliased_version.clone(),
+            }
+        });
+        let key = format!("{}@{}", a.aliased_name, a.aliased_version);
+        let locals = reverse_map.entry(key).or_default();
+        if !locals.contains(&a.local_name) {
+            locals.push(a.local_name.clone());
+        }
+    }
+    // Sort each reverse-map value for deterministic annotation order.
+    for locals in reverse_map.values_mut() {
+        locals.sort();
+    }
+    // Rewrite edges + attach annotations.
+    let alias_count = aliases.len();
+    if alias_count > 0 {
+        for entry in out.iter_mut() {
+            entry.depends =
+                super::alias_mapping::rewrite_dep_names(&entry.depends, &alias_map);
+            let canonical = format!("{}@{}", entry.name, entry.version);
+            if let Some(locals) = reverse_map.get(&canonical) {
+                let value = if locals.len() == 1 {
+                    serde_json::Value::String(locals[0].clone())
+                } else {
+                    serde_json::Value::Array(
+                        locals
+                            .iter()
+                            .map(|s| serde_json::Value::String(s.clone()))
+                            .collect(),
+                    )
+                };
+                entry
+                    .extra_annotations
+                    .insert("mikebom:pnpm-alias".to_string(), value);
+            }
+        }
+        // Milestone 159 FR-011 info log — emit ONLY when at least one
+        // alias was resolved. On no-alias lockfiles, the log line is
+        // suppressed to preserve pre-159 byte-identity on unrelated
+        // fixtures.
+        tracing::info!(
+            lockfile_path = %source_path,
+            alias_count = alias_count,
+            alias_ecosystem = "pnpm",
+            "npm-alias resolution completed"
+        );
     }
 
     // Milestone 157 FR-007 info-level diagnostic. Grep-friendly for
@@ -612,6 +704,168 @@ packages:
                 "v9 with no snapshots MUST emit empty depends; {} got {:?}",
                 entry.name,
                 entry.depends
+            );
+        }
+    }
+
+    // ─── Milestone 159 alias resolution tests (T014, T015a, T016) ───
+
+    /// T014 — real test-podman-desktop-shape aliases: `react-helmet-async`,
+    /// `react-loadable`, `string-width-cjs`, `strip-ansi-cjs` all resolve
+    /// to their aliased canonical PURLs; the local-name PURLs are NOT
+    /// emitted; each aliased entry carries `mikebom:pnpm-alias =
+    /// <local-name>`; the depender's depends list contains the aliased
+    /// canonical names.
+    #[test]
+    fn m159_pnpm_alias_test_podman_desktop_shape() {
+        let yaml = r#"
+lockfileVersion: '9.0'
+
+packages:
+  docusaurus-core@3.10.1:
+    resolution: {integrity: sha512-aaaa}
+  '@slorber/react-helmet-async@1.3.0':
+    resolution: {integrity: sha512-bbbb}
+  '@docusaurus/react-loadable@6.0.0':
+    resolution: {integrity: sha512-cccc}
+  cliui@8.0.2:
+    resolution: {integrity: sha512-dddd}
+  string-width@4.2.3:
+    resolution: {integrity: sha512-eeee}
+  strip-ansi@6.0.1:
+    resolution: {integrity: sha512-ffff}
+
+snapshots:
+  docusaurus-core@3.10.1:
+    dependencies:
+      react-helmet-async: '@slorber/react-helmet-async@1.3.0'
+      react-loadable: '@docusaurus/react-loadable@6.0.0'
+  cliui@8.0.2:
+    dependencies:
+      string-width-cjs: string-width@4.2.3
+      strip-ansi-cjs: strip-ansi@6.0.1
+  '@slorber/react-helmet-async@1.3.0':
+    resolution: {integrity: sha512-bbbb}
+  '@docusaurus/react-loadable@6.0.0':
+    resolution: {integrity: sha512-cccc}
+  string-width@4.2.3: {}
+  strip-ansi@6.0.1: {}
+"#;
+        let parsed: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let out = parse_pnpm_lock(&parsed, "/test.yaml", false);
+
+        // Aliased-canonical components MUST be emitted.
+        let by_name: std::collections::HashMap<String, &PackageDbEntry> =
+            out.iter().map(|e| (e.name.clone(), e)).collect();
+        assert!(
+            by_name.contains_key("@slorber/react-helmet-async"),
+            "aliased component @slorber/react-helmet-async missing"
+        );
+        assert!(
+            by_name.contains_key("@docusaurus/react-loadable"),
+            "aliased component @docusaurus/react-loadable missing"
+        );
+        assert!(by_name.contains_key("string-width"), "aliased component string-width missing");
+        assert!(by_name.contains_key("strip-ansi"), "aliased component strip-ansi missing");
+
+        // Local-name components MUST NOT be emitted.
+        assert!(
+            !by_name.contains_key("react-helmet-async"),
+            "local-name react-helmet-async MUST NOT be emitted"
+        );
+        assert!(
+            !by_name.contains_key("string-width-cjs"),
+            "local-name string-width-cjs MUST NOT be emitted"
+        );
+
+        // Aliased entries carry `mikebom:pnpm-alias = <local-name>`.
+        let slorber = by_name["@slorber/react-helmet-async"];
+        assert_eq!(
+            slorber.extra_annotations.get("mikebom:pnpm-alias"),
+            Some(&serde_json::Value::String("react-helmet-async".to_string())),
+        );
+        let sw = by_name["string-width"];
+        assert_eq!(
+            sw.extra_annotations.get("mikebom:pnpm-alias"),
+            Some(&serde_json::Value::String("string-width-cjs".to_string())),
+        );
+
+        // The depender's depends list references the aliased identity.
+        let docusaurus = by_name["docusaurus-core"];
+        assert!(docusaurus.depends.contains(&"@slorber/react-helmet-async".to_string()));
+        assert!(docusaurus.depends.contains(&"@docusaurus/react-loadable".to_string()));
+        assert!(!docusaurus.depends.contains(&"react-helmet-async".to_string()));
+
+        let cliui = by_name["cliui"];
+        assert!(cliui.depends.contains(&"string-width".to_string()));
+        assert!(cliui.depends.contains(&"strip-ansi".to_string()));
+        assert!(!cliui.depends.contains(&"string-width-cjs".to_string()));
+    }
+
+    /// T015a (analyze finding A2) — FR-012 multi-alias: same canonical
+    /// component reached via TWO different local-names emits a
+    /// Value::Array of local-names in `mikebom:pnpm-alias`.
+    #[test]
+    fn m159_pnpm_multi_alias_emits_array() {
+        let yaml = r#"
+lockfileVersion: '9.0'
+
+packages:
+  peer-a@1.0.0:
+    resolution: {integrity: sha512-aaaa}
+  peer-b@1.0.0:
+    resolution: {integrity: sha512-bbbb}
+  '@slorber/react-helmet-async@1.3.0':
+    resolution: {integrity: sha512-cccc}
+
+snapshots:
+  peer-a@1.0.0:
+    dependencies:
+      helmet-shim: '@slorber/react-helmet-async@1.3.0'
+  peer-b@1.0.0:
+    dependencies:
+      react-helmet-async: '@slorber/react-helmet-async@1.3.0'
+  '@slorber/react-helmet-async@1.3.0':
+    resolution: {integrity: sha512-cccc}
+"#;
+        let parsed: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let out = parse_pnpm_lock(&parsed, "/test.yaml", false);
+        let by_name: std::collections::HashMap<String, &PackageDbEntry> =
+            out.iter().map(|e| (e.name.clone(), e)).collect();
+        let helmet = by_name["@slorber/react-helmet-async"];
+        let anno = helmet.extra_annotations.get("mikebom:pnpm-alias").unwrap();
+        // Expected: Value::Array of both locals, sorted.
+        let arr = anno.as_array().expect("annotation must be Value::Array for multi-alias");
+        let values: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
+        assert_eq!(values, vec!["helmet-shim", "react-helmet-async"]);
+    }
+
+    /// T016 — no-alias pnpm-lock is byte-identical to pre-159 behavior:
+    /// no `mikebom:pnpm-alias` annotations added on any entry.
+    #[test]
+    fn m159_pnpm_no_alias_no_annotation() {
+        let yaml = r#"
+lockfileVersion: '9.0'
+
+packages:
+  foo@1.0.0:
+    resolution: {integrity: sha512-aaaa}
+  bar@2.0.0:
+    resolution: {integrity: sha512-bbbb}
+
+snapshots:
+  foo@1.0.0:
+    dependencies:
+      bar: 2.0.0
+  bar@2.0.0: {}
+"#;
+        let parsed: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let out = parse_pnpm_lock(&parsed, "/no-alias.yaml", false);
+        for entry in &out {
+            assert!(
+                !entry.extra_annotations.contains_key("mikebom:pnpm-alias"),
+                "no-alias lockfile MUST NOT add mikebom:pnpm-alias; {} did",
+                entry.name
             );
         }
     }

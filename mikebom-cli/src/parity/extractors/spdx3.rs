@@ -631,6 +631,11 @@ spdx3_anno!(c103_spdx3, "mikebom:cmake-find-package-name", component);
 spdx3_anno!(c104_spdx3, "mikebom:graph-completeness",        document);
 spdx3_anno!(c105_spdx3, "mikebom:graph-completeness-reason", document);
 
+// Milestone 159 (closes #493): C106/C107 — per-component alias-provenance
+// annotations.
+spdx3_anno!(c106_spdx3, "mikebom:pnpm-alias",                component);
+spdx3_anno!(c107_spdx3, "mikebom:yarn-alias",                component);
+
 // C67 — `mikebom:assertion-conflict` (milestone 119). Per-component
 // graph-element annotation carrying the JSON-encoded array of
 // conflict records.

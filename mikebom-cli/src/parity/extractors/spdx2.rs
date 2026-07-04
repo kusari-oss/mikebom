@@ -564,6 +564,11 @@ spdx23_anno!(c103_spdx23, "mikebom:cmake-find-package-name", component);
 spdx23_anno!(c104_spdx23, "mikebom:graph-completeness",        document);
 spdx23_anno!(c105_spdx23, "mikebom:graph-completeness-reason", document);
 
+// Milestone 159 (closes #493): C106/C107 — per-component alias-provenance
+// annotations.
+spdx23_anno!(c106_spdx23, "mikebom:pnpm-alias",                component);
+spdx23_anno!(c107_spdx23, "mikebom:yarn-alias",                component);
+
 // C67 — `mikebom:assertion-conflict` (milestone 119). Per-Package
 // envelope carrying the JSON-encoded array of conflict records.
 spdx23_anno!(c67_spdx23, "mikebom:assertion-conflict",       component);

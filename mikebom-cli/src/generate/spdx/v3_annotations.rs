@@ -538,6 +538,24 @@ fn push_document_fields(
         }
     }
 
+    // Milestone 160 (T034/T035): doc-scope Go-transitive coverage
+    // annotations (C110/C111). C110 emitted iff the scan had ≥1 Go
+    // component; C111 conditionally emitted iff coverage != Complete.
+    if let Some(coverage) = scan.go_transitive_coverage {
+        push(
+            out,
+            "mikebom:go-transitive-coverage",
+            json!(coverage.value_wire_str()),
+        );
+        if let Some(reason) = coverage.reason() {
+            push(
+                out,
+                "mikebom:go-transitive-coverage-reason",
+                json!(reason),
+            );
+        }
+    }
+
     // Milestone 134 (closes #125, catalog row C100): document-scope
     // `mikebom:purl-collisions-detected` summary. Omitted when no
     // collisions were detected so clean scans stay byte-identical to

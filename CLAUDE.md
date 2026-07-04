@@ -1,6 +1,6 @@
 # mikebom Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-07-03
+Auto-generated from all feature plans. Last updated: 2026-07-04
 
 ## Active Technologies
 - Rust stable (user-space only; no eBPF touched in this milestone) (002-python-npm-ecosystem)
@@ -191,6 +191,8 @@ Auto-generated from all feature plans. Last updated: 2026-07-03
 - N/A — all state in-process per scan; the graph-completeness pass runs once at emit-time, its result is a stack-allocated `GraphCompletenessResult` struct that flows into the three format emitters and is dropped when serialization finishes. No caches, no persistence (matches every milestone since 002). (158-graph-completeness)
 - Rust stable (workspace toolchain inherited from milestones 001–158; no nightly required for this user-space-only work). + Existing only — `serde_yaml` (pnpm-lock + yarn Berry parsing; already used), the milestone-113 `regex` crate (for yarn v1 line-by-line descriptor extraction; already used), `serde` / `serde_json` (annotation emission), `tracing` (info/warn logs per FR-010/FR-011), `anyhow` / `thiserror` (error propagation). **Zero new Cargo dependencies.** (159-pnpm-yarn-alias)
 - N/A — all state in-process per scan. The alias-mapping tables (per-lockfile `HashMap<LocalName, AliasedIdentity>`) live in local scope inside `parse_pnpm_lock` / `parse_yarn_lock` and die at function return. No caches, no persistence (matches every milestone since 002). (159-pnpm-yarn-alias)
+- Rust stable (workspace toolchain inherited from milestones 001–159; no nightly required for this user-space-only work). + Existing only — `reqwest = "0.12"` (workspace, `default-features = false, features = ["json", "rustls-tls", "blocking"]`) reused by `proxy_fetch.rs`; `tokio` (workspace) for the semaphore-driven parallel fetches; `serde`/`serde_json` (annotation values); `tracing` (info-level ladder summary + FR-010 log line); `anyhow`/`thiserror` (error propagation). The `GraphResolverConfig.fetch_concurrency = 16` at `graph_resolver.rs:344` (milestone-055 FR-008a) is preserved unchanged. **Zero new Cargo dependencies.** (160-go-transitive-coverage)
+- N/A — all state in-process per scan; matches every milestone since 002. Per-module `ModuleGraphEntry.source: ResolutionStep` is already stored in `ModuleGraphMap.entries: HashMap<ModuleId, ModuleGraphEntry>`; this milestone surfaces it to the emitter, not to disk. (160-go-transitive-coverage)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -253,9 +255,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 160-go-transitive-coverage: Added Rust stable (workspace toolchain inherited from milestones 001–159; no nightly required for this user-space-only work). + Existing only — `reqwest = "0.12"` (workspace, `default-features = false, features = ["json", "rustls-tls", "blocking"]`) reused by `proxy_fetch.rs`; `tokio` (workspace) for the semaphore-driven parallel fetches; `serde`/`serde_json` (annotation values); `tracing` (info-level ladder summary + FR-010 log line); `anyhow`/`thiserror` (error propagation). The `GraphResolverConfig.fetch_concurrency = 16` at `graph_resolver.rs:344` (milestone-055 FR-008a) is preserved unchanged. **Zero new Cargo dependencies.**
 - 159-pnpm-yarn-alias: Added Rust stable (workspace toolchain inherited from milestones 001–158; no nightly required for this user-space-only work). + Existing only — `serde_yaml` (pnpm-lock + yarn Berry parsing; already used), the milestone-113 `regex` crate (for yarn v1 line-by-line descriptor extraction; already used), `serde` / `serde_json` (annotation emission), `tracing` (info/warn logs per FR-010/FR-011), `anyhow` / `thiserror` (error propagation). **Zero new Cargo dependencies.**
 - 158-graph-completeness: Added Rust stable (workspace toolchain inherited from milestones 001–157; no nightly required for this user-space-only work). + Existing only — `serde` / `serde_json` (annotation envelope + JSON emission), `tracing` (info-level log line per FR-013 below), `anyhow` / `thiserror` (error propagation), `clap` (no new flags — the annotation is unconditional). The multi-root BFS + reason-code classifier uses `std::collections::{HashMap, HashSet, VecDeque}` from stdlib. **Zero new Cargo dependencies.**
-- 157-pnpm-v9-graph: Added Rust stable (workspace toolchain inherited from milestones 001–156; no nightly required). + Existing only — `serde_yaml` (workspace) for the YAML walk (already parsing pnpm-lock.yaml today), `tracing` (info + warn + debug), `anyhow`/`thiserror` (error propagation), `std::collections::HashMap` for the lookup table. Reuses the existing `parse_pnpm_key` helper at `pnpm_lock.rs:129`. **Zero new Cargo dependencies.**
 
 
 <!-- MANUAL ADDITIONS START -->

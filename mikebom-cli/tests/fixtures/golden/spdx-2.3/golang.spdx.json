@@ -35,6 +35,18 @@
       "annotationDate": "1970-01-01T00:00:00Z",
       "annotationType": "OTHER",
       "annotator": "Tool: mikebom-0.1.0-alpha.52",
+      "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:go-transitive-coverage\",\"value\":\"unknown\"}"
+    },
+    {
+      "annotationDate": "1970-01-01T00:00:00Z",
+      "annotationType": "OTHER",
+      "annotator": "Tool: mikebom-0.1.0-alpha.52",
+      "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:go-transitive-coverage-reason\",\"value\":\"offline-mode: transitive edges from proxy fetches unavailable\"}"
+    },
+    {
+      "annotationDate": "1970-01-01T00:00:00Z",
+      "annotationType": "OTHER",
+      "annotator": "Tool: mikebom-0.1.0-alpha.52",
       "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:trace-integrity-ring-buffer-overflows\",\"value\":\"0\"}"
     },
     {
@@ -187,6 +199,12 @@
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.52",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:go-transitive-source\",\"value\":\"go-sum-fallback\"}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.52",
           "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:resolver-step\",\"value\":\"go-sum-fallback\"}"
         }
       ],
@@ -253,6 +271,12 @@
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.52",
           "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"go.sum\",\"sha256\":\"9aded8247f7273dbceae5c01267f4c191edeaad5d26464d6fcc6cedadcd566be\"}]}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.52",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:go-transitive-source\",\"value\":\"go-sum-fallback\"}"
         },
         {
           "annotationDate": "1970-01-01T00:00:00Z",
@@ -329,6 +353,12 @@
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.52",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:go-transitive-source\",\"value\":\"go-sum-fallback\"}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.52",
           "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:resolver-step\",\"value\":\"go-sum-fallback\"}"
         }
       ],
@@ -395,6 +425,12 @@
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.52",
           "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"go.sum\",\"sha256\":\"9aded8247f7273dbceae5c01267f4c191edeaad5d26464d6fcc6cedadcd566be\"}]}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.52",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:go-transitive-source\",\"value\":\"go-sum-fallback\"}"
         },
         {
           "annotationDate": "1970-01-01T00:00:00Z",
@@ -471,6 +507,12 @@
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.52",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:go-transitive-source\",\"value\":\"go-sum-fallback\"}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.52",
           "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:resolver-step\",\"value\":\"go-sum-fallback\"}"
         }
       ],
@@ -537,6 +579,12 @@
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.52",
           "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"go.sum\",\"sha256\":\"9aded8247f7273dbceae5c01267f4c191edeaad5d26464d6fcc6cedadcd566be\"}]}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.52",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:go-transitive-source\",\"value\":\"go-sum-fallback\"}"
         },
         {
           "annotationDate": "1970-01-01T00:00:00Z",
@@ -613,6 +661,12 @@
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.52",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:go-transitive-source\",\"value\":\"go-sum-fallback\"}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.52",
           "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:resolver-step\",\"value\":\"go-sum-fallback\"}"
         }
       ],
@@ -679,6 +733,12 @@
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.52",
           "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"go.sum\",\"sha256\":\"9aded8247f7273dbceae5c01267f4c191edeaad5d26464d6fcc6cedadcd566be\"}]}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.52",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:go-transitive-source\",\"value\":\"go-sum-fallback\"}"
         },
         {
           "annotationDate": "1970-01-01T00:00:00Z",
@@ -755,6 +815,12 @@
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.52",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:go-transitive-source\",\"value\":\"go-sum-fallback\"}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.52",
           "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:resolver-step\",\"value\":\"go-sum-fallback\"}"
         }
       ],
@@ -821,6 +887,12 @@
           "annotationDate": "1970-01-01T00:00:00Z",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.52",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:go-transitive-source\",\"value\":\"go-sum-fallback\"}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.52",
           "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:resolver-step\",\"value\":\"go-sum-fallback\"}"
         }
       ],
@@ -882,6 +954,12 @@
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.52",
           "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"go.sum\",\"sha256\":\"9aded8247f7273dbceae5c01267f4c191edeaad5d26464d6fcc6cedadcd566be\"}]}"
+        },
+        {
+          "annotationDate": "1970-01-01T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: mikebom-0.1.0-alpha.52",
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:go-transitive-source\",\"value\":\"go-sum-fallback\"}"
         },
         {
           "annotationDate": "1970-01-01T00:00:00Z",

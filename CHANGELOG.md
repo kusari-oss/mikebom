@@ -7,6 +7,105 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### Go transitive-edge coverage annotations (milestone 160)
+
+Closes issue #494 (surfaced during the milestone-157/158/159 Round-2
+audit of `kusari-sandbox/test-*` repos). Empirical 2026-07-03
+measurement on `kusari-sandbox/test-podman` showed mikebom's Go
+transitive-edge coverage was **only 52.2%** vs `go mod graph` in
+online mode (proxy-reachable) and **7.29%** in offline mode. That
+means downstream vulnerability scans, license audits, and CVE
+lookups silently miss up to half the closure — a Constitution
+Principle VIII (Completeness) failure.
+
+**Fix**: Full-pipeline transparency for the milestone-055/091
+resolution ladder plus per-component + document-scope annotations
+so consumers can programmatically detect + reason about coverage
+gaps.
+
+**Per-component annotations** (universal on every `pkg:golang/...`
+component except the synthetic `pkg:golang/stdlib@vX.Y.Z`):
+
+- `mikebom:go-transitive-source` (C108) — kebab-case string naming
+  which of the 5-step ladder resolved this module's transitive
+  requires: `go-mod-graph`, `module-cache`, `proxy-fetch`,
+  `go-sum-fallback`, or `unresolved`. Universal-emit per Q2
+  clarification (matches milestone-158 C104 + milestone-159
+  C106/C107 universal-presence pattern; avoids the
+  "no-annotation = success" silent-lie failure mode).
+- `mikebom:go-transitive-unresolved-reason` (C109) — kebab-case
+  string naming the failure class. Emitted iff C108 == `unresolved`.
+  Closed 7-code vocab: `proxy-fetch-timeout`, `proxy-fetch-not-found`,
+  `proxy-fetch-forbidden`, `proxy-off-in-chain`, `goprivate-matched`,
+  `module-cache-miss`, `unknown-error`.
+
+**Document-scope annotations** (emitted iff SBOM contains ≥1 Go
+component):
+
+- `mikebom:go-transitive-coverage` (C110) — three-value string
+  `complete` | `partial` | `unknown`. Distinct from milestone-158's
+  `mikebom:graph-completeness` (C104) per research.md R1: C104
+  reports whether we built a top-level component graph at all; C110
+  reports what fraction of Go modules had per-module transitive
+  requires resolved via the ladder. Q1 reason-code-driven decision
+  rule: `unknown` iff a "we can't measure" reason applies (offline,
+  `off` in GOPROXY, `go mod graph` degraded); `partial` iff we ran
+  the pass and ≥1 module ended `unresolved`; `complete` iff every
+  module resolved via steps 1–4.
+- `mikebom:go-transitive-coverage-reason` (C111) — grammar
+  `<code>: <detail>[; <code>: <detail>]*`. Emitted iff C110 !=
+  `complete`. Closed-but-extensible 5-code vocab per Q4:
+  `proxy-fetch-degraded`, `offline-mode`, `goproxy-off-in-chain`,
+  `go-mod-graph-degraded`, `module-cache-empty-and-no-proxy`.
+
+**Q1–Q4 clarifications (2026-07-04)**:
+
+- Q1: `partial` vs `unknown` — reason-code-driven, not count-based.
+  Mirrors milestone-158's caution-first philosophy.
+- Q2: `mikebom:go-transitive-source` — universal on every Go
+  component. Matches milestone-158/159 universal-presence pattern.
+- Q3: SC-001 ground-truth = `go mod graph`. Same generator as the
+  milestone-157 audit that established the 52.2% pre-160 baseline.
+- Q4: reason-code vocab is closed-but-extensible. New codes require
+  a spec/milestone bump. Matches milestone-158 C105 governance.
+
+**Consumer jq recipes**:
+
+```bash
+# Overall Go transitive coverage (doc-scope) — fail CI if not complete
+jq -r '.metadata.properties[] | select(.name == "mikebom:go-transitive-coverage") | .value' sbom.cdx.json
+
+# Count Go modules per resolution source
+jq '[.components[]
+     | select(.purl // "" | startswith("pkg:golang/"))
+     | .properties // [] | .[]
+     | select(.name == "mikebom:go-transitive-source") | .value]
+    | group_by(.) | map({(.[0]): length}) | add' sbom.cdx.json
+```
+
+**Empirical impact** (pre/post SC-001 on `test-podman`): pre-160
+baseline was 52.2%; the milestone-160 code lands the transparency
++ annotation infrastructure. The FR-006 fetch-degradation
+investigation (T015-T019) is the follow-on that will lift the
+observed 52.2% → the ≥90% SC-001 target; that empirical work is
+tracked in a follow-up implementation session per Assumption §7's
+empirically-adjustable clause.
+
+**Backward compatibility**: SC-003 dual-side byte-identity verified
+— the 30 non-Go milestone-090 goldens (10 ecosystems × 3 formats)
+are byte-identical to pre-160. Only the `golang` fixture goldens
+change (net +234 lines: new C108 per component + C110/C111 at doc
+scope).
+
+**Test surface**: 15 new unit tests in `graph_resolver.rs` + `legacy.rs`
+covering the SC-008 sub-item vocabulary (a–j) + `parse_go_mod`
+indirect-preservation regression guard. 4 new unit tests in
+`cyclonedx/metadata.rs` covering C110/C111 emission conditions
+(present when coverage `Some`, absent when `None`, C111 conditional
+on non-Complete). 3 new integration tests in
+`mikebom-cli/tests/go_transitive_coverage.rs` exercising the
+release-binary path end-to-end via `--offline` mode.
+
 ### pnpm/yarn npm-alias syntax resolution (milestone 159)
 
 Closes issue #493 (discovered during the milestone-157 Round-2 audit

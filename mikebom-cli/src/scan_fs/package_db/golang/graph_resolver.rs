@@ -77,8 +77,103 @@ pub enum ResolutionStep {
     /// Step 6 (formerly step 4): graceful fallthrough — no edges
     /// produced for this module. Reached when even step 5's go.sum
     /// closure didn't claim the module (typically because the module
-    /// has no go.sum line, e.g., a path-replace target).
+    /// has no go.sum line, e.g., a path-replace target). Serialized to
+    /// wire as `"unresolved"` per milestone-160 C108 vocab.
     None,
+}
+
+impl ResolutionStep {
+    /// Milestone 160 (T001): kebab-case wire string for the
+    /// `mikebom:go-transitive-source` component annotation (C108).
+    /// Note: `ResolutionStep::None` serializes to `"unresolved"` — the
+    /// enum variant name predates the milestone-160 wire vocab.
+    pub fn as_wire_str(&self) -> &'static str {
+        match self {
+            Self::GoModGraph => "go-mod-graph",
+            Self::GoModCache => "module-cache",
+            Self::Proxy => "proxy-fetch",
+            Self::GoSumFallback => "go-sum-fallback",
+            Self::None => "unresolved",
+        }
+    }
+}
+
+/// Milestone 160 (T002): closed 7-code vocabulary for the
+/// `mikebom:go-transitive-unresolved-reason` component annotation (C109).
+/// Emitted iff `ResolutionStep::None` claimed the module. Maps from the
+/// milestone-055 `StepError` at fetch failure time.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnresolvedReasonClass {
+    ProxyFetchTimeout,
+    ProxyFetchNotFound,
+    ProxyFetchForbidden,
+    ProxyOffInChain,
+    GoPrivateMatched,
+    ModuleCacheMiss,
+    UnknownError,
+}
+
+impl UnresolvedReasonClass {
+    /// Kebab-case wire string for the C109 annotation value.
+    pub fn as_wire_str(&self) -> &'static str {
+        match self {
+            Self::ProxyFetchTimeout => "proxy-fetch-timeout",
+            Self::ProxyFetchNotFound => "proxy-fetch-not-found",
+            Self::ProxyFetchForbidden => "proxy-fetch-forbidden",
+            Self::ProxyOffInChain => "proxy-off-in-chain",
+            Self::GoPrivateMatched => "goprivate-matched",
+            Self::ModuleCacheMiss => "module-cache-miss",
+            Self::UnknownError => "unknown-error",
+        }
+    }
+}
+
+impl From<&StepError> for UnresolvedReasonClass {
+    fn from(err: &StepError) -> Self {
+        match err.class {
+            ErrorClass::Timeout | ErrorClass::Http5xx => Self::ProxyFetchTimeout,
+            ErrorClass::Http404 => Self::ProxyFetchNotFound,
+            ErrorClass::Http4xx if err.is_forbidden() => Self::ProxyFetchForbidden,
+            ErrorClass::Http4xx => Self::ProxyFetchNotFound,
+            ErrorClass::Dns | ErrorClass::Connection | ErrorClass::Tls => {
+                Self::ProxyFetchTimeout
+            }
+            ErrorClass::Parse | ErrorClass::Other => Self::UnknownError,
+        }
+    }
+}
+
+/// Milestone 160 (T003): document-scope Go-transitive coverage signal
+/// (C110/C111). Reason-code-driven per Q1 clarification: `Unknown` fires
+/// when we can't measure at all (offline / GOPROXY off / `go mod graph`
+/// subprocess degraded); `Partial` when we ran the pass but ≥1 module
+/// fell through to unresolved; `Complete` when every module resolved via
+/// steps 1-4 of the ladder.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum GoTransitiveCoverage {
+    Complete,
+    Partial(String),
+    Unknown(String),
+}
+
+impl GoTransitiveCoverage {
+    /// Wire value for `mikebom:go-transitive-coverage` (C110).
+    pub fn value_wire_str(&self) -> &'static str {
+        match self {
+            Self::Complete => "complete",
+            Self::Partial(_) => "partial",
+            Self::Unknown(_) => "unknown",
+        }
+    }
+
+    /// Wire value for `mikebom:go-transitive-coverage-reason` (C111);
+    /// returns None iff variant is `Complete`.
+    pub fn reason(&self) -> Option<&str> {
+        match self {
+            Self::Complete => None,
+            Self::Partial(r) | Self::Unknown(r) => Some(r.as_str()),
+        }
+    }
 }
 
 /// Per-module record after resolution. `requires` is post-replace, post-
@@ -101,6 +196,20 @@ pub struct ModuleGraphEntry {
 pub struct ModuleGraphMap {
     entries: HashMap<ModuleId, ModuleGraphEntry>,
     summary: LadderSummary,
+    /// Milestone 160 (T008): document-scope Go-transitive coverage
+    /// signal produced by `compute_coverage()` at the tail of
+    /// `GraphResolver::resolve()`. Consumed by the CLI's SBOM-assembly
+    /// path to emit `mikebom:go-transitive-coverage` (C110) +
+    /// `mikebom:go-transitive-coverage-reason` (C111) at document scope.
+    /// `None` iff the resolver was never invoked (empty workspace).
+    coverage: Option<GoTransitiveCoverage>,
+    /// Milestone 160 (T021): per-module reason classes for the C109
+    /// `mikebom:go-transitive-unresolved-reason` annotation. Populated
+    /// during step 3 on `StepResult::Failed(_)` outcomes via
+    /// `UnresolvedReasonClass::from(&err)`. Consumed by `legacy::read()`
+    /// when emitting per-component annotations for modules whose
+    /// `source == ResolutionStep::None`.
+    unresolved_reasons: HashMap<ModuleId, UnresolvedReasonClass>,
 }
 
 impl ModuleGraphMap {
@@ -121,6 +230,23 @@ impl ModuleGraphMap {
 
     pub fn summary(&self) -> &LadderSummary {
         &self.summary
+    }
+
+    /// Milestone 160 (T008): document-scope coverage signal from
+    /// `compute_coverage()`. `None` iff the resolver never ran (empty
+    /// workspace, no Go modules). Consumed by the CLI's C110/C111
+    /// doc-scope annotation emitter.
+    pub fn coverage(&self) -> Option<&GoTransitiveCoverage> {
+        self.coverage.as_ref()
+    }
+
+    /// Milestone 160 (T021): per-module reason class for the C109
+    /// per-component annotation. Returns `None` iff the module's
+    /// source is anything other than `ResolutionStep::None` OR if no
+    /// reason class was recorded (e.g., step 5 fallback never had a
+    /// step-3 fetch error to classify).
+    pub fn unresolved_reason(&self, m: &ModuleId) -> Option<UnresolvedReasonClass> {
+        self.unresolved_reasons.get(m).copied()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&ModuleId, &ModuleGraphEntry)> {
@@ -212,6 +338,23 @@ impl ModuleGraphMap {
     pub(crate) fn entries_mut(&mut self) -> &mut HashMap<ModuleId, ModuleGraphEntry> {
         &mut self.entries
     }
+
+    /// Milestone 160 (T021): record the reason class for a module that
+    /// fell through to `ResolutionStep::None` after a step-3 proxy fetch
+    /// failure. Called from `step3_proxy_fetch`.
+    pub(crate) fn record_unresolved_reason(
+        &mut self,
+        module: ModuleId,
+        class: UnresolvedReasonClass,
+    ) {
+        self.unresolved_reasons.insert(module, class);
+    }
+
+    /// Milestone 160 (T008): populated by `GraphResolver::resolve()` at
+    /// the tail of the ladder from `compute_coverage(&summary, ctx)`.
+    pub(crate) fn set_coverage(&mut self, coverage: GoTransitiveCoverage) {
+        self.coverage = Some(coverage);
+    }
 }
 
 // --------------------------------------------------------------------
@@ -228,6 +371,22 @@ pub struct LadderSummary {
     pub gosum_fallback_count: usize,
     pub missing_count: usize,
     pub fetch_errors: HashMap<String, usize>,
+    /// Milestone 160 (T005): true iff step 1 (`go mod graph` subprocess)
+    /// failed to launch OR returned output the parser rejected. Fed to
+    /// `compute_coverage()`'s Q1 caution-first `Unknown` gate at T006.
+    pub go_mod_graph_degraded: bool,
+}
+
+impl LadderSummary {
+    /// Milestone 160 (T005): total modules covered by the ladder — used
+    /// as the denominator for the C111 reason detail's `<N> of <M>` shape.
+    pub fn total_modules(&self) -> usize {
+        self.graph_count
+            + self.cache_count
+            + self.proxy_count
+            + self.gosum_fallback_count
+            + self.missing_count
+    }
 }
 
 impl fmt::Display for LadderSummary {
@@ -283,6 +442,15 @@ pub enum StepResult<T> {
 pub struct StepError {
     pub class: ErrorClass,
     pub detail: String,
+}
+
+impl StepError {
+    /// Milestone 160 (T004): true when the underlying HTTP response was
+    /// a 403 Forbidden — used by `UnresolvedReasonClass::from(&StepError)`
+    /// to distinguish 403 from other 4xx responses.
+    pub fn is_forbidden(&self) -> bool {
+        self.class == ErrorClass::Http4xx && self.detail.contains("403")
+    }
 }
 
 /// Operator-friendly error classification for `tracing::warn` lines per
@@ -353,6 +521,44 @@ pub enum GraphResolverError {
 
     #[error("workspace go.mod missing or unreadable: {0}")]
     GoModMissing(#[source] std::io::Error),
+}
+
+// --------------------------------------------------------------------
+// Milestone 160 (T006): coverage-classification for doc-scope emission
+// --------------------------------------------------------------------
+
+/// Q1 reason-code-driven `partial`/`unknown` decision rule per spec §Clarifications.
+/// Priority ladder:
+///   1. Unknown-fires-first: offline / GOPROXY-off / go_mod_graph_degraded.
+///   2. Partial-fires-second: `summary.missing_count > 0`.
+///   3. Complete: else.
+pub fn compute_coverage(
+    summary: &LadderSummary,
+    ctx: &WorkspaceContext,
+) -> GoTransitiveCoverage {
+    if ctx.offline {
+        return GoTransitiveCoverage::Unknown(
+            "offline-mode: transitive edges from proxy fetches unavailable".to_string(),
+        );
+    }
+    if ctx.goproxy.is_off() {
+        return GoTransitiveCoverage::Unknown(
+            "goproxy-off-in-chain: GOPROXY chain contains 'off'".to_string(),
+        );
+    }
+    if summary.go_mod_graph_degraded {
+        return GoTransitiveCoverage::Unknown(
+            "go-mod-graph-degraded: subprocess failed or returned partial output".to_string(),
+        );
+    }
+    if summary.missing_count > 0 {
+        return GoTransitiveCoverage::Partial(format!(
+            "proxy-fetch-degraded: {} of {} modules unresolved",
+            summary.missing_count,
+            summary.total_modules(),
+        ));
+    }
+    GoTransitiveCoverage::Complete
 }
 
 // --------------------------------------------------------------------
@@ -460,6 +666,23 @@ impl GraphResolver {
             s
         );
 
+        // Milestone 160 (T008 + T036): populate the doc-scope coverage
+        // signal + emit the FR-010 total-summary log at scan-emission
+        // time. `compute_coverage` follows the Q1 reason-code-driven
+        // priority ladder (Unknown-first → Partial-second → Complete).
+        let coverage = compute_coverage(map.summary(), ctx);
+        tracing::info!(
+            total_modules = map.summary().total_modules(),
+            go_mod_graph_count = map.summary().graph_count,
+            cache_count = map.summary().cache_count,
+            proxy_count = map.summary().proxy_count,
+            gosum_count = map.summary().gosum_fallback_count,
+            unresolved_count = map.summary().missing_count,
+            coverage = coverage.value_wire_str(),
+            "go transitive edges resolution summary"
+        );
+        map.set_coverage(coverage);
+
         Ok(map)
     }
 
@@ -504,6 +727,12 @@ impl GraphResolver {
                     detail = err.detail,
                     "`go mod graph` failed; falling through to cache walk + proxy fetch"
                 );
+                // Milestone 160 (T007): mark step 1 as degraded so
+                // `compute_coverage()` can emit Unknown per Q1
+                // caution-first. Step-1-Unavailable (go not on PATH)
+                // is intentionally NOT counted as degraded — the
+                // ladder still descends through steps 2/3 successfully.
+                map.summary_mut().go_mod_graph_degraded = true;
             }
         }
     }
@@ -609,6 +838,13 @@ impl GraphResolver {
                         detail = err.detail,
                         "go-mod proxy fetch failed"
                     );
+                    // Milestone 160 (T021): classify the failure into
+                    // the C109 vocabulary and stash it so `legacy::read`
+                    // can emit `mikebom:go-transitive-unresolved-reason`
+                    // when this module ends up at `ResolutionStep::None`
+                    // after step 5 declines to claim it.
+                    let reason_class = UnresolvedReasonClass::from(&err);
+                    map.record_unresolved_reason(module.clone(), reason_class);
                     *map.summary_mut()
                         .fetch_errors
                         .entry(err.class.as_str().to_string())
@@ -1567,5 +1803,374 @@ mod wiremock_integration {
             "FR-008: expected http_404 in fetch_errors, got {:?}",
             summary.fetch_errors.keys().collect::<Vec<_>>()
         );
+    }
+
+    // =====================================================================
+    // Milestone 160 unit tests (SC-008 sub-items a–j + wire-vocab sanity)
+    // =====================================================================
+
+    /// Helper to build a minimal `WorkspaceContext` for testing
+    /// `compute_coverage()` — the resolver is not invoked, just the
+    /// classification function under test.
+    fn synth_ctx(offline: bool, goproxy_env: Option<&str>) -> WorkspaceContext {
+        use crate::scan_fs::package_db::golang::goprivate::{
+            parse_private_patterns, parse_proxy_chain,
+        };
+        WorkspaceContext {
+            root_dir: PathBuf::from("/tmp"),
+            go_sum_modules: HashSet::new(),
+            replaces: HashMap::new(),
+            excludes: HashSet::new(),
+            offline,
+            gomodcache: PathBuf::from("/tmp"),
+            goproxy: parse_proxy_chain(goproxy_env).unwrap(),
+            goprivate: parse_private_patterns(""),
+        }
+    }
+
+    #[test]
+    fn t024_compute_coverage_returns_complete_when_all_resolved() {
+        // SC-008 (a): summary.missing_count == 0 AND no unknown-triggers.
+        let summary = LadderSummary {
+            graph_count: 5,
+            cache_count: 3,
+            proxy_count: 2,
+            gosum_fallback_count: 0,
+            missing_count: 0,
+            ..Default::default()
+        };
+        let ctx = synth_ctx(false, Some("https://proxy.golang.org,direct"));
+        assert_eq!(compute_coverage(&summary, &ctx), GoTransitiveCoverage::Complete);
+    }
+
+    #[test]
+    fn t025_compute_coverage_returns_partial_when_missing() {
+        // SC-008 (b): summary.missing_count > 0 AND no unknown-triggers.
+        let summary = LadderSummary {
+            graph_count: 100,
+            cache_count: 0,
+            proxy_count: 195,
+            gosum_fallback_count: 0,
+            missing_count: 5,
+            ..Default::default()
+        };
+        let ctx = synth_ctx(false, Some("https://proxy.golang.org,direct"));
+        match compute_coverage(&summary, &ctx) {
+            GoTransitiveCoverage::Partial(reason) => {
+                assert_eq!(reason, "proxy-fetch-degraded: 5 of 300 modules unresolved");
+            }
+            other => panic!("expected Partial, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn t026_compute_coverage_returns_unknown_when_offline() {
+        // SC-008 (c): ctx.offline == true trumps any counts (Q1 caution-first).
+        let summary = LadderSummary {
+            graph_count: 0,
+            cache_count: 0,
+            proxy_count: 0,
+            gosum_fallback_count: 300,
+            missing_count: 0,
+            ..Default::default()
+        };
+        let ctx = synth_ctx(true, Some("https://proxy.golang.org"));
+        match compute_coverage(&summary, &ctx) {
+            GoTransitiveCoverage::Unknown(reason) => {
+                assert!(reason.starts_with("offline-mode:"), "got: {reason}");
+            }
+            other => panic!("expected Unknown, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn t027_compute_coverage_returns_unknown_when_goproxy_off() {
+        // SC-008 (d): ctx.goproxy.is_off() trumps any counts.
+        let summary = LadderSummary {
+            graph_count: 100,
+            missing_count: 0,
+            ..Default::default()
+        };
+        let ctx = synth_ctx(false, Some("off"));
+        match compute_coverage(&summary, &ctx) {
+            GoTransitiveCoverage::Unknown(reason) => {
+                assert!(
+                    reason.starts_with("goproxy-off-in-chain:"),
+                    "got: {reason}"
+                );
+            }
+            other => panic!("expected Unknown, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn t027_compute_coverage_returns_unknown_when_gomodgraph_degraded() {
+        // Extension of SC-008 (d): summary.go_mod_graph_degraded flag
+        // fires Unknown independently of goproxy state.
+        let summary = LadderSummary {
+            graph_count: 0,
+            proxy_count: 100,
+            missing_count: 0,
+            go_mod_graph_degraded: true,
+            ..Default::default()
+        };
+        let ctx = synth_ctx(false, Some("https://proxy.golang.org,direct"));
+        match compute_coverage(&summary, &ctx) {
+            GoTransitiveCoverage::Unknown(reason) => {
+                assert!(
+                    reason.starts_with("go-mod-graph-degraded:"),
+                    "got: {reason}"
+                );
+            }
+            other => panic!("expected Unknown, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn t028_resolution_step_wire_strings_are_stable() {
+        // SC-008 sanity: contracts/annotations.md §C108 vocabulary.
+        assert_eq!(ResolutionStep::GoModGraph.as_wire_str(), "go-mod-graph");
+        assert_eq!(ResolutionStep::GoModCache.as_wire_str(), "module-cache");
+        assert_eq!(ResolutionStep::Proxy.as_wire_str(), "proxy-fetch");
+        assert_eq!(
+            ResolutionStep::GoSumFallback.as_wire_str(),
+            "go-sum-fallback"
+        );
+        assert_eq!(ResolutionStep::None.as_wire_str(), "unresolved");
+    }
+
+    #[test]
+    fn t029_unresolved_reason_wire_strings_are_stable() {
+        // SC-008 sanity: contracts/annotations.md §C109 vocabulary.
+        assert_eq!(
+            UnresolvedReasonClass::ProxyFetchTimeout.as_wire_str(),
+            "proxy-fetch-timeout"
+        );
+        assert_eq!(
+            UnresolvedReasonClass::ProxyFetchNotFound.as_wire_str(),
+            "proxy-fetch-not-found"
+        );
+        assert_eq!(
+            UnresolvedReasonClass::ProxyFetchForbidden.as_wire_str(),
+            "proxy-fetch-forbidden"
+        );
+        assert_eq!(
+            UnresolvedReasonClass::ProxyOffInChain.as_wire_str(),
+            "proxy-off-in-chain"
+        );
+        assert_eq!(
+            UnresolvedReasonClass::GoPrivateMatched.as_wire_str(),
+            "goprivate-matched"
+        );
+        assert_eq!(
+            UnresolvedReasonClass::ModuleCacheMiss.as_wire_str(),
+            "module-cache-miss"
+        );
+        assert_eq!(
+            UnresolvedReasonClass::UnknownError.as_wire_str(),
+            "unknown-error"
+        );
+    }
+
+    #[test]
+    fn t030_unresolved_reason_maps_from_step_error() {
+        // SC-008 sanity: data-model.md E2 impl coverage.
+        let http404 = StepError {
+            class: ErrorClass::Http404,
+            detail: "GET https://proxy/.../@v/list => 404".to_string(),
+        };
+        assert_eq!(
+            UnresolvedReasonClass::from(&http404),
+            UnresolvedReasonClass::ProxyFetchNotFound
+        );
+
+        let timeout = StepError {
+            class: ErrorClass::Timeout,
+            detail: "elapsed=30s".to_string(),
+        };
+        assert_eq!(
+            UnresolvedReasonClass::from(&timeout),
+            UnresolvedReasonClass::ProxyFetchTimeout
+        );
+
+        // 4xx with `403` in detail → Forbidden (via is_forbidden helper).
+        let forbidden = StepError {
+            class: ErrorClass::Http4xx,
+            detail: "GET https://... => 403 Forbidden".to_string(),
+        };
+        assert_eq!(
+            UnresolvedReasonClass::from(&forbidden),
+            UnresolvedReasonClass::ProxyFetchForbidden
+        );
+
+        // 4xx without `403` in detail → NotFound (default 4xx bucket).
+        let other_4xx = StepError {
+            class: ErrorClass::Http4xx,
+            detail: "GET https://... => 429 Too Many Requests".to_string(),
+        };
+        assert_eq!(
+            UnresolvedReasonClass::from(&other_4xx),
+            UnresolvedReasonClass::ProxyFetchNotFound
+        );
+
+        // Parse errors → UnknownError.
+        let parse = StepError {
+            class: ErrorClass::Parse,
+            detail: "malformed .mod header".to_string(),
+        };
+        assert_eq!(
+            UnresolvedReasonClass::from(&parse),
+            UnresolvedReasonClass::UnknownError
+        );
+
+        // 5xx → Timeout (grouped with transient network conditions).
+        let http500 = StepError {
+            class: ErrorClass::Http5xx,
+            detail: "502 Bad Gateway".to_string(),
+        };
+        assert_eq!(
+            UnresolvedReasonClass::from(&http500),
+            UnresolvedReasonClass::ProxyFetchTimeout
+        );
+    }
+
+    #[test]
+    fn t030_step_error_is_forbidden_detects_403() {
+        let f = StepError {
+            class: ErrorClass::Http4xx,
+            detail: "... 403 ...".to_string(),
+        };
+        assert!(f.is_forbidden());
+
+        let nf = StepError {
+            class: ErrorClass::Http4xx,
+            detail: "... 404 ...".to_string(),
+        };
+        assert!(!nf.is_forbidden());
+
+        // Wrong class → false regardless of detail.
+        let wrong_class = StepError {
+            class: ErrorClass::Http5xx,
+            detail: "... 403 ...".to_string(),
+        };
+        assert!(!wrong_class.is_forbidden());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn t031_gosum_fallback_triggers_on_step3_failure() {
+        // SC-008 (f): T018 regression guard — when step 3 (proxy fetch)
+        // returns Failed for every module, step 5 (go.sum fallback) MUST
+        // still claim them so they don't end up in `missing_count`. This
+        // was the milestone-091 contract; the ladder_fall_through_with_404
+        // integration test above covers it end-to-end, but this test
+        // pins the invariant explicitly.
+        let server = MockServer::start().await;
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(500)) // 5xx → Failed(Http5xx)
+            .mount(&server)
+            .await;
+        let ctx = build_argo_context(&server.uri(), false);
+        let cache = crate::scan_fs::package_db::golang::legacy::GoModCache::default();
+        let resolver = GraphResolver::new(GraphResolverConfig::default());
+        let map = tokio::task::spawn_blocking(move || {
+            resolver.resolve(&ctx, &cache).unwrap()
+        })
+        .await
+        .unwrap();
+
+        let summary = map.summary();
+        // Every module fails proxy fetch (5xx) — step 5 claims them all.
+        assert_eq!(summary.proxy_count, 0);
+        assert!(
+            summary.gosum_fallback_count > 0,
+            "T018 FR-006b regression: step 5 must claim modules step 3 Failed on; got summary={summary:?}",
+        );
+        assert_eq!(
+            summary.missing_count, 0,
+            "T018 FR-006b regression: no modules should remain unclaimed"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn t032_offline_mode_skips_step3_entirely() {
+        // SC-008 (g): T019 FR-006c — offline mode skips step 3 at
+        // ladder-start, not per-fetch. This is the compile-time evidence
+        // that the `if !ctx.offline { self.step3_proxy_fetch(...) }` guard
+        // remains in `resolve()`. The ladder still descends through step 5.
+        let server = MockServer::start().await;
+        // No matcher installed — if step 3 attempted a fetch we'd see a
+        // 404 back from wiremock's default; but offline should never call.
+        let ctx = build_argo_context(&server.uri(), true); // offline=true
+        let cache = crate::scan_fs::package_db::golang::legacy::GoModCache::default();
+        let resolver = GraphResolver::new(GraphResolverConfig::default());
+        let map = tokio::task::spawn_blocking(move || {
+            resolver.resolve(&ctx, &cache).unwrap()
+        })
+        .await
+        .unwrap();
+
+        let summary = map.summary();
+        assert_eq!(summary.proxy_count, 0, "offline: step 3 must not have run");
+        assert!(
+            summary.gosum_fallback_count > 0,
+            "offline: step 5 must still claim modules; got summary={summary:?}",
+        );
+        // Coverage should be Unknown per Q1 caution-first (offline trumps counts).
+        match map.coverage() {
+            Some(GoTransitiveCoverage::Unknown(reason)) => {
+                assert!(
+                    reason.starts_with("offline-mode:"),
+                    "offline: coverage reason must start with 'offline-mode:', got: {reason}"
+                );
+            }
+            other => panic!("offline: expected Unknown coverage, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn t032a_parse_module_mod_preserves_indirect_requires() {
+        // SC-008 (e): T017 FR-006a regression guard — the `parse_go_mod`
+        // helper (used by step 2 cache walk + step 3 proxy fetch) MUST
+        // preserve `// indirect` requires. Milestone-160 investigation
+        // established that missing edges on `containernetworking/plugins`
+        // stem from the parser dropping indirect requires; this test
+        // pins the fix.
+        use crate::scan_fs::package_db::golang::legacy::parse_go_mod;
+
+        let mod_body = r#"
+module github.com/containernetworking/plugins
+
+go 1.24.0
+
+require (
+    github.com/Microsoft/hcsshim v0.13.0
+    github.com/alexflint/go-filemutex v1.3.0
+    github.com/buger/jsonparser v1.1.1
+    github.com/containernetworking/cni v1.3.0
+    github.com/coreos/go-iptables v0.8.0
+    github.com/godbus/dbus/v5 v5.2.2
+)
+
+require (
+    github.com/containerd/cgroups/v3 v3.0.3 // indirect
+    github.com/coreos/go-systemd/v22 v22.7.0 // indirect
+)
+"#;
+        let doc = parse_go_mod(mod_body);
+        let names: Vec<&str> = doc.requires.iter().map(|r| r.path.as_str()).collect();
+
+        // The 5 SC-002 spot-check edges must all appear.
+        for expected in [
+            "github.com/Microsoft/hcsshim",
+            "github.com/alexflint/go-filemutex",
+            "github.com/buger/jsonparser",
+            "github.com/coreos/go-iptables",
+            "github.com/containerd/cgroups/v3",
+        ] {
+            assert!(
+                names.contains(&expected),
+                "T017 FR-006a: parse_go_mod dropped `{expected}` (indirect or otherwise); got: {names:?}"
+            );
+        }
     }
 }

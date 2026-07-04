@@ -245,6 +245,7 @@ mod tests {
             os_release_missing_fields: &[],
             go_graph_completeness: None,
             go_graph_completeness_reason: None,
+            go_transitive_coverage: None,
             scan_target_coord: None,
             generation_context: GenerationContext::FilesystemScan,
             include_dev: false,

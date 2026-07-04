@@ -76,6 +76,14 @@ pub struct ScanArtifacts<'a> {
     /// list summarizing why `go_graph_completeness == Partial`.
     /// Empty/None when completeness is `Complete` or `None`.
     pub go_graph_completeness_reason: Option<&'a str>,
+    /// Milestone 160 (T034/T035): doc-scope Go-transitive coverage
+    /// signal. Distinct from `go_graph_completeness` per research.md R1
+    /// — this reports what fraction of Go modules had per-module
+    /// TRANSITIVE requires resolved via the milestone-055/091 ladder.
+    /// `None` when no Go scan happened (C110 annotation absent).
+    pub go_transitive_coverage: Option<
+        &'a crate::scan_fs::package_db::golang::graph_resolver::GoTransitiveCoverage,
+    >,
     /// Milestone 072 / T010-T014: when the scan was invoked with
     /// `--bind-to-source <path>` AND the source SBOM was loaded
     /// successfully, this field carries the source SBOM's stable

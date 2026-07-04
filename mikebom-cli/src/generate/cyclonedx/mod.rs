@@ -60,6 +60,10 @@ impl SbomSerializer for CycloneDxJsonSerializer {
                 scan.go_graph_completeness,
                 scan.go_graph_completeness_reason.map(String::from),
             )
+            // Milestone 160 (T034/T035) — propagate the doc-scope
+            // Go-transitive coverage signal from ScanArtifacts into
+            // the builder for the C110/C111 metadata properties.
+            .with_go_transitive_coverage(scan.go_transitive_coverage.cloned())
             // Milestone 072 / T010 — propagate the source-tier SBOM
             // identifier so the metadata builder can emit the
             // standards-native `externalReferences[type:bom]` row.

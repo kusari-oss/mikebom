@@ -77,6 +77,13 @@ Rust workspace (`Cargo.toml` at repo root). Source under `mikebom-cli/src/`, tes
   - Partial matches → mixed rewrite + passthrough with preserved ordering.
   - Multi-alias case (2 different dep names both aliased).
 
+- [ ] T009a [US1] Unit test in `mikebom-cli/src/scan_fs/package_db/npm/alias_mapping.rs` (inline `#[cfg(test)]`) for FR-007 byte-identity guard on `AliasResolution.local_name`. Synthesize 4 edge-shape aliases:
+  - Unscoped-with-hyphens (`string-width-cjs`) — validates hyphen preservation.
+  - Scoped-with-hyphens (`@scope/name-with-hyphens`) — validates scope `@` + hyphen preservation.
+  - Underscores (`some_alias_name`) — npm-legal chars per registry spec.
+  - Mixed-case (`ReactHelmetAsync`) — no lowercase normalization.
+  For each, call `detect_pnpm_alias` (or `detect_yarn_v1_alias`) and assert `result.local_name` is byte-identical to the input string. No URL-encoding, no case normalization, no quote-stripping side effects. (Closes analyze finding A1 — FR-007 coverage.)
+
 **Checkpoint**: At end of Phase 2, `alias_mapping.rs` compiles + all 12+ unit tests pass. No wire-up to parsers yet — that's US1.
 
 ---
@@ -88,6 +95,8 @@ Rust workspace (`Cargo.toml` at repo root). Source under `mikebom-cli/src/`, tes
 **Independent Test**: Scan a synthetic pnpm-lock fixture with an alias entry; assert the emitted CDX has the aliased-canonical component AND the depender's `dependsOn` includes the aliased PURL. Delivers value INDEPENDENTLY of US2 (annotations) and US3 (byte-identity).
 
 - [ ] T010 [US1] Modify `mikebom-cli/src/scan_fs/package_db/npm/pnpm_lock.rs::collect_pnpm_dep_names` (at line ~46) to call `detect_pnpm_alias(local_name, raw_value)` on every dep entry. When an alias is detected: (a) return the ALIASED-NAME as the canonical dep-name (not the local-name); (b) populate a caller-visible `Vec<AliasResolution>` accumulator for downstream consumption. Change the function signature to `fn collect_pnpm_dep_names(entry_tbl, aliases: &mut Vec<AliasResolution>) -> Vec<String>` per data-model.md.
+
+  **T010 caller-safety note (verified 2026-07-04 during /speckit-analyze)**: `grep -rn 'collect_pnpm_dep_names' mikebom-cli/src/` returns 3 hits — all inside `pnpm_lock.rs` (at lines 46 definition, 104 packages loop, 239 snapshots loop). No cross-file callers exist. The signature change is safe; all 3 call sites are updated as part of T010–T012.
 
 - [ ] T011 [US1] Modify `mikebom-cli/src/scan_fs/package_db/npm/pnpm_lock.rs::build_snapshots_lookup` (at line ~85) to also call `detect_pnpm_alias` on each snapshot's inner-dep entries. Accumulate the resulting `Vec<AliasResolution>` into a `PerLockfileAliases` local; return it alongside the snapshots lookup so `parse_pnpm_lock` can consume the alias-map for edge rewriting.
 
@@ -115,6 +124,13 @@ Rust workspace (`Cargo.toml` at repo root). Source under `mikebom-cli/src/`, tes
   - No `PackageDbEntry` has `name = "@cosmograph/cosmos"`.
   - `extra_annotations["mikebom:yarn-alias"] = "@cosmograph/cosmos"`.
   - A different entry (`"hosted-server-mgmt@^0.5.0"`) with `dependencies: {"@cosmograph/cosmos": "^1.1.1"}` gets its `depends` rewritten so it lists `@cosmos.gl/graph` (not `@cosmograph/cosmos`).
+
+- [ ] T015a [US1] Unit test in `mikebom-cli/src/scan_fs/package_db/npm/pnpm_lock.rs` for FR-012 multi-alias emission (analyze finding A2). Synthesize a pnpm-lock v9 where TWO different snapshot entries alias to the same resolved package under DIFFERENT local-names — e.g. workspace peer A depends on `helmet-shim: '@slorber/react-helmet-async@1.3.0'` AND workspace peer B depends on `react-helmet-async: '@slorber/react-helmet-async@1.3.0'`. Parse and assert:
+  - Exactly ONE `PackageDbEntry` emitted for `@slorber/react-helmet-async@1.3.0` (dedup by canonical identity).
+  - The entry carries BOTH local-name values in `extra_annotations` — implementation may use `Value::Array` OR two BTreeMap entries with numeric-suffixed keys. Inspect existing multi-value `extra_annotations` patterns before choosing the shape at impl time (T010–T012). Test asserts BOTH values are recoverable via a single lookup path.
+  - The downstream CDX emission at `builder.rs:1185-1205` produces TWO `properties[]` entries with `name = "mikebom:pnpm-alias"` and distinct `value` fields (verified end-to-end via T026 integration test on a similarly-shaped synthesized fixture).
+
+  **Note**: `extra_annotations: BTreeMap<String, Value>` is single-value per key. This test may surface a data-model constraint that needs a Phase-3 resolution — using `Value::Array` (comma-joined-decoded) OR a per-emitter loop over an array-shaped value. Either resolution is a T010–T012 impl decision documented in the checklist notes at close.
 
 - [ ] T016 [US1] Unit test — pnpm no-alias regression guard. Synthesize a pnpm-lock v9 with ZERO alias entries (just plain `foo@1.0.0: bar@2.0.0` where both are canonical). Assert:
   - No `extra_annotations["mikebom:pnpm-alias"]` on any entry.
@@ -156,14 +172,11 @@ Rust workspace (`Cargo.toml` at repo root). Source under `mikebom-cli/src/`, tes
 
 - [ ] T022 [US2] Add C106 + C107 rows to `docs/reference/sbom-format-mapping.md` after milestone-158's C105 row (insert before the `## Section D — Evidence` boundary). Follow the milestone-158 row format: `| C10X | \`mikebom:XXX-alias\` | <description> | Annotation on Package with MikebomAnnotationCommentV1 envelope | Annotation element with same envelope | **KEEP-NO-NATIVE**. <rejection audit>. |`. Reference the milestone-158 C104/C105 rows as the shape template.
 
-- [ ] T023 [US2] Verify emission wire-up. The existing CDX component-emission code at `mikebom-cli/src/generate/cyclonedx/components.rs` reads `ResolvedComponent.extra_annotations` and emits each entry as a `properties[]` line (established milestone-127+ pattern). Trace the code path and confirm that:
-  - `mikebom:pnpm-alias` and `mikebom:yarn-alias` entries in `extra_annotations` are picked up automatically.
-  - The emitted value is a bare string (no envelope JSON) per FR-006 / Q1.
-  - No new emission code needed IF the existing pattern handles bare-string values. If NOT (some existing annotations wrap in an envelope), add a special-case branch that treats `mikebom:pnpm-alias` / `mikebom:yarn-alias` as bare-string annotations.
+- [ ] T023 [US2] CDX component-scope emission wire-up: **verified during /speckit-analyze 2026-07-04** that `builder.rs:1185-1205` iterates `component.extra_annotations` and emits per-key `properties[]` entries with the value pass-through pattern `Value::String(s) => s.clone()` at line 1198 — bare-string values are emitted directly, no envelope wrap. Consequence: `mikebom:pnpm-alias` and `mikebom:yarn-alias` entries flow through the existing loop and land in the emitted CDX `properties[]` with the correct raw-string shape. No new emission code required for CDX. Task action: read-only verification via `grep -A25 'for (key, value) in &component.extra_annotations' mikebom-cli/src/generate/cyclonedx/builder.rs` and confirm the pass-through pattern still lives there (regression-detector for a future refactor).
 
-- [ ] T024 [US2] Verify SPDX 2.3 emission wire-up at `mikebom-cli/src/generate/spdx/annotations.rs`. Same trace: the milestone-127+ pattern reads `extra_annotations` and emits `Annotation` with `comment = "mikebom:pnpm-alias=<value>"` per contracts/annotation-schema.md. If the existing code wraps bare-string values in an envelope, add a special-case branch.
+- [ ] T024 [US2] SPDX 2.3 per-package emission wire-up at `mikebom-cli/src/generate/spdx/annotations.rs`: verify the milestone-127+ pattern iterates `extra_annotations` and emits per-key `Annotation` with `comment = "<key>=<value>"`. This is the same established shape as the milestone-158 `mikebom:demoted-from-main-module` annotation. Read-only verification task; no code changes needed.
 
-- [ ] T025 [US2] Verify SPDX 3 emission wire-up at `mikebom-cli/src/generate/spdx/v3_annotations.rs`. Same trace: milestone-127+ pattern produces per-component `Annotation` elements with `statement = "mikebom:pnpm-alias=<value>"`.
+- [ ] T025 [US2] SPDX 3 per-package emission wire-up at `mikebom-cli/src/generate/spdx/v3_annotations.rs`: verify the milestone-127+ pattern iterates `extra_annotations` and emits per-key `Annotation` elements with `statement = "<key>=<value>"`. Read-only verification task; no code changes needed.
 
 - [ ] T026 [US2] SC-008 integration test at `mikebom-cli/tests/npm_alias_resolution.rs`. Synthesize a mixed pnpm+yarn workspace via `tempfile::tempdir()` + `std::fs::write` (mirrors milestone-157/158 pattern):
   ```
@@ -200,6 +213,14 @@ Rust workspace (`Cargo.toml` at repo root). Source under `mikebom-cli/src/`, tes
 ## Phase 6: Polish & Cross-Cutting Concerns
 
 **Purpose**: Empirical verification, CHANGELOG, pre-PR gate, and PR closure.
+
+- [ ] T028a SC-004 universal-presence check on test-podman-desktop (analyze finding A3). Parse the emitted CDX and enumerate all alias-resolved components via `jq`. Assert the COUNT of `mikebom:pnpm-alias` values equals the milestone-157-audit-measured count of 6:
+  ```bash
+  ACTUAL=$(jq '[.components[] | select(.properties[]? | .name == "mikebom:pnpm-alias") | .properties[] | select(.name == "mikebom:pnpm-alias") | .value] | length' /tmp/159-test-podman-desktop.cdx.json)
+  EXPECTED=6
+  test "$ACTUAL" -eq "$EXPECTED" || echo "SC-004 mismatch: expected $EXPECTED alias annotations, got $ACTUAL"
+  ```
+  If ACTUAL differs from EXPECTED, log the actual count and revise SC-004's implicit-expected number inline per milestone-156/157/158 empirical-revision pattern.
 
 - [ ] T028 SC-001 empirical: scan `test-podman-desktop` with the built binary. For the 4 real alias entries, verify via `jq -e` (per quickstart.md Scenario 1) that:
   - `@docusaurus/core@3.10.1` dependsOn includes `@slorber/react-helmet-async@1.3.0`.
@@ -282,15 +303,15 @@ Every task above has:
 - ✅ `[US1]` / `[US2]` / `[US3]` labels on the correct story-phase tasks; no story label on Setup / Foundational / Polish tasks.
 - ✅ Exact file paths in every description (either an existing file to modify OR a new file to create).
 
-36 tasks total. 8 tasks parallelizable ([P] marker or in independent files per phase). 9 SC-001 through SC-011 verification steps embedded in Polish.
+39 tasks total (post-analyze remediation). 8 tasks parallelizable ([P] marker or in independent files per phase). 10 SC-001 through SC-011 verification steps embedded in Polish (T028a adds the SC-004 universal-presence check).
 
-## Task counts per phase
+## Task counts per phase (post-analyze remediation 2026-07-04)
 
 - Phase 1 (Setup): 3 tasks (T001–T003).
-- Phase 2 (Foundational): 6 tasks (T004–T009).
-- Phase 3 (US1, P1): 8 tasks (T010–T017).
-- Phase 4 (US2, P2): 9 tasks (T018–T026).
+- Phase 2 (Foundational): 7 tasks (T004–T009 + T009a — closes analyze A1 by adding FR-007 byte-identity test).
+- Phase 3 (US1, P1): 9 tasks (T010–T017 + T015a — closes analyze A2 by adding FR-012 multi-alias test).
+- Phase 4 (US2, P2): 9 tasks (T018–T026 — T023/T024/T025 reworded per A5; no new tasks).
 - Phase 5 (US3, P3): 1 task (T027).
-- Phase 6 (Polish): 9 tasks (T028–T036).
+- Phase 6 (Polish): 10 tasks (T028–T036 + T028a — closes analyze A3 by adding SC-004 universal-presence check).
 
-**Total**: 36 tasks.
+**Total**: 39 tasks (net +3 from A1/A2/A3 additions).

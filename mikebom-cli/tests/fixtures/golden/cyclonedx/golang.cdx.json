@@ -49,6 +49,10 @@
           "value": "source"
         },
         {
+          "name": "mikebom:go-transitive-source",
+          "value": "go-sum-fallback"
+        },
+        {
           "name": "mikebom:resolver-step",
           "value": "go-sum-fallback"
         }
@@ -106,6 +110,10 @@
         {
           "name": "mikebom:sbom-tier",
           "value": "source"
+        },
+        {
+          "name": "mikebom:go-transitive-source",
+          "value": "go-sum-fallback"
         },
         {
           "name": "mikebom:resolver-step",
@@ -167,6 +175,10 @@
           "value": "source"
         },
         {
+          "name": "mikebom:go-transitive-source",
+          "value": "go-sum-fallback"
+        },
+        {
           "name": "mikebom:resolver-step",
           "value": "go-sum-fallback"
         }
@@ -224,6 +236,10 @@
         {
           "name": "mikebom:sbom-tier",
           "value": "source"
+        },
+        {
+          "name": "mikebom:go-transitive-source",
+          "value": "go-sum-fallback"
         },
         {
           "name": "mikebom:resolver-step",
@@ -285,6 +301,10 @@
           "value": "source"
         },
         {
+          "name": "mikebom:go-transitive-source",
+          "value": "go-sum-fallback"
+        },
+        {
           "name": "mikebom:resolver-step",
           "value": "go-sum-fallback"
         }
@@ -342,6 +362,10 @@
         {
           "name": "mikebom:sbom-tier",
           "value": "source"
+        },
+        {
+          "name": "mikebom:go-transitive-source",
+          "value": "go-sum-fallback"
         },
         {
           "name": "mikebom:resolver-step",
@@ -403,6 +427,10 @@
           "value": "source"
         },
         {
+          "name": "mikebom:go-transitive-source",
+          "value": "go-sum-fallback"
+        },
+        {
           "name": "mikebom:resolver-step",
           "value": "go-sum-fallback"
         }
@@ -462,6 +490,10 @@
           "value": "source"
         },
         {
+          "name": "mikebom:go-transitive-source",
+          "value": "go-sum-fallback"
+        },
+        {
           "name": "mikebom:resolver-step",
           "value": "go-sum-fallback"
         }
@@ -513,6 +545,10 @@
         {
           "name": "mikebom:sbom-tier",
           "value": "source"
+        },
+        {
+          "name": "mikebom:go-transitive-source",
+          "value": "go-sum-fallback"
         },
         {
           "name": "mikebom:resolver-step",
@@ -568,6 +604,10 @@
           "value": "source"
         },
         {
+          "name": "mikebom:go-transitive-source",
+          "value": "go-sum-fallback"
+        },
+        {
           "name": "mikebom:resolver-step",
           "value": "go-sum-fallback"
         }
@@ -619,6 +659,10 @@
         {
           "name": "mikebom:sbom-tier",
           "value": "source"
+        },
+        {
+          "name": "mikebom:go-transitive-source",
+          "value": "go-sum-fallback"
         },
         {
           "name": "mikebom:resolver-step",
@@ -887,6 +931,14 @@
       {
         "name": "mikebom:graph-completeness-reason",
         "value": "orphaned-components-detected: 1 component(s) not reachable from root"
+      },
+      {
+        "name": "mikebom:go-transitive-coverage",
+        "value": "unknown"
+      },
+      {
+        "name": "mikebom:go-transitive-coverage-reason",
+        "value": "offline-mode: transitive edges from proxy fetches unavailable"
       }
     ],
     "supplier": {

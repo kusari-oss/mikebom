@@ -1974,6 +1974,7 @@ pub async fn execute(
         os_release_missing_fields,
         go_graph_completeness,
         go_graph_completeness_reason,
+        go_transitive_coverage,
         scan_target_coord,
         divergence_records,
     } = scan_fs::scan_path(
@@ -2584,6 +2585,10 @@ pub async fn execute(
         // document-level annotations[] entries.
         go_graph_completeness,
         go_graph_completeness_reason: go_graph_completeness_reason.as_deref(),
+        // Milestone 160 (T034/T035): doc-scope Go-transitive coverage
+        // signal for the C110/C111 annotations. Distinct from
+        // graph-completeness per research.md R1.
+        go_transitive_coverage: go_transitive_coverage.as_ref(),
         // Milestone 072 / T010-T014: when --bind-to-source was set
         // AND the scan target is image-tier, expose the source-doc
         // identifier so each format's metadata builder can emit the

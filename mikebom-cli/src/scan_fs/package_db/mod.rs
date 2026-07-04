@@ -332,6 +332,20 @@ pub struct ScanDiagnostics {
     /// joined with `,` when multiple classes contributed.
     pub go_graph_completeness_reason: Option<String>,
 
+    /// Milestone 160 (T009): document-scope Go-transitive coverage
+    /// signal produced by the milestone-055/091 ladder resolver via
+    /// `compute_coverage()`. Distinct from `go_graph_completeness`
+    /// (milestone 061) per research.md R1 — C104 signals whether we
+    /// built a top-level component graph at all; C110 signals what
+    /// fraction of Go modules had per-module transitive requires
+    /// resolved via the ladder. Q1 reason-code-driven: `Unknown` when
+    /// we couldn't measure (offline / GOPROXY off / go mod graph
+    /// degraded); `Partial` when ≥1 module fell through to unresolved;
+    /// `Complete` when every module resolved via steps 1–4. `None`
+    /// ⇒ no Go scan happened (C110 annotation absent in output).
+    pub go_transitive_coverage:
+        Option<golang::graph_resolver::GoTransitiveCoverage>,
+
     /// Milestone 107 FR-005a: scan-context ambiguities detected by the
     /// Yocto sysroot-vs-rootfs heuristic. Each entry is a free-form
     /// reason string explaining the conflict (e.g. "env-script present
@@ -1416,6 +1430,11 @@ pub fn read_all(
             .collect();
         diagnostics.go_graph_completeness_reason = Some(prefixed.join(","));
     }
+    // Milestone 160 (T010): propagate the ecosystem-wide
+    // `GoTransitiveCoverage` signal into the doc-level ScanDiagnostics,
+    // which flows through ScanResult into the format emitters for the
+    // C110/C111 doc-scope annotations.
+    diagnostics.go_transitive_coverage = go_signals.go_transitive_coverage;
     out.extend(rpm::read(rootfs, include_dev, distro_version.as_deref()));
     // v5 Phase B: rpm-owned file claim-skip — mirrors the dpkg / apk /
     // pip pattern. Real RHEL / Fedora rpmdbs store file paths inside

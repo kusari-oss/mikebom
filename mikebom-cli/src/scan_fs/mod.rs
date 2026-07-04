@@ -97,6 +97,15 @@ pub struct ScanResult {
     /// summarizing why `go_graph_completeness == Partial`. Empty when
     /// completeness is `Complete` or `None`.
     pub go_graph_completeness_reason: Option<String>,
+    /// Milestone 160 (T009): document-scope Go-transitive coverage signal
+    /// produced by `compute_coverage()` in the milestone-055/091 ladder
+    /// resolver. Distinct from `go_graph_completeness` per research.md R1
+    /// — C104 signals "did we build a top-level component graph at all?"
+    /// while this signals "what fraction of Go modules had per-module
+    /// transitive requires resolved via the ladder?". `None` iff no Go
+    /// modules were scanned (C110 annotation absent in output).
+    pub go_transitive_coverage:
+        Option<crate::scan_fs::package_db::golang::graph_resolver::GoTransitiveCoverage>,
     /// M3 — Maven scan-subject coord identified during the JAR walk,
     /// promoted from the `PackageDbEntry` layer to drive CDX
     /// `metadata.component`. `None` when no Maven fat-jar matched
@@ -260,6 +269,12 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
     let mut go_graph_completeness:
         Option<package_db::GraphCompleteness> = None;
     let mut go_graph_completeness_reason: Option<String> = None;
+    // Milestone 160 (T010): doc-scope go-transitive coverage signal from
+    // `compute_coverage()`. Distinct from `go_graph_completeness` per
+    // research.md R1. Carried through ScanResult into the format
+    // emitters for the C110/C111 doc-scope annotations.
+    let mut go_transitive_coverage:
+        Option<package_db::golang::graph_resolver::GoTransitiveCoverage> = None;
     let mut scan_target_coord: Option<package_db::maven::ScanTargetCoord> = None;
     // Milestone 134 — divergent-PURL collision records collected by
     // per-ecosystem dedup. Routed into ScanResult.divergence_records
@@ -293,6 +308,7 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
         os_release_missing_fields = scan_result.diagnostics.os_release_missing_fields.clone();
         go_graph_completeness = scan_result.diagnostics.go_graph_completeness;
         go_graph_completeness_reason = scan_result.diagnostics.go_graph_completeness_reason.clone();
+        go_transitive_coverage = scan_result.diagnostics.go_transitive_coverage.clone();
         scan_target_coord = scan_result.scan_target_coord.clone();
         divergence_records = scan_result.diagnostics.divergence_records.clone();
         let mut db_entries = scan_result.entries;
@@ -795,6 +811,7 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
         os_release_missing_fields,
         go_graph_completeness,
         go_graph_completeness_reason,
+        go_transitive_coverage,
         scan_target_coord,
         divergence_records,
     })

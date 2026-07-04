@@ -58,6 +58,11 @@ pub struct CycloneDxBuilder {
     /// Milestone 061 — comma-separated `<ecosystem>:<reason-class>`
     /// list. `None`/empty when completeness is `Complete` or `None`.
     go_graph_completeness_reason: Option<String>,
+    /// Milestone 160 (T034/T035): doc-scope Go-transitive coverage
+    /// signal. Distinct from `go_graph_completeness` per research.md R1.
+    /// `None` ⇒ no Go scan (annotation absent).
+    go_transitive_coverage:
+        Option<crate::scan_fs::package_db::golang::graph_resolver::GoTransitiveCoverage>,
     /// Milestone 072 / T010: source-tier SBOM identity for the
     /// document-level cross-document reference
     /// (`metadata.component.externalReferences[type:bom]`). `None`
@@ -130,6 +135,7 @@ impl CycloneDxBuilder {
             os_release_missing_fields: Vec::new(),
             go_graph_completeness: None,
             go_graph_completeness_reason: None,
+            go_transitive_coverage: None,
             source_document_binding: None,
             identifiers: Vec::new(),
             component_identifiers: Vec::new(),
@@ -288,6 +294,18 @@ impl CycloneDxBuilder {
     ) -> Self {
         self.go_graph_completeness = completeness;
         self.go_graph_completeness_reason = reason;
+        self
+    }
+
+    /// Milestone 160 (T034/T035) — record the doc-scope Go-transitive
+    /// coverage signal per FR-004/FR-005. Drives the C110/C111
+    /// document-scope annotations. `None` ⇒ no Go scan happened
+    /// (annotations absent per SC-003).
+    pub fn with_go_transitive_coverage(
+        mut self,
+        coverage: Option<crate::scan_fs::package_db::golang::graph_resolver::GoTransitiveCoverage>,
+    ) -> Self {
+        self.go_transitive_coverage = coverage;
         self
     }
 
@@ -471,6 +489,7 @@ impl CycloneDxBuilder {
             self.file_inventory_mode.as_deref(),
             self.collisions_summary.as_ref(),
             &graph_completeness,
+            self.go_transitive_coverage.as_ref(),
         );
         // Milestone 076 — track per-component identifier matches so
         // we can emit a warn for any selector that matched zero

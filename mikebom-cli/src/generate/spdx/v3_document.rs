@@ -98,6 +98,7 @@ pub fn build_document(
             scope_mode: scan.scope_mode,
             go_graph_completeness: scan.go_graph_completeness,
             go_graph_completeness_reason: scan.go_graph_completeness_reason,
+            go_transitive_coverage: scan.go_transitive_coverage,
             source_document_binding: scan.source_document_binding,
             identifiers: scan.identifiers,
             component_identifiers: scan.component_identifiers,

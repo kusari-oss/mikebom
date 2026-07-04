@@ -1395,6 +1395,16 @@ pub struct GoScanSignals {
     /// `graph_completeness_reasons`).
     pub graph_completeness:
         Option<crate::scan_fs::package_db::GraphCompleteness>,
+    /// Milestone 160 (T010): document-scope Go-transitive coverage signal
+    /// aggregated across every workspace's resolver run. Reason-code
+    /// precedence per Q1 caution-first: if ANY workspace produced
+    /// `Unknown`, the aggregate is `Unknown`; else if ANY produced
+    /// `Partial`, the aggregate is `Partial`; else `Complete`. `None` iff
+    /// no Go workspace was scanned. Consumed by the CLI to emit the
+    /// C110/C111 doc-scope annotations.
+    pub go_transitive_coverage: Option<
+        crate::scan_fs::package_db::golang::graph_resolver::GoTransitiveCoverage,
+    >,
     /// Sorted-deduplicated list of `<reason-class>` tokens contributing
     /// to the `Partial` completeness state. Empty when `Complete` /
     /// `None`. Ecosystem prefix (`go:`) added by the upstream
@@ -1414,6 +1424,74 @@ pub struct GoScanSignals {
     ///   classifications gated on per-module fetch-error data being
     ///   threaded through from the milestone-055 resolver.
     pub graph_completeness_reasons: Vec<String>,
+}
+
+/// Milestone 160 (T010): Q1 caution-first precedence for aggregating
+/// per-workspace `GoTransitiveCoverage` values into an ecosystem-wide
+/// signal. `Unknown > Partial > Complete` — any workspace's Unknown
+/// drags the aggregate to Unknown; any workspace's Partial drags to
+/// Partial; all Complete yields Complete. Reason strings are joined
+/// with `; ` when both sides carry them, per the FR-005 grammar.
+fn merge_coverage(
+    existing: crate::scan_fs::package_db::golang::graph_resolver::GoTransitiveCoverage,
+    new: crate::scan_fs::package_db::golang::graph_resolver::GoTransitiveCoverage,
+) -> crate::scan_fs::package_db::golang::graph_resolver::GoTransitiveCoverage {
+    use crate::scan_fs::package_db::golang::graph_resolver::GoTransitiveCoverage as C;
+    match (existing, new) {
+        (C::Unknown(a), C::Unknown(b)) => C::Unknown(join_reasons(&a, &b)),
+        (C::Unknown(r), _) | (_, C::Unknown(r)) => C::Unknown(r),
+        (C::Partial(a), C::Partial(b)) => C::Partial(join_reasons(&a, &b)),
+        (C::Partial(r), _) | (_, C::Partial(r)) => C::Partial(r),
+        (C::Complete, C::Complete) => C::Complete,
+    }
+}
+
+fn join_reasons(a: &str, b: &str) -> String {
+    if a == b {
+        a.to_string()
+    } else {
+        format!("{a}; {b}")
+    }
+}
+
+/// Milestone 160 (T022 + T023): stamp per-Go-component transitive-edge
+/// provenance annotations onto a `PackageDbEntry` from the graph
+/// resolver's output. Universal C108 emission per Q2 (every Go
+/// component carries `mikebom:go-transitive-source`); conditional C109
+/// emission (`mikebom:go-transitive-unresolved-reason`) iff C108's
+/// value is `"unresolved"`. No-op for non-Go entries (PURL does not
+/// start with `pkg:golang/`) and for Go entries the graph didn't cover
+/// (fixture-only edge case where an entry survives dedup without a
+/// resolver record).
+fn stamp_go_transitive_annotations(
+    entry: &mut PackageDbEntry,
+    graph_map:
+        &crate::scan_fs::package_db::golang::graph_resolver::ModuleGraphMap,
+) {
+    if !entry.purl.as_str().starts_with("pkg:golang/") {
+        return;
+    }
+    let id = crate::scan_fs::package_db::golang::module_id::ModuleId::new(
+        entry.name.clone(),
+        entry.version.clone(),
+    );
+    let Some(graph_entry) = graph_map.entry(&id) else {
+        return;
+    };
+    entry.extra_annotations.insert(
+        "mikebom:go-transitive-source".to_string(),
+        serde_json::Value::String(graph_entry.source.as_wire_str().to_string()),
+    );
+    if graph_entry.source
+        == crate::scan_fs::package_db::golang::graph_resolver::ResolutionStep::None
+    {
+        if let Some(reason_class) = graph_map.unresolved_reason(&id) {
+            entry.extra_annotations.insert(
+                "mikebom:go-transitive-unresolved-reason".to_string(),
+                serde_json::Value::String(reason_class.as_wire_str().to_string()),
+            );
+        }
+    }
 }
 
 pub fn read(
@@ -1530,6 +1608,17 @@ pub fn read(
             }
         };
 
+        // Milestone 160 (T010): aggregate this workspace's coverage into
+        // the ecosystem-wide signal per Q1 caution-first precedence
+        // (Unknown > Partial > Complete).
+        if let Some(cov) = graph_map.coverage().cloned() {
+            signals.go_transitive_coverage =
+                Some(match (signals.go_transitive_coverage.take(), cov) {
+                    (None, new) => new,
+                    (Some(existing), new) => merge_coverage(existing, new),
+                });
+        }
+
         // Milestone 091: collect set of paths whose entries were
         // claimed via step 5 so build_entries_from_go_module_with_lookup
         // can attach the per-component provenance discriminator.
@@ -1592,7 +1681,7 @@ pub fn read(
             .map(|e| e.name.clone())
             .collect();
         let mut filtered_count = 0usize;
-        for entry in entries {
+        for mut entry in entries {
             if entry.purl.as_str().starts_with("pkg:golang/")
                 && entry.version.contains("+incompatible")
                 && entry_paths.iter().any(|p| is_vn_sibling_of(p, &entry.name))
@@ -1604,6 +1693,11 @@ pub fn read(
                 );
                 continue;
             }
+            // Milestone 160 (T022 + T023): per-component transitive-edge
+            // provenance annotations. C108 is universal on every Go
+            // component (Q2); C109 is conditional iff C108 == "unresolved".
+            stamp_go_transitive_annotations(&mut entry, &graph_map);
+
             let purl_key = entry.purl.as_str().to_string();
             if seen_purls.insert(purl_key) {
                 out.push(entry);
@@ -3736,5 +3830,187 @@ func TestX(t *testing.T) { _ = lib.X() }"#,
         let entry = build_main_module_entry(&doc, dir.path(), "/p/go.mod")
             .expect("entry built");
         assert!(entry.licenses.is_empty());
+    }
+
+    // ================================================================
+    // Milestone 160 (T032b/c/d): per-component annotation emission
+    // ================================================================
+
+    fn make_go_entry_for_stamp(name: &str, version: &str) -> PackageDbEntry {
+        PackageDbEntry {
+            build_inclusion: None,
+            purl: mikebom_common::types::purl::Purl::new(&format!(
+                "pkg:golang/{name}@{version}"
+            ))
+            .expect("valid purl"),
+            name: name.to_string(),
+            version: version.to_string(),
+            arch: None,
+            source_path: String::new(),
+            depends: Vec::new(),
+            maintainer: None,
+            licenses: Vec::new(),
+            lifecycle_scope: None,
+            requirement_range: None,
+            source_type: None,
+            buildinfo_status: None,
+            evidence_kind: None,
+            binary_class: None,
+            binary_stripped: None,
+            linkage_kind: None,
+            detected_go: None,
+            confidence: None,
+            binary_packed: None,
+            raw_version: None,
+            parent_purl: None,
+            npm_role: None,
+            co_owned_by: None,
+            hashes: Vec::new(),
+            sbom_tier: Some("source".to_string()),
+            shade_relocation: None,
+            extra_annotations: Default::default(),
+            binary_role: None,
+        }
+    }
+
+    fn synth_module_graph_with_entry(
+        name: &str,
+        version: &str,
+        source: crate::scan_fs::package_db::golang::graph_resolver::ResolutionStep,
+    ) -> crate::scan_fs::package_db::golang::graph_resolver::ModuleGraphMap {
+        use crate::scan_fs::package_db::golang::graph_resolver::{
+            ModuleGraphEntry, ModuleGraphMap,
+        };
+        use crate::scan_fs::package_db::golang::module_id::ModuleId;
+        let mut map = ModuleGraphMap::new();
+        let id = ModuleId::new(name.to_string(), version.to_string());
+        map.insert(ModuleGraphEntry {
+            module: id,
+            requires: Vec::new(),
+            source,
+        });
+        map
+    }
+
+    #[test]
+    fn t032b_stamp_emits_go_mod_graph_source() {
+        // SC-008 (h): C108 value "go-mod-graph" on step-1-resolved module.
+        use crate::scan_fs::package_db::golang::graph_resolver::ResolutionStep;
+        let mut entry = make_go_entry_for_stamp("example.com/foo", "v1.2.3");
+        let map = synth_module_graph_with_entry(
+            "example.com/foo",
+            "v1.2.3",
+            ResolutionStep::GoModGraph,
+        );
+        stamp_go_transitive_annotations(&mut entry, &map);
+        assert_eq!(
+            entry.extra_annotations.get("mikebom:go-transitive-source"),
+            Some(&serde_json::Value::String("go-mod-graph".to_string()))
+        );
+        // C109 must NOT be present when C108 != "unresolved".
+        assert!(!entry
+            .extra_annotations
+            .contains_key("mikebom:go-transitive-unresolved-reason"));
+    }
+
+    #[test]
+    fn t032c_stamp_emits_proxy_fetch_source() {
+        // SC-008 (i): C108 value "proxy-fetch" on step-3-resolved module.
+        use crate::scan_fs::package_db::golang::graph_resolver::ResolutionStep;
+        let mut entry = make_go_entry_for_stamp("example.com/bar", "v0.1.0");
+        let map = synth_module_graph_with_entry(
+            "example.com/bar",
+            "v0.1.0",
+            ResolutionStep::Proxy,
+        );
+        stamp_go_transitive_annotations(&mut entry, &map);
+        assert_eq!(
+            entry.extra_annotations.get("mikebom:go-transitive-source"),
+            Some(&serde_json::Value::String("proxy-fetch".to_string()))
+        );
+        assert!(!entry
+            .extra_annotations
+            .contains_key("mikebom:go-transitive-unresolved-reason"));
+    }
+
+    #[test]
+    fn t032d_stamp_emits_unresolved_with_reason() {
+        // SC-008 (j): C108 == "unresolved" AND C109 present with class.
+        use crate::scan_fs::package_db::golang::graph_resolver::{
+            ModuleGraphEntry, ModuleGraphMap, ResolutionStep,
+            UnresolvedReasonClass,
+        };
+        use crate::scan_fs::package_db::golang::module_id::ModuleId;
+        let mut entry = make_go_entry_for_stamp("example.com/gone", "v9.9.9");
+        let mut map = ModuleGraphMap::new();
+        let id = ModuleId::new("example.com/gone".to_string(), "v9.9.9".to_string());
+        map.insert(ModuleGraphEntry {
+            module: id.clone(),
+            requires: Vec::new(),
+            source: ResolutionStep::None,
+        });
+        map.record_unresolved_reason(id, UnresolvedReasonClass::ProxyFetchNotFound);
+        stamp_go_transitive_annotations(&mut entry, &map);
+        assert_eq!(
+            entry.extra_annotations.get("mikebom:go-transitive-source"),
+            Some(&serde_json::Value::String("unresolved".to_string()))
+        );
+        assert_eq!(
+            entry
+                .extra_annotations
+                .get("mikebom:go-transitive-unresolved-reason"),
+            Some(&serde_json::Value::String("proxy-fetch-not-found".to_string()))
+        );
+    }
+
+    #[test]
+    fn stamp_no_op_on_non_go_component() {
+        // SC-003 dual-side byte-identity guard: no annotation emission
+        // on non-Go entries.
+        let mut entry = PackageDbEntry {
+            build_inclusion: None,
+            purl: mikebom_common::types::purl::Purl::new(
+                "pkg:npm/left-pad@1.3.0",
+            )
+            .expect("valid purl"),
+            name: "left-pad".to_string(),
+            version: "1.3.0".to_string(),
+            arch: None,
+            source_path: String::new(),
+            depends: Vec::new(),
+            maintainer: None,
+            licenses: Vec::new(),
+            lifecycle_scope: None,
+            requirement_range: None,
+            source_type: None,
+            buildinfo_status: None,
+            evidence_kind: None,
+            binary_class: None,
+            binary_stripped: None,
+            linkage_kind: None,
+            detected_go: None,
+            confidence: None,
+            binary_packed: None,
+            raw_version: None,
+            parent_purl: None,
+            npm_role: None,
+            co_owned_by: None,
+            hashes: Vec::new(),
+            sbom_tier: None,
+            shade_relocation: None,
+            extra_annotations: Default::default(),
+            binary_role: None,
+        };
+        // Even with a matching graph map (impossible in prod, but
+        // exercising the purl-check gate), no emission occurs.
+        let map = synth_module_graph_with_entry(
+            "left-pad",
+            "1.3.0",
+            crate::scan_fs::package_db::golang::graph_resolver::ResolutionStep::Proxy,
+        );
+        stamp_go_transitive_annotations(&mut entry, &map);
+        assert!(!entry
+            .extra_annotations
+            .contains_key("mikebom:go-transitive-source"));
     }
 }

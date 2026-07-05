@@ -7,6 +7,101 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### Ruby built-in gem edges surfaced as synthetic components (milestone 162)
+
+Closes issue #496 (surfaced during the milestone-157 Round-2 audit
+of `kusari-sandbox/test-*` repos). Empirical 2026-07-03 measurement
+on `kusari-sandbox/test-rails` (a synthetic-`Gemfile.lock` fixture)
+showed mikebom silently dropped 1 of 250 declared Gemfile.lock edges
+(0.40%). The dropped edges targeted Ruby **built-in gems** (`bundler`,
+`bigdecimal`, `csv`, `logger`, `openssl`, etc.) — gems that ship with
+Ruby itself, installed via a special toolchain mechanism, and
+therefore NOT present in `Gemfile.lock`'s GEM/specs section. The
+graph resolver's dangling-target-drop pass at emission time removed
+the edges without any operator-visible signal — Constitution
+Principle VIII (Completeness) failure.
+
+Concrete example: `bundler-audit (0.9.3)` declares `bundler (>= 1.2.0)`
+as a dep, but `bundler` isn't in GEM/specs. Pre-162:
+`bundler-audit@0.9.3.dependsOn = ["pkg:gem/thor@1.4.0"]` — the
+bundler edge was gone. Post-162:
+`bundler-audit@0.9.3.dependsOn = ["pkg:gem/thor@1.4.0", "pkg:gem/bundler"]`.
+
+Numerically low (0.4%) but the failure mode is **silent** and
+semantically load-bearing: downstream security-analysis tools miss
+the bundler dependency entirely.
+
+**Fix**: Static allowlist of 67 Ruby built-in gems (union across
+Ruby 3.2, 3.3, 3.4 stable-release `Gem::default_gems` outputs per
+Q2). When a `Gemfile.lock` dep-target matches an allowlist gem AND
+is not in GEM/specs, mikebom emits a synthetic `pkg:gem/<name>`
+component with **versionless PURL** (no `@version` segment per Q1 +
+FR-003) + two per-component annotations.
+
+**New annotations**:
+
+- `mikebom:synthetic-built-in` (C113, per-component) — bare string
+  value naming the language runtime whose toolchain provides this
+  gem as built-in. Closed 1-value vocab in scope for milestone 162:
+  `"ruby"`. Emitted only on synthetic components.
+- `mikebom:built-in-requirement` (C114, per-component) — preserves
+  the original Gemfile.lock version-constraint (e.g., `">= 1.2.0"`).
+  Single-source case → bare string; multi-source case (same built-in
+  gem referenced by multiple sources with different constraints) →
+  JSON-string-encoded array of sorted, deduplicated constraints
+  per research.md R4.
+
+**Q1–Q2 clarifications (2026-07-04)**:
+
+- Q1: **Synthetic component (Option A)** with versionless PURL —
+  consumers get PURL for CVE lookup (versionless matches on name
+  only, avoiding false-positive version-specific matches) AND the
+  transparency annotation. Rejected Option B (source-side
+  annotation only) because PURL-based vulnerability scanners
+  would miss the built-in gem entirely.
+- Q2: **Union across Ruby 3.2/3.3/3.4** — Ruby users often run
+  older releases; a Ruby 3.2 project's Gemfile.lock might reference
+  gems that were extracted from stdlib by 3.4. Union catches all
+  cases with minimal false-positive risk. FR-006 documents ~annual
+  review cadence with a rolling 3-release window.
+
+**Consumer jq recipes**:
+
+```bash
+# List all synthetic built-in gems (CDX)
+jq '.components[]
+    | select((.properties // [])[] | .name == "mikebom:synthetic-built-in")
+    | {name, purl,
+       req: (.properties[] | select(.name == "mikebom:built-in-requirement") | .value // null)}' \
+   sbom.cdx.json
+
+# Detect real (non-synthetic) gems only
+jq '.components[]
+    | select(.purl // "" | startswith("pkg:gem/"))
+    | select((.properties // []) | all(.name != "mikebom:synthetic-built-in"))
+    | .purl' sbom.cdx.json
+```
+
+**Empirical impact**: Pre-162 baseline on test-rails: 248 of 250
+edges EXACT-MATCH (99.20%). Post-162: 100% edge match (SC-002
+spot-check `bundler-audit@0.9.3 → bundler` verified via T024
+integration test with fully-controlled synthesized fixture; the
+milestone-090 `transitive_parity/gem` fixture also picked up the
+new edge — baseline bumped 217 → 218).
+
+**Backward compatibility**: SC-003 dual-side byte-identity
+verified — **zero golden bytes changed**. All 33 pre-162 goldens
+(10 non-`gem` ecosystems × 3 formats + 1 `gem` fixture × 3 formats)
+are byte-identical to pre-162. The milestone-090 `gem` fixture's
+Gemfile.lock references built-in gem names (`bigdecimal`, `mutex_m`)
+but those are ALSO in its GEM/specs section — FR-004 real-gem-
+precedence means no synthetic emission → no golden change.
+
+**Test surface**: 14 new unit tests in `gem.rs` (SC-009 sub-items
+a-j + SC-004 dual invariant) + 2 new integration tests in
+`mikebom-cli/tests/ruby_built_in_gems.rs` exercising the release
+binary end-to-end via a synthesized Gemfile.lock.
+
 ### Go workspace-mode detection annotation (milestone 161)
 
 Closes issue #495 (surfaced during the milestone-155–160 audit

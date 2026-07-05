@@ -5,6 +5,13 @@
 **Status**: Draft
 **Input**: User description: "496" (implement fix for [issue #496](https://github.com/kusari-oss/mikebom/issues/496))
 
+## Clarifications
+
+### Session 2026-07-04
+
+- Q: Emit synthetic component (Option A) OR edge-source annotation (Option B)? → A: Synthetic component (`pkg:gem/bundler` versionless PURL + `mikebom:synthetic-built-in = "ruby"` annotation + `mikebom:built-in-requirement` annotation + real `dependsOn` edge). Consumers get both the PURL (for CVE lookup — versionless PURL matches on name only, avoiding false-positive version-specific matches) AND the transparency annotation. Matches Constitution Principle IX (Accuracy — no fake versions) + Principle X (Transparency). Also enables the SC-004 dual invariant (versionless PURL iff synthetic-built-in annotation). Rejected Option B because vulnerability scanners doing PURL-based lookup would miss the built-in gem entirely.
+- Q: Should the FR-001 built-in gems allowlist be pinned to a specific Ruby version, or dynamically versioned? → A: Union of Ruby 3.2 through 3.4 (stable) built-in gems. Ruby users often run older releases; a Ruby 3.2 project's `Gemfile.lock` might reference gems that were still built-in in 3.2 but were extracted from stdlib by 3.4 — pinning to 3.4 would false-negative on those. Union coverage catches all cases with minimal false-positive risk. FR-006 documents the union strategy + ~annual review cadence per Ruby release.
+
 ## Motivation
 
 Discovered during the milestone-157 Round-2 audit against `kusari-sandbox/test-rails`: when a `Gemfile.lock` GEM/specs entry declares a dep to a Ruby **built-in gem** (`bundler`, `bigdecimal`, `csv`, `logger`, `openssl`, `psych`, `rss`, `stringio`, etc. — the gems that ship with Ruby itself and are installed via a special mechanism, NOT via `gem install`), mikebom **silently drops the edge**. The dep-name is emitted as a target in the graph resolver's edge set, but no matching component exists in the SBOM's `components[]` array (built-in gems don't appear in `Gemfile.lock`'s GEM/specs section — they're pre-installed with Ruby). The graph resolver's dangling-target-drop pass at emission time removes the edge without any operator-visible signal.
@@ -52,7 +59,7 @@ All three are complementary but non-overlapping.
 
 ### User Story 1 - SBOM consumer sees the `bundler-audit → bundler` edge (Priority: P1)
 
-An SBOM consumer (Kusari Inspector, a vulnerability scanner, a supply-chain audit tool) loads mikebom's Ruby SBOM for a repo scanned with `--path <repo>` and finds that edges to Ruby built-in gems (`bundler`, `bigdecimal`, `csv`, `logger`, `openssl`, `psych`, `rss`, `stringio`, `json`, `uri`, `net-http`, `date`, `time`, etc.) are represented — either via emitted synthetic components with a special annotation OR via edge-source annotations naming the unresolved dep-name. The consumer can programmatically detect these built-in edges and decide how to handle them (e.g., trust the Ruby-toolchain-managed gem OR flag as needing separate CVE lookup).
+An SBOM consumer (Kusari Inspector, a vulnerability scanner, a supply-chain audit tool) loads mikebom's Ruby SBOM for a repo scanned with `--path <repo>` and finds that edges to Ruby built-in gems (`bundler`, `bigdecimal`, `csv`, `logger`, `openssl`, `psych`, `rss`, `stringio`, `json`, `uri`, `net-http`, `date`, `time`, etc.) are represented as real `dependsOn` edges to emitted synthetic components (per Q1 clarification: Option A). Each synthetic component carries a versionless PURL (`pkg:gem/<name>` — no `@version` segment) + `mikebom:synthetic-built-in = "ruby"` annotation. The consumer can programmatically detect these built-in edges via the annotation (Constitution Principle X — Transparency) and use the versionless PURL for CVE lookups on gem-name (Constitution Principle IX — no fake versions to false-positive).
 
 **Why this priority**: This is the observed bug's user-visible symptom. Without this fix, mikebom's Ruby SBOMs silently drop 0.4% of edges. Numerically small but the SILENCE is the problem — Constitution Principle X (Transparency) violation. Any consumer downstream of the SBOM has no way to know that edges were dropped.
 
@@ -64,7 +71,7 @@ An SBOM consumer (Kusari Inspector, a vulnerability scanner, a supply-chain audi
 
 **Acceptance Scenarios**:
 
-1. **Given** `test-rails` scanned via `mikebom sbom scan --path test-rails --format cyclonedx-json`, **When** enumerating `bundler-audit@0.9.3`'s outgoing `dependsOn`, **Then** the list MUST include a reference to `bundler` — either as `pkg:gem/bundler` (synthetic component emitted per Option A) OR via a `mikebom:unresolved-dep-name = "bundler"` annotation on `bundler-audit@0.9.3` (Option B).
+1. **Given** `test-rails` scanned via `mikebom sbom scan --path test-rails --format cyclonedx-json`, **When** enumerating `bundler-audit@0.9.3`'s outgoing `dependsOn`, **Then** the list MUST include a real edge to the synthetic `pkg:gem/bundler` component (per Q1 clarification: Option A — synthetic component, not source-side annotation).
 
 2. **Given** the same scan, **When** enumerating the SBOM's `components[]` array, **Then** any component with PURL matching `pkg:gem/<built-in>` (e.g., `pkg:gem/bundler`) MUST carry `mikebom:synthetic-built-in = "ruby"` annotation so vulnerability-scan consumers can distinguish real component evidence from synthetic-fill entries.
 
@@ -128,7 +135,7 @@ Users scanning repos with NO Ruby components see byte-identical SBOM output vs. 
 
 ### Functional Requirements
 
-- **FR-001**: mikebom MUST maintain a static allowlist of Ruby built-in gems in `mikebom-cli/src/scan_fs/package_db/gem.rs` (or a sibling helper module). The list MUST include at minimum: `bundler`, `bigdecimal`, `csv`, `date`, `english`, `erb`, `fileutils`, `find`, `forwardable`, `getoptlong`, `io-console`, `ipaddr`, `irb`, `json`, `logger`, `mutex_m`, `net-http`, `open-uri`, `openssl`, `optparse`, `ostruct`, `pathname`, `pp`, `prime`, `psych`, `rdoc`, `resolv`, `rss`, `securerandom`, `set`, `singleton`, `stringio`, `strscan`, `tempfile`, `time`, `timeout`, `tmpdir`, `uri`, `weakref`, `yaml`. Sourced from Ruby 3.4's `Gem::default_gems` output (Ruby's own catalog of built-in gems).
+- **FR-001**: mikebom MUST maintain a static allowlist of Ruby built-in gems in `mikebom-cli/src/scan_fs/package_db/gem.rs` (or a sibling helper module). Per Q2 clarification, the list is a **union across Ruby 3.2, 3.3, and 3.4 stable releases** — any gem that was built-in in ANY of these Ruby versions is in the list. The list MUST include at minimum the Ruby 3.4 baseline: `bundler`, `bigdecimal`, `csv`, `date`, `english`, `erb`, `fileutils`, `find`, `forwardable`, `getoptlong`, `io-console`, `ipaddr`, `irb`, `json`, `logger`, `mutex_m`, `net-http`, `open-uri`, `openssl`, `optparse`, `ostruct`, `pathname`, `pp`, `prime`, `psych`, `rdoc`, `resolv`, `rss`, `securerandom`, `set`, `singleton`, `stringio`, `strscan`, `tempfile`, `time`, `timeout`, `tmpdir`, `uri`, `weakref`, `yaml`. Also MUST include gems that were built-in in Ruby 3.2/3.3 but extracted from stdlib by 3.4 (per each Ruby release's `Gem::default_gems` output). Sourced from Ruby's own catalog.
 
 - **FR-002**: When parsing `Gemfile.lock` at emission time, for each GEM/specs dep-name that does NOT match a GEM/specs entry (i.e., the graph resolver's dangling-target case), mikebom MUST check whether the dep-name matches the FR-001 built-in gems allowlist. If it does, mikebom MUST emit a synthetic `pkg:gem/<name>` component with `mikebom:synthetic-built-in = "ruby"` annotation AND `mikebom:built-in-requirement = "<original-requirement-string>"` annotation (per FR-005).
 
@@ -138,7 +145,7 @@ Users scanning repos with NO Ruby components see byte-identical SBOM output vs. 
 
 - **FR-005**: mikebom MUST emit `mikebom:built-in-requirement = "<original-requirement-string>"` annotation on synthetic built-in components carrying the version constraint from the `Gemfile.lock` (e.g., `>= 1.2.0` from `bundler-audit`'s declaration). Consumers can render "depends on `bundler` (>= 1.2.0, version resolution unavailable)".
 
-- **FR-006**: The FR-001 allowlist MUST be documented as static (not dynamically probed) with a maintenance note — new Ruby releases may introduce or extract built-in gems, so the list requires periodic review. The list is versioned in-source per the milestone number.
+- **FR-006**: The FR-001 allowlist MUST be documented as static (not dynamically probed) with a maintenance note. Per Q2 clarification, the union-across-Ruby-versions strategy requires **~annual review cadence** aligned with Ruby's release cycle: when Ruby N+1 stable ships, review the new `Gem::default_gems` output + drop any gems that have not been built-in in any of the last 3 stable Ruby releases (rolling window). Extension events (a gem newly becoming built-in) require adding the name; extraction events (a gem being removed from built-in) do NOT require immediate removal from the mikebom list — the union strategy keeps older projects covered. The list is versioned in-source per the milestone number.
 
 - **FR-007**: When a synthetic built-in component is emitted, the incoming edge from the source component (`bundler-audit@0.9.3 → pkg:gem/bundler`) MUST be preserved in the `dependencies[]` array — the whole point of the fix is that the edge stops being silently dropped.
 
@@ -166,7 +173,7 @@ Users scanning repos with NO Ruby components see byte-identical SBOM output vs. 
 
 - **SC-001 (test-rails edge fix)**: After milestone 162 ships, running `mikebom sbom scan --path test-rails --format cyclonedx-json` and comparing against Gemfile.lock ground truth MUST show 100% edge-match (249 of 250 edges from the milestone-157 audit, plus the 1 previously-dropped `bundler-audit → bundler` edge). Pre-162 baseline: 248 of 250 = 99.20%. Target: 250 of 250 = 100%.
 
-- **SC-002 (test-rails specific missing-edge fix)**: The 1 concrete missing edge from the milestone-157 audit (`bundler-audit@0.9.3 → bundler`) MUST be present in the emitted SBOM (either as a real edge to a synthetic `pkg:gem/bundler` component per Option A OR as a `mikebom:unresolved-dep-name` annotation on the source component per Option B). Both approaches surface the edge to consumers.
+- **SC-002 (test-rails specific missing-edge fix)**: The 1 concrete missing edge from the milestone-157 audit (`bundler-audit@0.9.3 → bundler`) MUST be present in the emitted SBOM as a real edge to a synthetic `pkg:gem/bundler` component per Q1 (Option A).
 
 - **SC-003 (dual-side byte-identity guard, mirrors milestones 158/159/160/161)**: For every milestone-090 non-`gem` golden fixture (10 of 11 ecosystems: apk, bazel, cargo, cmake, deb, golang, maven, npm, pip, rpm), the emitted CDX / SPDX 2.3 / SPDX 3 SBOMs MUST be byte-identical to pre-162. The `gem` fixture is exempt — it will change to add `mikebom:synthetic-built-in` annotations if any built-in gems are referenced in its Gemfile.lock. Zero diff bytes on the 10 non-`gem` ecosystems × 3 formats = 30 goldens.
 
@@ -196,7 +203,7 @@ Users scanning repos with NO Ruby components see byte-identical SBOM output vs. 
 
 - **`test-rails` is the empirical benchmark**: SC-001/SC-002 numbers are pinned to this repo. The 1 specific missing edge (`bundler-audit@0.9.3 → bundler`) is the load-bearing verification.
 
-- **Static allowlist is acceptable**: The FR-001 built-in gems list is derived from Ruby 3.4's `Gem::default_gems`. It will evolve — new Ruby releases may add or remove built-in gems. FR-006 documents this as a maintenance obligation. Alternative approaches (e.g., probing `ruby --version` on the scanned target) are out of scope per Assumption §4 below.
+- **Static allowlist is acceptable**: The FR-001 built-in gems list is a **union across Ruby 3.2, 3.3, and 3.4** stable-release `Gem::default_gems` outputs (per Q2 clarification). It will evolve — new Ruby releases may add or remove built-in gems; the union-strategy keeps older-Ruby-projects covered. FR-006 documents ~annual review cadence with a rolling 3-release window. Alternative approaches (e.g., probing `ruby --version` on the scanned target) are out of scope per Assumption §4 below.
 
 - **Versionless PURL is spec-compliant**: The PURL spec permits omitting the `@version` segment. Consumer vulnerability scanners typically do exact-version matching for CVE lookups; a versionless PURL will not false-positive on version-specific CVEs.
 

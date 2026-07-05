@@ -20,7 +20,15 @@ const FIXTURE_SUBPATH: &str = "gem";
 // from the synthesized root to every component nothing else depends
 // on (mirrors CDX's primary-dependency fallback). 21 graph-root
 // gems × 1 edge each = 21 new edges; 196 + 21 = 217.
-const EXPECTED_MIKEBOM_EDGE_COUNT: usize = 217;
+//
+// Milestone 162 (#496) bumped baseline from 217 → 218: a Gemfile.lock
+// spec declares `bundler (>= 1.12.0, < 3.0.0)` as a dep, but
+// `bundler` is a Ruby toolchain-provided built-in gem NOT in the
+// GEM/specs section. Pre-162 mikebom silently dropped that edge;
+// post-162 mikebom emits a synthetic `pkg:gem/bundler` (versionless)
+// component + preserves the edge from source to synthetic. 1 new
+// edge; 217 + 1 = 218.
+const EXPECTED_MIKEBOM_EDGE_COUNT: usize = 218;
 
 const EXPECTED_REPRESENTATIVE_EDGES: &[(&str, &str)] = &[
     // Confirmed in mikebom output — fastlane's main module pulls in CFPropertyList.

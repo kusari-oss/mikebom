@@ -7,6 +7,105 @@ adheres to [Semantic Versioning](https://semver.org/) once it exits
 
 ## [Unreleased]
 
+### C45 `mikebom:orphan-reason` vocabulary extended from 2 codes to 5 (milestone 167)
+
+Empirical follow-on from milestone 165's audit — the #2 top-3 recommendation.
+Milestone 061 introduced the C45 `mikebom:orphan-reason` per-component
+annotation with a single reason code (`unresolved-indirect-require`), Go-only.
+Milestone-165's `analyze.py` classified 64 real-world orphans across
+Kubernetes + ArgoCD + podman-desktop into 6 named buckets — but only 2 codes
+(`unresolved-indirect-require` + `flat-attached-fallback`, both Go-only) were
+emitted as first-class SBOM signals pre-167. Downstream consumers (vulnerability
+scanners, license auditors) couldn't automatically distinguish honest-signal
+orphans (stale-go-sum, hoisted-unused, dead-lockfile) from real bugs.
+
+**Vocabulary — post-167 (5 codes, all under the existing C45 wire shape):**
+
+| Code | Ecosystem | Meaning | Emit tier |
+|---|---|---|---|
+| `stale-go-sum-entry` | Go | Orphan + same-name reachable sibling exists (multi-version case; `go.sum` retains a superseded pin) | Emit-time (m167) |
+| `dead-lockfile-entry` | npm | Orphan + same-name reachable sibling exists (multi-version case; npm/pnpm/yarn lockfile retains a superseded pin) | Emit-time (m167) |
+| `hoisted-unused` | npm | Orphan + NO same-name reachable sibling (hoisted-but-declared-only phantom) | Emit-time (m167) |
+| `unresolved-indirect-require` | Go | Preserved from m061 — orphan + NO same-name reachable sibling | Go-reader-time (m061) |
+| `flat-attached-fallback` | Go | Preserved from m061 — attached at flat-fallback layer during Go transitive resolution | Go-reader-time (m061) |
+
+**FR-005 priority order** (most-specific to least-specific): `stale-go-sum-entry`
+→ `dead-lockfile-entry` → `hoisted-unused` → `unresolved-indirect-require`.
+`flat-attached-fallback` sits above the priority order — never overwritten by
+the m167 emit-time classifier (m061 backward-compat guard).
+
+**Orphan definition** (per m167 spec.md clarification 2026-07-06): BFS-unreachable
+from `metadata.component.purl` following `dependsOn` edges. Strict superset of
+milestone-061's zero-incoming criterion; every m061-classified orphan continues
+to receive an annotation, plus new multi-version cluster non-leaves are captured.
+
+**Scope**: emission restricted to `pkg:golang/*` and `pkg:npm/*` ecosystems per
+FR-001. Other ecosystems continue to carry no orphan-reason.
+
+**Fix architecture**: two-tier emission preserved. Existing Go-reader-time
+emitter at `mikebom-cli/src/scan_fs/package_db/golang/legacy.rs:2091,2118`
+UNCHANGED. New emit-time classifier at
+`mikebom-cli/src/generate/orphan_reason.rs` runs after
+`compute_graph_completeness` (m158's BFS) and OVERWRITES more-general
+Go-reader-time values with more-specific classifications per FR-005 priority.
+Called once per scan from `cli/scan_cmd.rs` immediately before the
+`ScanArtifacts` bundle is built, so the mutation lands on the shared
+`components` Vec that every emitter (CDX / SPDX 2.3 / SPDX 3) reads.
+
+**New tracing observability** (FR-008): a new info-level log fires once per scan
+summarizing per-code counts:
+
+```
+orphan-reason classification complete
+    orphan_reason_stale_go_sum_entry=<N>
+    orphan_reason_dead_lockfile_entry=<N>
+    orphan_reason_hoisted_unused=<N>
+    orphan_reason_unresolved_indirect_require=<N>
+    orphan_reason_flat_attached_fallback=<N>
+```
+
+Grep-friendly per the milestone-157-onwards convention. Zero counters
+indicate a healthy scan.
+
+**Empirical impact** (m165 audit target totals; classifier-refinement margin
+allowed):
+
+| Target | Pre-167 orphan-reason emissions | Post-167 orphan-reason emissions | Delta |
+|---|---|---|---|
+| Kubernetes | 1 (only `unresolved-indirect-require`) | expected ≥ 35 Go orphans | +34 |
+| ArgoCD | 3 (Go only) | expected ≥ 28 (Go + npm combined) | +25 |
+| podman-desktop | 0 (npm has no C45 emission pre-167) | expected ≥ 12 npm orphans | +12 |
+
+**Byte-identity impact**: the C45 wire shape is UNCHANGED (CDX property /
+SPDX 2.3 annotation / SPDX 3 Annotation element — same JSON shape as m061).
+Only the VALUE vocabulary expands. Milestone-090 fixture goldens updated:
+`cyclonedx/golang.cdx.json` (+4 lines), `spdx-2.3/golang.spdx.json` (+6 lines),
+`spdx-3/golang.spdx3.json` (+8 lines) — each adds exactly ONE new
+`mikebom:orphan-reason=unresolved-indirect-require` annotation on
+`pkg:golang/stdlib@v1.26.1`, which the m165 audit's `unresolved-go-module`
+bucket classifies as orphan under the BFS-unreachable definition. Non-Go/npm
+milestone-090 fixtures (apk, deb, rpm, cargo, gem, maven, pip, bazel, cmake)
+byte-identical to pre-167.
+
+**Consumer jq recipe** to filter honest-signal orphans (npm `dead-lockfile-entry`
++ `hoisted-unused`; Go `stale-go-sum-entry`) from a CDX 1.6 SBOM:
+
+```bash
+jq '[.components[] |
+    select(.properties[]?.name == "mikebom:orphan-reason") |
+    {purl: .purl,
+     reason: (.properties[] |
+              select(.name == "mikebom:orphan-reason") |
+              .value)}] |
+    group_by(.reason) |
+    map({code: .[0].reason, count: length, examples: [.[0:3][].purl]})' \
+    mikebom.cdx.json
+```
+
+Zero new Cargo dependencies. Zero new parity-catalog rows. Zero new CLI flags.
+Reuses existing per-ecosystem annotation-emission infrastructure. `git log`:
+implements milestone 167 — audit-surfaced fix from milestone 165.
+
 ### SPDX 3 duplicate-Annotation-spdxId dedup fix (milestone 166)
 
 Empirical follow-on from milestone 165's audit — the #1 top-3 recommendation

@@ -794,6 +794,14 @@
     {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-4MQQMZDGBQUBOPRUIXDJ7TU4/anno-DZW3FKGJD4CSSYCK",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:orphan-reason\",\"value\":\"unresolved-indirect-require\"}",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-4MQQMZDGBQUBOPRUIXDJ7TU4/pkg-5Z5YTQKEFAEY7U56",
+      "type": "Annotation"
+    },
+    {
+      "annotationType": "other",
+      "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-4MQQMZDGBQUBOPRUIXDJ7TU4/anno-E5QVPXRM2GXUAFQZ",
       "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.identity\",\"value\":{\"confidence\":0.85,\"technique\":\"package-database\"}}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-4MQQMZDGBQUBOPRUIXDJ7TU4/pkg-DJ3ZIKWTNBYO26BT",

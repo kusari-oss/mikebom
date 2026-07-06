@@ -2560,6 +2560,35 @@ pub async fn execute(
             ))
         };
 
+    // Milestone 167 (T011) — emit-time `mikebom:orphan-reason`
+    // classifier. Stamps per-component annotations on BFS-unreachable
+    // Go/npm components per the extended C45 vocabulary + fires the
+    // FR-008 grep-friendly log with per-code counters. Runs AFTER
+    // every component-producing pass (package DBs, enrichment,
+    // dedupe, supplement merge, file-tier walker) and BEFORE the
+    // ScanArtifacts bundle is built so the mutation lands on the
+    // shared `components` Vec every emitter (CDX / SPDX 2.3 / SPDX 3)
+    // reads. The `mikebom:orphan-reason` annotation flows through
+    // the format emitters unchanged via the existing per-format
+    // `extra_annotations` serialization (parity-catalog C45).
+    //
+    // Runs with a `RootComponentOverride::default()` placeholder for
+    // classification purposes only: BFS-reachability of components
+    // is over PURL keys, and override-active vs override-inactive
+    // classification produces identical orphan sets because the
+    // override only affects which main-module entries are dropped
+    // from the emitted `components[]` (a per-format concern). The
+    // actual `ScanArtifacts::root_override` below is built from the
+    // operator's `--root-*` flags and is unaffected by this call.
+    let _m167_orphan_reason_counts =
+        crate::generate::orphan_reason::classify_orphans_pre_emit(
+            &mut components,
+            &relationships,
+            &crate::generate::RootComponentOverride::default(),
+            scan_target_coord.as_ref(),
+            &target_name,
+        );
+
     // Build the neutral artifacts bundle once and hand it to every
     // serializer the user requested — the single-pass guarantee of
     // FR-004 / SC-009.

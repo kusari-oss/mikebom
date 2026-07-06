@@ -78,6 +78,17 @@ pub struct GraphCompletenessResult {
     pub total_count: usize,
     pub reachable_count: usize,
     pub orphan_count: usize,
+    // Milestone 167 (T002): expose the BFS-computed reachable set,
+    // intersected with the emitted components' PURL keys, so the
+    // emit-time orphan-reason classifier (`generate::orphan_reason`)
+    // can decide per-component orphan status without recomputing BFS.
+    //
+    // Invariant: `reachable_set.len() == reachable_count`.
+    //
+    // `#[allow(dead_code)]` until T011 wires the call-site in
+    // `scan_fs::mod.rs`; removed as part of T011.
+    #[allow(dead_code)]
+    pub reachable_set: HashSet<String>,
 }
 
 impl GraphCompletenessResult {
@@ -91,6 +102,7 @@ impl GraphCompletenessResult {
             total_count: 0,
             reachable_count: 0,
             orphan_count: 0,
+            reachable_set: HashSet::new(),
         }
     }
 
@@ -108,6 +120,7 @@ impl GraphCompletenessResult {
             total_count,
             reachable_count: 0,
             orphan_count: total_count,
+            reachable_set: HashSet::new(),
         }
     }
 }
@@ -196,7 +209,15 @@ pub fn compute_graph_completeness(
         .iter()
         .map(|c| c.purl.as_str().to_string())
         .collect();
-    let reachable_component_count = visited.intersection(&component_keys).count();
+    // Milestone 167 (T002): materialize the reachable-set (intersected
+    // with emitted component PURL keys) so the orphan-reason classifier
+    // can key on it without recomputing BFS. `reachable_component_count`
+    // == `reachable_set.len()` invariant asserted by construction below.
+    let reachable_set: HashSet<String> = visited
+        .intersection(&component_keys)
+        .cloned()
+        .collect();
+    let reachable_component_count = reachable_set.len();
     let orphan_count = total_count.saturating_sub(reachable_component_count);
 
     let mut reason_codes: Vec<ReasonCode> = Vec::new();
@@ -268,6 +289,7 @@ pub fn compute_graph_completeness(
         total_count,
         reachable_count: reachable_component_count,
         orphan_count,
+        reachable_set,
     }
 }
 

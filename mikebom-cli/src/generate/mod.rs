@@ -26,6 +26,7 @@ pub mod divergence_annotation;
 pub mod graph_completeness;
 pub mod lifecycle_phases;
 pub mod openvex;
+pub mod orphan_reason;
 pub mod root_selector;
 pub mod spdx;
 

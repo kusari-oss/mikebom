@@ -708,6 +708,10 @@
         {
           "name": "mikebom:sbom-tier",
           "value": "source"
+        },
+        {
+          "name": "mikebom:orphan-reason",
+          "value": "unresolved-indirect-require"
         }
       ],
       "purl": "pkg:golang/stdlib@v1.26.1",

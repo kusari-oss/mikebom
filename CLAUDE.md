@@ -209,6 +209,8 @@ Auto-generated from all feature plans. Last updated: 2026-07-06
 - Rust stable (workspace toolchain inherited from milestones 001–168; no nightly required for this user-space-only work). + Existing only, with one contested choice: (169-ipk-opkg-reader)
 - Rust stable (workspace toolchain inherited from milestones 001–169; no nightly required for this user-space-only fix). + Existing only — `serde`/`serde_json` (JSON round-trip), `tracing`, `anyhow`, `thiserror`. Reuses milestone-158's `GraphCompletenessResult` struct + `join_reason_codes` helper. Reuses milestone-071's parity-extractor infrastructure verbatim. **No new Cargo dependencies.** (170-graph-completeness-dedup)
 - N/A — pure metadata-emission transform on the CDX/SPDX code paths; no caches, no persistence. (170-graph-completeness-dedup)
+- N/A — this is a GitHub Actions workflow YAML + Markdown docs change. No Rust code touched. + Existing GitHub Actions (`actions/checkout@9c091bb...`), the standard GitHub Actions token model, `gh` CLI (already used in the workflow). **No new external dependencies.** (171-fix-auto-tag-perms)
+- N/A — no persistent state on mikebom's side. The `RELEASE_TAG_TOKEN` secret lives in GitHub's repo-secrets store, managed by GitHub, not by mikebom code. (171-fix-auto-tag-perms)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -271,9 +273,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 171-fix-auto-tag-perms: Added N/A — this is a GitHub Actions workflow YAML + Markdown docs change. No Rust code touched. + Existing GitHub Actions (`actions/checkout@9c091bb...`), the standard GitHub Actions token model, `gh` CLI (already used in the workflow). **No new external dependencies.**
 - 170-graph-completeness-dedup: Added Rust stable (workspace toolchain inherited from milestones 001–169; no nightly required for this user-space-only fix). + Existing only — `serde`/`serde_json` (JSON round-trip), `tracing`, `anyhow`, `thiserror`. Reuses milestone-158's `GraphCompletenessResult` struct + `join_reason_codes` helper. Reuses milestone-071's parity-extractor infrastructure verbatim. **No new Cargo dependencies.**
 - 169-ipk-opkg-reader: Added Rust stable (workspace toolchain inherited from milestones 001–168; no nightly required for this user-space-only work). + Existing only, with one contested choice:
-- 168-rust-python-audit: Added N/A for mikebom production code (unchanged). Audit harness is shell script + Python 3.10+ analysis (matches m165 precedent verbatim). + External audit tools — mikebom (**post-milestone-167 release build**; commit `ccde910`-descended), Trivy (0.71.1 per m083/m165 pin), Syft (1.44.0 per m083/m165 pin), spdx3-validate (0.0.5 per memory `reference_spdx3_validator`, at `.venv/spdx3-validate/bin/spdx3-validate`), `jq`, `git`, `python3`, `time`. Standard POSIX tools.
 
 
 <!-- MANUAL ADDITIONS START -->

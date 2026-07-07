@@ -46,15 +46,37 @@ jobs:
           # tag using an explicit `https://x-access-token:…` URL in
           # the run-step below, not via the persisted credential.
           persist-credentials: false
+          # Milestone 171 (closes #519): use the fine-grained PAT so
+          # the push step authenticates as the account owning the
+          # PAT, not github-actions[bot]. persist-credentials stays
+          # false — the push URL is built explicitly below.
+          token: ${{ secrets.RELEASE_TAG_TOKEN }}
 
       - name: Extract version + create + push tag
         id: tag
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Milestone 171 (closes #519): switched from
+          # secrets.GITHUB_TOKEN (silently narrowed to read-only by
+          # the org-level workflow-permissions policy — see
+          # docs/releases.md § auto-tag mechanism) to a fine-grained
+          # PAT scoped to contents:write on this repo only.
+          GH_TOKEN: ${{ secrets.RELEASE_TAG_TOKEN }}
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          # Milestone 171: fail-loud on missing PAT so the maintainer
+          # gets an actionable diagnostic instead of a cryptic 403
+          # later in the push step. Prevents the "silently didn't
+          # release" failure mode that motivated m171.
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::RELEASE_TAG_TOKEN secret is missing or empty."
+            echo "Recovery: see docs/releases.md § auto-tag mechanism."
+            echo "Interim workaround: manually tag via"
+            echo "  git tag -a v0.1.0-alpha.<N> -m 'Release v...' <merge-sha>"
+            echo "  git push origin v0.1.0-alpha.<N>"
+            exit 1
+          fi
           # Parse the workspace version from the FIRST `version = "…"`
           # line in Cargo.toml. The release-bump PR always lands that
           # change at the top of the file in the [workspace.package]

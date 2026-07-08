@@ -75,6 +75,15 @@ pub struct ScanArtifacts<'a> {
     pub go_transitive_coverage: Option<
         &'a crate::scan_fs::package_db::golang::graph_resolver::GoTransitiveCoverage,
     >,
+    /// Milestone 172: doc-scope count of Go modules whose FINAL
+    /// resolution step was the m091 step-5 go.sum flat fallback.
+    /// Sibling of `go_transitive_coverage`; both are Go-gated (`None`
+    /// iff no Go scan happened). `Some(0)` on healthy Go scans (per Q1
+    /// clarification, annotation is emitted with value `"0"`).
+    /// `Some(N > 0)` on degraded scans. Consumed by
+    /// `mikebom:go-transitive-fallback-count` annotation emitters in
+    /// CDX 1.6, SPDX 2.3, and SPDX 3.0.1.
+    pub go_transitive_fallback_count: Option<usize>,
     /// Milestone 161 (T013): workspace-mode detection outcome for the
     /// C112 doc-scope annotation. Distinct from
     /// `go_transitive_coverage` per research.md R1. `None` iff no

@@ -563,6 +563,18 @@ pub fn annotate_document(
         }
     }
 
+    // Milestone 172: doc-scope C117 `mikebom:go-transitive-fallback-
+    // count` annotation. Emitted iff `go_transitive_fallback_count` is
+    // `Some(_)` (Go was scanned). Value `"0"` explicit on healthy scans
+    // per Q1 clarification. Companion to C110.
+    if let Some(count) = artifacts.go_transitive_fallback_count {
+        push(
+            &mut out,
+            "mikebom:go-transitive-fallback-count",
+            json!(count.to_string()),
+        );
+    }
+
     // Milestone 161 (T044): doc-scope Go-workspace-mode annotation
     // (C112). Emitted iff `go.work` file was present at the scanned
     // root (`Detected` or `Malformed` variant); `Absent` is treated

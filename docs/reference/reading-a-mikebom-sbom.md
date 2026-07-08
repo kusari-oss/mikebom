@@ -98,6 +98,7 @@ The 18 entries §3 currently depth-covers (covering 21 unique catalog keys — 3
 | `mikebom:source-document-binding` | 3.3 | Y | Y | Y | Y | Y | 5 | DEPTH ✓ |
 | `mikebom:file-inventory-mode` | 3.4 | Y | Y | Y | N | Y | 4 | DEPTH ✓ |
 | `mikebom:graph-completeness` + `…-reason` | 3.4 | Y | Y | Y | Y (paired) | Y | 5 | DEPTH ✓ |
+| `mikebom:go-transitive-fallback-count` (new in 172) | 3.4 | Y | Y (Go-essential; degraded-scan signal) | Y | Y (companion to C110) | Y | 5 | DEPTH ✓ |
 | `mikebom:peer-edge-targets` | 3.4 | Y | Y (npm-essential) | Y | N | Y | 4 | DEPTH ✓ |
 | `mikebom:depends-unresolved` + `…-rdepends-unresolved` (new in 151) | 3.4 | Y | Y (Yocto-essential; reserved key) | Y | Y (paired) | Y | 5 | DEPTH ✓ |
 | `mikebom:assertion-conflict` (new in 151) | 3.4 | Y | Y | Y | N | Y | 4 | DEPTH ✓ |
@@ -533,6 +534,53 @@ jq '.metadata.properties[]?
     | {name, value}' your.cdx.json
 ```
 
+#### `mikebom:go-transitive-fallback-count`
+
+> **What it is**: document-scope non-negative integer counting Go modules whose FINAL resolution step was the `go.sum` flat fallback — the last rung of the Go transitive-resolution ladder. When this count is > 0, the graph shape for that many modules is a *flat* root→transitive edge rather than the true parent-child topology the resolver would have produced from steps 1–3. Companion to [`mikebom:go-transitive-coverage`](#mikebomgo-transitive-coverage-mikebomgo-transitive-coverage-reason) (C110): C110 gives you the aggregate verdict (`complete` / `partial` / `unknown`); C117 tells you HOW MANY modules degraded — the difference between "unknown with 3 fallbacks" and "unknown with 300 fallbacks" is the difference between a minor cache miss and a fully offline scan.
+>
+> **The 5-step resolution ladder** (milestone 055 + 091 + 160):
+>
+> 1. **`go mod graph`** — invoke the host `go` toolchain to enumerate the true transitive dependency graph.
+> 2. **`$GOMODCACHE` walk** — parse `.mod` files from the local Go module cache (typically `~/go/pkg/mod`) to build transitive requires.
+> 3. **`$GOPROXY` fetch** — HTTP-fetch `.mod` files from the configured Go proxy (`https://proxy.golang.org` by default) to fill gaps steps 1–2 missed.
+> 4. *(retired numbering — no step 4 in the modern ladder)*
+> 5. **`go.sum` flat fallback** — when steps 1–3 all failed for a module (offline mode, empty cache, `GOPROXY=off`, `go mod graph` degraded), attach modules from `go.sum` as flat root→transitive edges. **Every module attached via step 5 loses its parent-child topology**: mikebom knows the module *exists* and hashes to a specific version, but not who required it or who it required in turn.
+> 6. **Unresolved** — the module appears somewhere in the scan but no resolution step landed a result. Zero edges emitted; the per-component `mikebom:go-transitive-unresolved-reason` annotation names the class.
+>
+> **Emission rules (per Q1 clarification, milestone 172)**:
+> - Annotation ABSENT → no Go components in the scan (annotation is Go-gated identically to C110).
+> - Annotation `= "0"` → Go was scanned AND every module resolved cleanly via steps 1–3 (or step 6 unresolved; step 6 does NOT increment this counter — only step 5 does).
+> - Annotation `= "N > 0"` → Go was scanned AND N modules landed on step 5. The graph topology for those N modules is degraded.
+>
+> The explicit `"0"` on healthy scans is deliberate: consumers filtering "scans with fallback contamination > threshold" can rely on presence-with-value rather than presence-absence-plus-Go-detection-heuristics.
+>
+> **Where it lives**:
+> - **CDX 1.6**: `metadata.properties[]` entry (document-scope).
+> - **SPDX 2.3**: document-scope annotation on `SpdxDocument` in the `MikebomAnnotationCommentV1` envelope.
+> - **SPDX 3**: document-scope Annotation element targeting the `SpdxDocument` root IRI.
+>
+> **What to do with it**: use as a CI signal to detect degraded Go scans. In a well-maintained CI environment (populated `$GOMODCACHE`, working `$GOPROXY`), the count should be `"0"` for every scan. A non-zero count means EITHER (a) the CI runner lost network / lost cache / degraded proxy access, OR (b) the target repo pins modules whose upstream is no longer resolvable. Both are actionable operator signals. Cross-reference with [`mikebom:go-transitive-source`](#mikebomgo-transitive-source-mikebomgo-transitive-unresolved-reason) (C108) on individual components to enumerate WHICH modules degraded.
+>
+> **SC-005 invariant**: the doc-scope value equals the count of components tagged `mikebom:go-transitive-source == "go-sum-fallback"`. Both derive from the same underlying `ResolutionStep::GoSumFallback` classifier. If they diverge in an SBOM, that's an emission bug — please file an issue.
+>
+> **Milestone**: 172 — added.
+> **Catalog**: [C117](sbom-format-mapping.md)
+
+```jq
+# CDX — check Go step-5 fallback count for this scan:
+jq '.metadata.properties[]?
+    | select(.name == "mikebom:go-transitive-fallback-count")
+    | .value | tonumber' your.cdx.json
+```
+
+```jq
+# CDX — SC-005 invariant check: does the doc count equal the per-component count?
+jq '{
+  doc_count:  (.metadata.properties[]? | select(.name == "mikebom:go-transitive-fallback-count") | .value | tonumber),
+  per_component_count: [.components[]?.properties[]? | select(.name == "mikebom:go-transitive-source" and .value == "go-sum-fallback")] | length
+} | .match = (.doc_count == .per_component_count)' your.cdx.json
+```
+
 #### `mikebom:peer-edge-targets`
 
 > **What it is**: alphabetically-sorted array of PURL strings naming the peer-driven `dependsOn` edges from a given npm component. npm `peerDependencies` are install-time conventional (npm 7+ auto-installs them) but semantically declarative — different from regular `dependencies`. mikebom emits peer-edges as standard `dependsOn` (matching the npm install reality) AND tags the source component with this annotation so consumers can distinguish install-driven edges from functional-dep edges. Emitted only on npm components with ≥1 resolved peer-driven edge.
@@ -786,6 +834,7 @@ Alphabetical order. Each entry links to the FIRST catalog row that mentions the 
 - **`mikebom:graph-completeness-reason`** — milestone-158 companion enumerating the reason class for non-`complete` graph-completeness (e.g., `orphaned-components-detected: N component(s) not reachable from root`). ([C105](sbom-format-mapping.md))
 - **`mikebom:go-transitive-coverage`** — milestone-160 document-scope Go-transitive edge-resolution signal (`complete` / `partial` / `unknown`). Modern home for the Go-specific completeness question that pre-m170 lived at C44. See [§3.4](#34-transparency--completeness-gaps) for depth coverage. ([C110](sbom-format-mapping.md))
 - **`mikebom:go-transitive-coverage-reason`** — milestone-160 companion enumerating the reason class for non-`complete` Go-transitive coverage (e.g., `offline-mode`, `proxy-fetch-degraded`, `goproxy-off-in-chain`, `go-mod-graph-degraded`, `module-cache-empty-and-no-proxy`). ([C111](sbom-format-mapping.md))
+- **`mikebom:go-transitive-fallback-count`** — milestone-172 document-scope non-negative integer counting Go modules whose FINAL resolution step was the `go.sum` flat fallback (step 5 of the 5-step ladder). Companion to C110: gives the count that C110's verdict aggregates. See [§3.4](#34-transparency--completeness-gaps) for depth coverage. ([C117](sbom-format-mapping.md))
 - **`mikebom:identifiers`** — milestone-073 user-defined identifier envelope (`<scheme>:<value>` records beyond the built-in `repo:` / `git:` / `image:` / `attestation:` schemes). See [identifiers.md](identifiers.md). ([C47](sbom-format-mapping.md))
 - **`mikebom:kmp-source-set`** — milestone-122 Kotlin Multiplatform source-set names that declared each dep. ([C68](sbom-format-mapping.md))
 - **`mikebom:layer-digest`** — milestone-133 OCI layer-digest attribution. See [§3.1](#31-vulnerability-scanning) for depth coverage. ([C88](sbom-format-mapping.md))
@@ -876,6 +925,7 @@ Each depth-covered signal cites the milestone that introduced or stabilized it. 
 | `mikebom:graph-completeness-reason` | 061 | added as Go-scoped reason (closes #119); 170 rewrote as universal reachability reason (C105) |
 | `mikebom:go-transitive-coverage` | 160 | added (closes #494) — modern home for Go-scoped transitive-edge coverage; replaces the pre-m170 C44 emission |
 | `mikebom:go-transitive-coverage-reason` | 160 | added (closes #494) — companion for C110 |
+| `mikebom:go-transitive-fallback-count` | 172 | added — doc-scope count of Go modules that landed on step-5 go.sum flat fallback; companion to C110 giving the numeric count under the aggregate verdict |
 | `mikebom:peer-edge-targets` | 147 | added (closes Trivy-comparison orphan gap on the looker-frontend npm lockfile) |
 
 mikebom releases follow the `v*-alpha.*` tag sequence. As of milestone 149, the released version is `v0.1.0-alpha.52`. To determine signal availability for a specific binary version, cross-reference the [CHANGELOG](../../CHANGELOG.md) for the release-to-milestone mapping.

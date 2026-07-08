@@ -56,6 +56,11 @@ pub struct CycloneDxBuilder {
     /// `None` ⇒ no Go scan (annotation absent).
     go_transitive_coverage:
         Option<crate::scan_fs::package_db::golang::graph_resolver::GoTransitiveCoverage>,
+    /// Milestone 172: doc-scope Go step-5 fallback count for the C117
+    /// `mikebom:go-transitive-fallback-count` annotation. Sibling of
+    /// `go_transitive_coverage`; both are Go-gated. `None` iff no Go
+    /// scan happened.
+    go_transitive_fallback_count: Option<usize>,
     /// Milestone 161 (T041): doc-scope Go-workspace-mode signal.
     /// Distinct from `go_transitive_coverage` per research.md R1.
     /// `None` ⇒ no `go.work` at scanned root (C112 absent).
@@ -132,6 +137,7 @@ impl CycloneDxBuilder {
             config,
             os_release_missing_fields: Vec::new(),
             go_transitive_coverage: None,
+            go_transitive_fallback_count: None,
             go_workspace_mode: None,
             source_document_binding: None,
             identifiers: Vec::new(),
@@ -289,6 +295,19 @@ impl CycloneDxBuilder {
         coverage: Option<crate::scan_fs::package_db::golang::graph_resolver::GoTransitiveCoverage>,
     ) -> Self {
         self.go_transitive_coverage = coverage;
+        self
+    }
+
+    /// Milestone 172 — record the doc-scope Go step-5 fallback count
+    /// per FR-002 + Q1. Drives the C117
+    /// `mikebom:go-transitive-fallback-count` annotation. `None` iff no
+    /// Go scan happened (annotation absent). `Some(0)` on healthy scans
+    /// (annotation emitted with `"0"`).
+    pub fn with_go_transitive_fallback_count(
+        mut self,
+        count: Option<usize>,
+    ) -> Self {
+        self.go_transitive_fallback_count = count;
         self
     }
 
@@ -484,6 +503,7 @@ impl CycloneDxBuilder {
             &graph_completeness,
             self.go_transitive_coverage.as_ref(),
             self.go_workspace_mode.as_ref(),
+            self.go_transitive_fallback_count,
         );
         // Milestone 076 — track per-component identifier matches so
         // we can emit a warn for any selector that matched zero

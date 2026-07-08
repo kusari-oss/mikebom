@@ -97,6 +97,17 @@ pub struct ScanResult {
     /// modules were scanned (C110 annotation absent in output).
     pub go_transitive_coverage:
         Option<crate::scan_fs::package_db::golang::graph_resolver::GoTransitiveCoverage>,
+    /// Milestone 172: count of Go modules whose FINAL resolution step
+    /// was the m091 step-5 go.sum flat fallback (i.e., steps 1-3 of the
+    /// ladder failed and go.sum was consulted for a flat root→transitive
+    /// edge). Emitted as the document-scope
+    /// `mikebom:go-transitive-fallback-count` annotation across CDX/SPDX
+    /// 2.3/SPDX 3. `None` iff no Go scan happened (annotation absent per
+    /// FR-002). `Some(0)` on healthy Go scans (annotation emitted with
+    /// value "0" per Q1 clarification). `Some(N > 0)` on degraded scans.
+    /// Source: `scan_result.diagnostics.gosum_fallback_count` (bare
+    /// `usize` on `LadderSummary`).
+    pub go_transitive_fallback_count: Option<usize>,
     /// Milestone 161 (T012): workspace-mode detection outcome from
     /// `go.work` at scanned root. Distinct from
     /// `go_transitive_coverage` and `go_graph_completeness` per
@@ -267,6 +278,11 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
     // emitters for the C110/C111 doc-scope annotations.
     let mut go_transitive_coverage:
         Option<package_db::golang::graph_resolver::GoTransitiveCoverage> = None;
+    // Milestone 172: doc-scope Go step-5-fallback counter. Sibling of
+    // go_transitive_coverage; both are Go-gated (`None` iff no Go scan
+    // happened). Assigned alongside coverage below from
+    // `scan_result.diagnostics.gosum_fallback_count`.
+    let mut go_transitive_fallback_count: Option<usize> = None;
     // Milestone 161 (T012): doc-scope go-workspace-mode signal.
     // Distinct from `go_transitive_coverage` per research.md R1.
     // Carried through ScanResult into the format emitters for the
@@ -305,6 +321,10 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
         let scan_result = package_db::read_all(root, deb_codename, include_dev, include_legacy_rpmdb, scan_mode, include_declared_deps, scan_target_name, exclude_set)?;
         os_release_missing_fields = scan_result.diagnostics.os_release_missing_fields.clone();
         go_transitive_coverage = scan_result.diagnostics.go_transitive_coverage.clone();
+        // Milestone 172: mirror gosum_fallback_count from
+        // ScanDiagnostics into the local for the ScanResult return.
+        // `usize` is `Copy` — no clone needed.
+        go_transitive_fallback_count = scan_result.diagnostics.gosum_fallback_count;
         go_workspace_mode = scan_result.diagnostics.go_workspace_mode.clone();
         scan_target_coord = scan_result.scan_target_coord.clone();
         divergence_records = scan_result.diagnostics.divergence_records.clone();
@@ -807,6 +827,7 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
         complete_ecosystems,
         os_release_missing_fields,
         go_transitive_coverage,
+        go_transitive_fallback_count,
         go_workspace_mode,
         scan_target_coord,
         divergence_records,

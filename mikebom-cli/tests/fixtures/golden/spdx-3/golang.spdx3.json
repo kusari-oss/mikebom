@@ -1274,6 +1274,14 @@
     {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-UVO46NYPUUUR5BLVUOAKJIKU/anno-TRVBRXCGBFWXHWCX",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:go-transitive-fallback-count\",\"value\":\"11\"}",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-UVO46NYPUUUR5BLVUOAKJIKU",
+      "type": "Annotation"
+    },
+    {
+      "annotationType": "other",
+      "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-UVO46NYPUUUR5BLVUOAKJIKU/anno-TT4BW4XSMZ67I74Y",
       "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:cpe-candidates\",\"value\":[\"cpe:2.3:a:example.com\\\\/simple:example.com\\\\/simple:v0.0.0-unknown:*:*:*:*:*:*:*\",\"cpe:2.3:a:example.com:example.com\\\\/simple:v0.0.0-unknown:*:*:*:*:*:*:*\"]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-UVO46NYPUUUR5BLVUOAKJIKU/pkg-4BC3TYO5L6QI7GXM",

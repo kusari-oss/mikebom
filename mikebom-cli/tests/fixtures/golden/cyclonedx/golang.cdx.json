@@ -939,6 +939,10 @@
       {
         "name": "mikebom:go-transitive-coverage-reason",
         "value": "offline-mode: transitive edges from proxy fetches unavailable"
+      },
+      {
+        "name": "mikebom:go-transitive-fallback-count",
+        "value": "11"
       }
     ],
     "supplier": {

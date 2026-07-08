@@ -586,6 +586,9 @@ spdx23_anno!(c115_spdx23, "mikebom:unresolved-declared-dep",          component)
 // Milestone 169 (closes #500 Q2): C116 per-source-component
 // `mikebom:dep-alternative-alternates` annotation for Debian/opkg alt-lists.
 spdx23_anno!(c116_spdx23, "mikebom:dep-alternative-alternates",       component);
+// Milestone 172: C117 document-scope
+// `mikebom:go-transitive-fallback-count` annotation. Companion to C110.
+spdx23_anno!(c117_spdx23, "mikebom:go-transitive-fallback-count",     document);
 
 // C67 — `mikebom:assertion-conflict` (milestone 119). Per-Package
 // envelope carrying the JSON-encoded array of conflict records.

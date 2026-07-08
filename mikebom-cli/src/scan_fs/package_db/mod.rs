@@ -347,6 +347,19 @@ pub struct ScanDiagnostics {
     pub go_transitive_coverage:
         Option<golang::graph_resolver::GoTransitiveCoverage>,
 
+    /// Milestone 172: doc-scope count of Go modules whose FINAL
+    /// resolution step was the m091 step-5 go.sum flat fallback (steps
+    /// 1-3 of the m055/m091 ladder failed and go.sum was consulted for
+    /// flat root→transitive edges). Emitted as the
+    /// `mikebom:go-transitive-fallback-count` annotation across CDX 1.6,
+    /// SPDX 2.3, SPDX 3.0.1. `None` iff no Go scan happened (annotation
+    /// absent per FR-002). `Some(0)` on healthy Go scans (annotation
+    /// emitted with value `"0"` per Q1 clarification). `Some(N > 0)` on
+    /// degraded scans. Source:
+    /// `GoScanSignals.gosum_fallback_count` (aggregated across every
+    /// workspace's `LadderSummary.gosum_fallback_count` in legacy.rs).
+    pub gosum_fallback_count: Option<usize>,
+
     /// Milestone 161 (T010): workspace-mode detection outcome for the
     /// C112 document-scope annotation. Distinct from
     /// `go_transitive_coverage` (C110) and `go_graph_completeness`
@@ -1458,6 +1471,15 @@ pub fn read_all(
     // which flows through ScanResult into the format emitters for the
     // C110/C111 doc-scope annotations.
     diagnostics.go_transitive_coverage = go_signals.go_transitive_coverage;
+    // Milestone 172: propagate the ecosystem-wide step-5 fallback count
+    // to the doc-scope `mikebom:go-transitive-fallback-count` annotation
+    // channel. Gate on coverage-presence: `None` iff no Go workspace was
+    // scanned (annotation absent per FR-002); `Some(N)` iff Go was
+    // scanned (annotation emitted with value `"N"`, including `"0"` on
+    // healthy scans per Q1 clarification).
+    if diagnostics.go_transitive_coverage.is_some() {
+        diagnostics.gosum_fallback_count = Some(go_signals.gosum_fallback_count);
+    }
     // Milestone 161 (T011): propagate workspace-mode detection outcome
     // into the doc-level ScanDiagnostics for the C112 annotation.
     diagnostics.go_workspace_mode = go_signals.workspace_mode;

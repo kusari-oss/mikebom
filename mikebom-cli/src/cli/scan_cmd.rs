@@ -876,6 +876,70 @@ pub struct ScanArgs {
         value_parser = parse_fingerprints_rev_flag,
     )]
     pub fingerprints_rev: Option<String>,
+
+    /// Milestone 173: opt-in Go cache-warming mode. `off` (default)
+    /// preserves the milestone-172 `mikebom:go-transitive-fallback-count`
+    /// annotation as an actionable signal — a non-zero count tells
+    /// operators their env is degraded. `per-workspace` invokes `go mod
+    /// download` in every discovered Go workspace before the transitive
+    /// resolver runs, so step 1 (`go mod graph`) finds every module
+    /// locally and produces true parent-child topology instead of
+    /// falling through to step 5's go.sum flat fallback.
+    ///
+    /// No-op when `--offline` is set (the effective mode becomes
+    /// `offline-inhibited` and is surfaced via the
+    /// `mikebom:go-cache-warming-mode` doc-scope annotation).
+    ///
+    /// Concurrency is controlled by `--warm-go-cache-concurrency`
+    /// (default 4). No-op on non-Go scans.
+    #[arg(
+        long,
+        value_enum,
+        default_value = "off",
+        require_equals = true,
+        num_args = 1,
+        value_name = "MODE"
+    )]
+    pub warm_go_cache: WarmGoCacheMode,
+
+    /// Milestone 173: maximum concurrent `go mod download` invocations
+    /// during cache warming. Default: 4. Set to 1 for sequential
+    /// warming (CI shared-runner friendly). Set to 0 for auto
+    /// (`min(logical_cpus, 8)`). Values above 32 are clamped to 32
+    /// with a warn-level log (defense against typos flooding
+    /// `$GOPROXY`).
+    ///
+    /// No-op when `--warm-go-cache=off` or in offline mode.
+    ///
+    /// Rationale: matches m055/m091's `fetch_concurrency = 16`
+    /// posture; monorepos are the motivating use case and sequential
+    /// warming defeats the ergonomics purpose.
+    #[arg(long, default_value_t = 4, value_name = "N")]
+    pub warm_go_cache_concurrency: u32,
+}
+
+/// Milestone 173: CLI-side cache-warming mode. Two variants;
+/// `OfflineInhibited` is internal to the pipeline and NOT
+/// exposed at the CLI parse layer (set at the pipeline entry when
+/// `--offline` overrides the operator's choice).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
+#[value(rename_all = "kebab-case")]
+pub enum WarmGoCacheMode {
+    /// No warming performed.
+    Off,
+    /// One `go mod download` invocation per discovered Go workspace.
+    PerWorkspace,
+}
+
+impl From<WarmGoCacheMode>
+    for crate::scan_fs::package_db::golang::CacheWarmingMode
+{
+    fn from(cli: WarmGoCacheMode) -> Self {
+        match cli {
+            WarmGoCacheMode::Off => Self::Off,
+            WarmGoCacheMode::PerWorkspace => Self::PerWorkspace,
+        }
+    }
 }
 
 /// Clap value parser for `--fingerprints-rev`. Validates the value is
@@ -1800,6 +1864,41 @@ pub async fn execute(
         }
     }
 
+    // Milestone 173: propagate `--warm-go-cache` + `--warm-go-cache-
+    // concurrency` to the Go reader via env vars (same convention as
+    // MIKEBOM_INCLUDE_VENDORED / MIKEBOM_DEEP_HASH). The reader
+    // consults these before invoking `warm_workspaces()`.
+    //
+    // Effective-mode reconciliation with `--offline` (FR-003): when
+    // both `--offline` AND `--warm-go-cache=per-workspace` are set,
+    // upgrade to `OfflineInhibited` and emit a warn-level log naming
+    // the conflict. The mode is still surfaced via the
+    // `mikebom:go-cache-warming-mode` doc-scope annotation so the
+    // operator's request is auditable.
+    let effective_warm_mode: crate::scan_fs::package_db::golang::CacheWarmingMode = {
+        use crate::scan_fs::package_db::golang::CacheWarmingMode;
+        let cli_mode: CacheWarmingMode = args.warm_go_cache.into();
+        if offline && matches!(cli_mode, CacheWarmingMode::PerWorkspace) {
+            tracing::warn!(
+                "--warm-go-cache=per-workspace ignored under --offline; effective mode = offline-inhibited (per FR-003)"
+            );
+            CacheWarmingMode::OfflineInhibited
+        } else {
+            cli_mode
+        }
+    };
+    // SAFETY: single-threaded at this point in the scan-cmd lifecycle.
+    unsafe {
+        std::env::set_var(
+            "MIKEBOM_WARM_GO_CACHE_MODE",
+            effective_warm_mode.as_wire_str(),
+        );
+        std::env::set_var(
+            "MIKEBOM_WARM_GO_CACHE_CONCURRENCY",
+            args.warm_go_cache_concurrency.to_string(),
+        );
+    }
+
     // Milestone 052/part-3: the default is to include all lifecycle
     // scopes natively tagged. Readers receive `include_dev = true`
     // unconditionally (inlined as `true` at the two callsites
@@ -1974,6 +2073,7 @@ pub async fn execute(
         os_release_missing_fields,
         go_transitive_coverage,
         go_transitive_fallback_count,
+        go_cache_warming,
         go_workspace_mode,
         scan_target_coord,
         divergence_records,
@@ -2615,6 +2715,10 @@ pub async fn execute(
         // Milestone 172: doc-scope Go step-5 fallback counter for the
         // C117 annotation. Sibling of coverage; Go-gated per FR-002.
         go_transitive_fallback_count,
+        // Milestone 173: doc-scope Go cache-warming outcome for the
+        // C118 (mode) + C119 (failed) annotations. Sibling of
+        // coverage; Go-gated per FR-011.
+        go_cache_warming: go_cache_warming.as_ref(),
         // Milestone 161 (T014): doc-scope Go-workspace-mode signal
         // for the C112 annotation.
         go_workspace_mode: go_workspace_mode.as_ref(),
@@ -2787,6 +2891,30 @@ pub async fn execute(
         println!("{}", serde_json::to_string_pretty(&summary)?);
     }
 
+    // Milestone 173 — FR-004 advisory log. Emitted at INFO level
+    // exactly once when ALL FOUR predicates hold:
+    //   1. Scan produced ≥1 Go component (FR-009 gate).
+    //   2. `--offline` is NOT set.
+    //   3. `--warm-go-cache` was NOT explicitly set (took default `off`).
+    //   4. The C117 `mikebom:go-transitive-fallback-count` value is > 0.
+    // Suppressed otherwise. The literal string here MUST match
+    // contracts/cli-surface.md verbatim so consumers can grep with a
+    // stable substring.
+    let advisory_ctx = AdvisoryContext {
+        fallback_count: go_transitive_fallback_count,
+        warm_flag_was_default: !std::env::args()
+            .any(|a| a.starts_with("--warm-go-cache=")),
+        offline,
+        scan_has_go_components: components
+            .iter()
+            .any(|c| c.purl.as_str().starts_with("pkg:golang/")),
+    };
+    if advisory_ctx.should_advise() {
+        tracing::info!(
+            "mikebom:go-transitive-fallback-count > 0 detected. Prime the cache with --warm-go-cache=per-workspace or 'go mod download' per workspace before scanning."
+        );
+    }
+
     tracing::info!(
         output = %primary_output_path
             .as_ref()
@@ -2797,6 +2925,81 @@ pub async fn execute(
         "SBOM written"
     );
     Ok(())
+}
+
+/// Milestone 173 — FR-004 advisory-log predicate. Fires the "prime
+/// the cache" hint exactly once per scan when the operator's env is
+/// degraded AND they haven't explicitly opted in or out of warming.
+///
+/// The four-input contract is codified in data-model.md Entity 8:
+/// suppression on any single false gate — non-Go scan (FR-009),
+/// offline mode (FR-004 offline exception), explicit flag (operator
+/// took a stance), or clean fallback count (nothing to advise about).
+#[derive(Debug)]
+struct AdvisoryContext {
+    fallback_count: Option<usize>,
+    warm_flag_was_default: bool,
+    offline: bool,
+    scan_has_go_components: bool,
+}
+
+impl AdvisoryContext {
+    fn should_advise(&self) -> bool {
+        self.scan_has_go_components
+            && !self.offline
+            && self.warm_flag_was_default
+            && self.fallback_count.map(|n| n > 0).unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
+#[cfg_attr(test, allow(clippy::unwrap_used))]
+mod advisory_tests {
+    use super::AdvisoryContext;
+
+    fn ctx(
+        fallback: Option<usize>,
+        default: bool,
+        offline: bool,
+        has_go: bool,
+    ) -> AdvisoryContext {
+        AdvisoryContext {
+            fallback_count: fallback,
+            warm_flag_was_default: default,
+            offline,
+            scan_has_go_components: has_go,
+        }
+    }
+
+    #[test]
+    fn advises_when_all_four_predicates_hold() {
+        assert!(ctx(Some(3), true, false, true).should_advise());
+    }
+
+    #[test]
+    fn suppressed_when_offline() {
+        assert!(!ctx(Some(3), true, true, true).should_advise());
+    }
+
+    #[test]
+    fn suppressed_when_flag_explicit() {
+        assert!(!ctx(Some(3), false, false, true).should_advise());
+    }
+
+    #[test]
+    fn suppressed_on_zero_fallback() {
+        assert!(!ctx(Some(0), true, false, true).should_advise());
+    }
+
+    #[test]
+    fn suppressed_when_fallback_none() {
+        assert!(!ctx(None, true, false, true).should_advise());
+    }
+
+    #[test]
+    fn suppressed_on_non_go_scan() {
+        assert!(!ctx(Some(3), true, false, false).should_advise());
+    }
 }
 
 /// Write `bytes` to `path`, creating any missing parent directories.
@@ -3468,6 +3671,9 @@ mod tests {
             pkg_alias: vec![],
             // Milestone 108 US5 — default runtime SHA override unset.
             fingerprints_rev: None,
+            // Milestone 173 — test helper defaults match CLI defaults.
+            warm_go_cache: WarmGoCacheMode::Off,
+            warm_go_cache_concurrency: 4,
         }
     }
 

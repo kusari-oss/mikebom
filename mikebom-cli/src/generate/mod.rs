@@ -84,6 +84,20 @@ pub struct ScanArtifacts<'a> {
     /// `mikebom:go-transitive-fallback-count` annotation emitters in
     /// CDX 1.6, SPDX 2.3, and SPDX 3.0.1.
     pub go_transitive_fallback_count: Option<usize>,
+    /// Milestone 173: doc-scope Go cache-warming outcome. `None` iff
+    /// no Go scan happened (annotation absent for non-Go scans, per
+    /// FR-011). `Some(_)` on Go-containing scans, with `mode`
+    /// reflecting the effective `--warm-go-cache` setting and
+    /// `failures` naming any workspaces where `go mod download`
+    /// failed. Consumed by the C118
+    /// (`mikebom:go-cache-warming-mode`) emission code
+    /// unconditionally when populated + C119
+    /// (`mikebom:go-cache-warming-failed`) conditionally when
+    /// `failures` is non-empty. Reference lifetime matches the other
+    /// borrowed `ScanArtifacts` fields.
+    pub go_cache_warming: Option<
+        &'a crate::scan_fs::package_db::golang::CacheWarmingResult,
+    >,
     /// Milestone 161 (T013): workspace-mode detection outcome for the
     /// C112 doc-scope annotation. Distinct from
     /// `go_transitive_coverage` per research.md R1. `None` iff no

@@ -589,6 +589,10 @@ spdx23_anno!(c116_spdx23, "mikebom:dep-alternative-alternates",       component)
 // Milestone 172: C117 document-scope
 // `mikebom:go-transitive-fallback-count` annotation. Companion to C110.
 spdx23_anno!(c117_spdx23, "mikebom:go-transitive-fallback-count",     document);
+// Milestone 173: C118 + C119 document-scope Go cache-warming
+// annotations.
+spdx23_anno!(c118_spdx23, "mikebom:go-cache-warming-mode",            document);
+spdx23_anno!(c119_spdx23, "mikebom:go-cache-warming-failed",          document);
 
 // C67 — `mikebom:assertion-conflict` (milestone 119). Per-Package
 // envelope carrying the JSON-encoded array of conflict records.

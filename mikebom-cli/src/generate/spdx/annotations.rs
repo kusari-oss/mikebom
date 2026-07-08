@@ -548,6 +548,31 @@ pub fn annotate_document(
     // component (`go_transitive_coverage` is `Some`). C111 conditionally
     // emitted iff coverage != Complete. Per FR-004/FR-005 + Q1
     // reason-code-driven decision rule.
+    // Milestone 173: C119 doc-scope `mikebom:go-cache-warming-failed`.
+    // Emitted BEFORE C118 for alphabetic sort. Gated on Go presence
+    // AND at least one failing workspace. JSON-encoded array value.
+    if let Some(cw) = artifacts.go_cache_warming {
+        if !cw.failures.is_empty() {
+            let value = serde_json::to_string(&cw.failures).unwrap_or_default();
+            push(
+                &mut out,
+                "mikebom:go-cache-warming-failed",
+                json!(value),
+            );
+        }
+    }
+
+    // Milestone 173: C118 doc-scope `mikebom:go-cache-warming-mode`.
+    // Emitted BEFORE C110 for alphabetic sort. Value one of `"off"` /
+    // `"per-workspace"` / `"offline-inhibited"`.
+    if let Some(cw) = artifacts.go_cache_warming {
+        push(
+            &mut out,
+            "mikebom:go-cache-warming-mode",
+            json!(cw.mode.as_wire_str()),
+        );
+    }
+
     if let Some(coverage) = artifacts.go_transitive_coverage {
         push(
             &mut out,

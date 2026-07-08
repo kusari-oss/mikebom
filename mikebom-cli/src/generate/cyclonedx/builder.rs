@@ -61,6 +61,13 @@ pub struct CycloneDxBuilder {
     /// `go_transitive_coverage`; both are Go-gated. `None` iff no Go
     /// scan happened.
     go_transitive_fallback_count: Option<usize>,
+    /// Milestone 173: doc-scope Go cache-warming outcome for the C118
+    /// (`mikebom:go-cache-warming-mode`) + C119
+    /// (`mikebom:go-cache-warming-failed`) annotations. Sibling of
+    /// `go_transitive_coverage`; both are Go-gated. `None` iff no Go
+    /// scan happened.
+    go_cache_warming:
+        Option<crate::scan_fs::package_db::golang::CacheWarmingResult>,
     /// Milestone 161 (T041): doc-scope Go-workspace-mode signal.
     /// Distinct from `go_transitive_coverage` per research.md R1.
     /// `None` ⇒ no `go.work` at scanned root (C112 absent).
@@ -138,6 +145,7 @@ impl CycloneDxBuilder {
             os_release_missing_fields: Vec::new(),
             go_transitive_coverage: None,
             go_transitive_fallback_count: None,
+            go_cache_warming: None,
             go_workspace_mode: None,
             source_document_binding: None,
             identifiers: Vec::new(),
@@ -308,6 +316,18 @@ impl CycloneDxBuilder {
         count: Option<usize>,
     ) -> Self {
         self.go_transitive_fallback_count = count;
+        self
+    }
+
+    /// Milestone 173 — record the doc-scope Go cache-warming outcome.
+    /// Drives the C118 (`mikebom:go-cache-warming-mode`) unconditional
+    /// annotation + C119 (`mikebom:go-cache-warming-failed`) conditional
+    /// annotation. `None` iff no Go scan happened.
+    pub fn with_go_cache_warming(
+        mut self,
+        warming: Option<crate::scan_fs::package_db::golang::CacheWarmingResult>,
+    ) -> Self {
+        self.go_cache_warming = warming;
         self
     }
 
@@ -504,6 +524,7 @@ impl CycloneDxBuilder {
             self.go_transitive_coverage.as_ref(),
             self.go_workspace_mode.as_ref(),
             self.go_transitive_fallback_count,
+            self.go_cache_warming.as_ref(),
         );
         // Milestone 076 — track per-component identifier matches so
         // we can emit a warn for any selector that matched zero

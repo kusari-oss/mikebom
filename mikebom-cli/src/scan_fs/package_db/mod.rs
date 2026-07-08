@@ -360,6 +360,15 @@ pub struct ScanDiagnostics {
     /// workspace's `LadderSummary.gosum_fallback_count` in legacy.rs).
     pub gosum_fallback_count: Option<usize>,
 
+    /// Milestone 173: doc-scope Go cache-warming outcome. Mirror of
+    /// `GoScanSignals.cache_warming` propagated through the
+    /// aggregator. `None` iff no Go workspace was discovered (matches
+    /// the FR-011 emission gate — annotation absent for non-Go scans).
+    /// `Some(_)` with mode `Off` / `PerWorkspace` / `OfflineInhibited`
+    /// on Go-containing scans. Feeds the C118 + C119 doc-scope
+    /// annotations.
+    pub go_cache_warming: Option<golang::CacheWarmingResult>,
+
     /// Milestone 161 (T010): workspace-mode detection outcome for the
     /// C112 document-scope annotation. Distinct from
     /// `go_transitive_coverage` (C110) and `go_graph_completeness`
@@ -1480,6 +1489,12 @@ pub fn read_all(
     if diagnostics.go_transitive_coverage.is_some() {
         diagnostics.gosum_fallback_count = Some(go_signals.gosum_fallback_count);
     }
+    // Milestone 173: propagate cache-warming outcome from the Go
+    // signals aggregator into the doc-level ScanDiagnostics for the
+    // C118/C119 annotations. Clone required because `go_signals` is
+    // read-only after the aggregation loop; `CacheWarmingResult` is
+    // small (mode enum + Vec<WorkspaceFailure>).
+    diagnostics.go_cache_warming = go_signals.cache_warming.clone();
     // Milestone 161 (T011): propagate workspace-mode detection outcome
     // into the doc-level ScanDiagnostics for the C112 annotation.
     diagnostics.go_workspace_mode = go_signals.workspace_mode;

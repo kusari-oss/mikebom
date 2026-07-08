@@ -34,6 +34,11 @@ pub mod goprivate;
 // Milestone 161 (T001): go.work parser + workspace-mode types +
 // Q1 hybrid edge-disposition classifier.
 pub mod gowork;
+// Milestone 173 (T003-T005): opt-in `go mod download` cache warmer +
+// mode/failure-reason enums exposed to CLI + emitters.
+pub mod warm_cache;
+
+pub use warm_cache::{CacheWarmingMode, CacheWarmingResult};
 
 // Preserve the pre-T008 import surface — callers say
 // `crate::scan_fs::package_db::golang::read(...)`,

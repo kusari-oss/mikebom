@@ -723,6 +723,7 @@ mod tests {
             os_release_missing_fields: &[],
             go_transitive_coverage: None,
             go_transitive_fallback_count: None,
+            go_cache_warming: None,
             go_workspace_mode: None,
             scan_target_coord: None,
             generation_context: GenerationContext::FilesystemScan,

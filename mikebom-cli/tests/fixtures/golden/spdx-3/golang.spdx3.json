@@ -1138,6 +1138,14 @@
     {
       "annotationType": "other",
       "creationInfo": "_:creation-info",
+      "spdxId": "https://mikebom.kusari.dev/spdx3/doc-UVO46NYPUUUR5BLVUOAKJIKU/anno-QE36IXRHBKUO3VGK",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:go-cache-warming-mode\",\"value\":\"off\"}",
+      "subject": "https://mikebom.kusari.dev/spdx3/doc-UVO46NYPUUUR5BLVUOAKJIKU",
+      "type": "Annotation"
+    },
+    {
+      "annotationType": "other",
+      "creationInfo": "_:creation-info",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-UVO46NYPUUUR5BLVUOAKJIKU/anno-QXBX3GAXQTUIVBW7",
       "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"mikebom:go-transitive-coverage-reason\",\"value\":\"offline-mode: transitive edges from proxy fetches unavailable\"}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-UVO46NYPUUUR5BLVUOAKJIKU",

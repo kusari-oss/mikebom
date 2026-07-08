@@ -60,6 +60,10 @@ impl SbomSerializer for CycloneDxJsonSerializer {
             // Go-transitive coverage signal from ScanArtifacts into
             // the builder for the C110/C111 metadata properties.
             .with_go_transitive_coverage(scan.go_transitive_coverage.cloned())
+            // Milestone 172 — propagate the doc-scope Go step-5 fallback
+            // count from ScanArtifacts into the builder for the C117
+            // `mikebom:go-transitive-fallback-count` metadata property.
+            .with_go_transitive_fallback_count(scan.go_transitive_fallback_count)
             // Milestone 161 (T043) — propagate the doc-scope
             // Go-workspace-mode signal from ScanArtifacts into the
             // builder for the C112 metadata property.

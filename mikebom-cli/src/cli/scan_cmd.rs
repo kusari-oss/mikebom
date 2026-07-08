@@ -1973,6 +1973,7 @@ pub async fn execute(
         complete_ecosystems,
         os_release_missing_fields,
         go_transitive_coverage,
+        go_transitive_fallback_count,
         go_workspace_mode,
         scan_target_coord,
         divergence_records,
@@ -2611,6 +2612,9 @@ pub async fn execute(
         // signal for the C110/C111 annotations. Distinct from
         // graph-completeness per research.md R1.
         go_transitive_coverage: go_transitive_coverage.as_ref(),
+        // Milestone 172: doc-scope Go step-5 fallback counter for the
+        // C117 annotation. Sibling of coverage; Go-gated per FR-002.
+        go_transitive_fallback_count,
         // Milestone 161 (T014): doc-scope Go-workspace-mode signal
         // for the C112 annotation.
         go_workspace_mode: go_workspace_mode.as_ref(),

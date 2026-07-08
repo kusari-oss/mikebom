@@ -835,6 +835,14 @@ cdx_anno!(c115_cdx, "mikebom:unresolved-declared-dep",          component);
 // annotation preserves the fallback set. JSON-object value keyed by
 // first-alt name. See `control_file::parse_depends_field_with_alternatives`.
 cdx_anno!(c116_cdx, "mikebom:dep-alternative-alternates",       component);
+// Milestone 172: C117 document-scope
+// `mikebom:go-transitive-fallback-count` annotation. Non-negative
+// integer count of Go modules whose FINAL resolution step was m091
+// step-5 (go.sum flat fallback). Companion to C108 (per-component)
+// and C110 (doc-scope coverage verdict). Emitted with value "0" on
+// healthy Go scans per Q1 clarification; absent when no Go scan
+// happened.
+cdx_anno!(c117_cdx, "mikebom:go-transitive-fallback-count",     document);
 
 // ============================================================
 // Section D — Evidence (D1, D2 — CDX-native shape)

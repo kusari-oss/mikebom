@@ -1405,6 +1405,13 @@ pub struct GoScanSignals {
     pub go_transitive_coverage: Option<
         crate::scan_fs::package_db::golang::graph_resolver::GoTransitiveCoverage,
     >,
+    /// Milestone 172: workspace-aggregated count of Go modules whose
+    /// final resolution step was the m091 step-5 go.sum flat fallback.
+    /// Sum across every workspace's `LadderSummary.gosum_fallback_count`.
+    /// Read at the `read_all` aggregator to populate
+    /// `ScanDiagnostics.gosum_fallback_count`; wrapped in `Some(...)`
+    /// at that boundary only when Go was actually scanned (per FR-002).
+    pub gosum_fallback_count: usize,
     /// Milestone 161 (T009): workspace-mode detection outcome from
     /// parsing `<rootfs>/go.work`. `None` iff no `go.work` file was
     /// present at scan entry, OR `GOWORK=off` in the scan env.
@@ -1675,6 +1682,11 @@ pub fn read(
                     (Some(existing), new) => merge_coverage(existing, new),
                 });
         }
+
+        // Milestone 172: aggregate this workspace's step-5 fallback
+        // count into the ecosystem-wide sum. Source: `LadderSummary
+        // .gosum_fallback_count` (populated at graph_resolver.rs:916).
+        signals.gosum_fallback_count += graph_map.summary().gosum_fallback_count;
 
         // Milestone 091: collect set of paths whose entries were
         // claimed via step 5 so build_entries_from_go_module_with_lookup

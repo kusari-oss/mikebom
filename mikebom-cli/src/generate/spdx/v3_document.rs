@@ -97,6 +97,7 @@ pub fn build_document(
             include_source_files: scan.include_source_files,
             scope_mode: scan.scope_mode,
             go_transitive_coverage: scan.go_transitive_coverage,
+            go_transitive_fallback_count: scan.go_transitive_fallback_count,
             go_workspace_mode: scan.go_workspace_mode,
             source_document_binding: scan.source_document_binding,
             identifiers: scan.identifiers,

@@ -1,6 +1,6 @@
 # mikebom Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-07-06
+Auto-generated from all feature plans. Last updated: 2026-07-07
 
 ## Active Technologies
 - Rust stable (user-space only; no eBPF touched in this milestone) (002-python-npm-ecosystem)
@@ -211,6 +211,8 @@ Auto-generated from all feature plans. Last updated: 2026-07-06
 - N/A — pure metadata-emission transform on the CDX/SPDX code paths; no caches, no persistence. (170-graph-completeness-dedup)
 - N/A — this is a GitHub Actions workflow YAML + Markdown docs change. No Rust code touched. + Existing GitHub Actions (`actions/checkout@9c091bb...`), the standard GitHub Actions token model, `gh` CLI (already used in the workflow). **No new external dependencies.** (171-fix-auto-tag-perms)
 - N/A — no persistent state on mikebom's side. The `RELEASE_TAG_TOKEN` secret lives in GitHub's repo-secrets store, managed by GitHub, not by mikebom code. (171-fix-auto-tag-perms)
+- Rust stable (workspace toolchain inherited from milestones 001–171; no nightly required). + Existing only — `serde`/`serde_json` (JSON round-trip), `tracing`, `anyhow`, `thiserror`. Reuses milestone-091 `ResolutionStep::GoSumFallback` enum variant (already at `graph_resolver.rs:76`) + milestone-160 `GoTransitiveCoverage`/`LadderSummary` infrastructure verbatim. **Zero new Cargo dependencies.** (172-go-fallback-count)
+- N/A — pure metadata-emission transform. The count is computed once per scan at Go-resolver exit time and threaded through the emission pipeline. No persistence. (172-go-fallback-count)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -273,9 +275,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 172-go-fallback-count: Added Rust stable (workspace toolchain inherited from milestones 001–171; no nightly required). + Existing only — `serde`/`serde_json` (JSON round-trip), `tracing`, `anyhow`, `thiserror`. Reuses milestone-091 `ResolutionStep::GoSumFallback` enum variant (already at `graph_resolver.rs:76`) + milestone-160 `GoTransitiveCoverage`/`LadderSummary` infrastructure verbatim. **Zero new Cargo dependencies.**
 - 171-fix-auto-tag-perms: Added N/A — this is a GitHub Actions workflow YAML + Markdown docs change. No Rust code touched. + Existing GitHub Actions (`actions/checkout@9c091bb...`), the standard GitHub Actions token model, `gh` CLI (already used in the workflow). **No new external dependencies.**
 - 170-graph-completeness-dedup: Added Rust stable (workspace toolchain inherited from milestones 001–169; no nightly required for this user-space-only fix). + Existing only — `serde`/`serde_json` (JSON round-trip), `tracing`, `anyhow`, `thiserror`. Reuses milestone-158's `GraphCompletenessResult` struct + `join_reason_codes` helper. Reuses milestone-071's parity-extractor infrastructure verbatim. **No new Cargo dependencies.**
-- 169-ipk-opkg-reader: Added Rust stable (workspace toolchain inherited from milestones 001–168; no nightly required for this user-space-only work). + Existing only, with one contested choice:
 
 
 <!-- MANUAL ADDITIONS START -->

@@ -1181,6 +1181,20 @@ mod tests {
     }
 
     #[test]
+    fn ladder_summary_gosum_fallback_count_readable() {
+        // Milestone 172 T005: sanity-gate that `LadderSummary.gosum_fallback_count`
+        // stays a public, externally-readable field. m172 exposes it via the
+        // doc-scope `mikebom:go-transitive-fallback-count` annotation; a future
+        // rename to a private name would silently break emission. This test
+        // fails the build if the field is renamed or made non-public.
+        let s = LadderSummary {
+            gosum_fallback_count: 5,
+            ..Default::default()
+        };
+        assert_eq!(s.gosum_fallback_count, 5);
+    }
+
+    #[test]
     fn error_class_has_stable_string_repr() {
         // Used as a HashMap key in LadderSummary.fetch_errors and as the
         // `error_class` field in tracing::warn — stability matters.

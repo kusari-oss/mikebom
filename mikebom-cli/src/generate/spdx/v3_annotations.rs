@@ -521,6 +521,27 @@ fn push_document_fields(
         }
     }
 
+    // Milestone 173: C119 doc-scope `mikebom:go-cache-warming-failed`.
+    // Emitted BEFORE C118 for alphabetic sort. Gated on Go presence
+    // AND at least one failing workspace. JSON-encoded array value.
+    if let Some(cw) = scan.go_cache_warming {
+        if !cw.failures.is_empty() {
+            let value = serde_json::to_string(&cw.failures).unwrap_or_default();
+            push(out, "mikebom:go-cache-warming-failed", json!(value));
+        }
+    }
+
+    // Milestone 173: C118 doc-scope `mikebom:go-cache-warming-mode`.
+    // Emitted BEFORE C110 for alphabetic sort. Value one of `"off"` /
+    // `"per-workspace"` / `"offline-inhibited"`.
+    if let Some(cw) = scan.go_cache_warming {
+        push(
+            out,
+            "mikebom:go-cache-warming-mode",
+            json!(cw.mode.as_wire_str()),
+        );
+    }
+
     // Milestone 160 (T034/T035): doc-scope Go-transitive coverage
     // annotations (C110/C111). C110 emitted iff the scan had ≥1 Go
     // component; C111 conditionally emitted iff coverage != Complete.

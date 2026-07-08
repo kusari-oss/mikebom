@@ -933,6 +933,10 @@
         "value": "orphaned-components-detected: 1 component(s) not reachable from root"
       },
       {
+        "name": "mikebom:go-cache-warming-mode",
+        "value": "off"
+      },
+      {
         "name": "mikebom:go-transitive-coverage",
         "value": "unknown"
       },

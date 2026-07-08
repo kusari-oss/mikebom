@@ -99,6 +99,7 @@ The 18 entries §3 currently depth-covers (covering 21 unique catalog keys — 3
 | `mikebom:file-inventory-mode` | 3.4 | Y | Y | Y | N | Y | 4 | DEPTH ✓ |
 | `mikebom:graph-completeness` + `…-reason` | 3.4 | Y | Y | Y | Y (paired) | Y | 5 | DEPTH ✓ |
 | `mikebom:go-transitive-fallback-count` (new in 172) | 3.4 | Y | Y (Go-essential; degraded-scan signal) | Y | Y (companion to C110) | Y | 5 | DEPTH ✓ |
+| `mikebom:go-cache-warming-mode` + `…-failed` (new in 173) | 3.4 | Y | Y (Go-essential; monorepo ergonomics) | Y | Y (paired) | Y | 5 | DEPTH ✓ |
 | `mikebom:peer-edge-targets` | 3.4 | Y | Y (npm-essential) | Y | N | Y | 4 | DEPTH ✓ |
 | `mikebom:depends-unresolved` + `…-rdepends-unresolved` (new in 151) | 3.4 | Y | Y (Yocto-essential; reserved key) | Y | Y (paired) | Y | 5 | DEPTH ✓ |
 | `mikebom:assertion-conflict` (new in 151) | 3.4 | Y | Y | Y | N | Y | 4 | DEPTH ✓ |
@@ -581,6 +582,78 @@ jq '{
 } | .match = (.doc_count == .per_component_count)' your.cdx.json
 ```
 
+#### `mikebom:go-cache-warming-mode` + `mikebom:go-cache-warming-failed`
+
+> **What they are**: paired document-scope signals introduced in milestone 173 to close the "why did my Go graph degrade?" diagnostic loop that milestone 172's `mikebom:go-transitive-fallback-count` (C117) opened. The pair captures the operator's chosen cache-warming mode + any per-workspace failures encountered while warming.
+>
+> **The problem being solved**: pre-m173, an operator seeing `mikebom:go-transitive-fallback-count: "73"` in their SBOM knew *that* something degraded but not *what to do about it*. The m055/m091 5-step ladder needs a warm module cache OR reachable `$GOPROXY` to succeed at steps 1–3; without both, it falls through to step-5's flat go.sum fallback (loses parent-child topology). The operator-side fix is to prime the cache before scanning — via `go mod download` per workspace, or by shipping mikebom with a flag that does it for them.
+>
+> **The m173 flag pair**:
+> - `--warm-go-cache=<off|per-workspace>` — default `off`. When set to `per-workspace`, mikebom invokes `go mod download` in every discovered Go workspace BEFORE the transitive resolver runs. Step 1 (`go mod graph`) then succeeds against a hot cache and emits true parent-child topology.
+> - `--warm-go-cache-concurrency=<N>` — default `4`. `1` = sequential; `0` = auto (`min(cpus, 8)`); values above `32` are clamped with a warn log. Matches the m055/m091 `fetch_concurrency = 16` posture — monorepos are the motivating use case and sequential warming defeats the ergonomics purpose.
+>
+> **What C118 tells you** — the effective warming mode:
+> - `"off"` — default. No warming was performed. C117 reflects the operator's env verbatim.
+> - `"per-workspace"` — operator opted in via `--warm-go-cache=per-workspace`. The warmer ran.
+> - `"offline-inhibited"` — operator requested `per-workspace` AND `--offline`. Warming was suppressed per FR-003 (offline mode is authoritative; warming would need network). C118 surfaces the operator's request for auditability.
+>
+> **What C119 tells you** — per-workspace failure records. Emitted iff at least one workspace failed warming. Absent on clean scans (no empty-array emission — byte-identity gate per FR-007). Value is a JSON-encoded array of `{reason, workspace}` records, sorted alphabetically by workspace. Reason class is a closed 6-value enum: `go-binary-absent`, `spawn-failed`, `timeout`, `subcommand-failed`, `parse-error`, `budget-exhausted`. Every failure ALSO fires a real-time `tracing::warn!` line on stderr with the same workspace + reason — operators grepping tool output during CI see the failures as they happen; the C119 annotation is the post-scan audit trail.
+>
+> **The (C118, C117) tuple** post-m173 is fully self-describing:
+> - `(off, 0)` — healthy scan without warming
+> - `(off, N>0)` — degraded scan without warming; the m173 advisory log fires exactly once suggesting `--warm-go-cache=per-workspace`
+> - `(per-workspace, 0)` — warming succeeded; graph topology is authoritative
+> - `(per-workspace, N>0)` — warming ran but N modules still fell to step-5; consult C119 for per-workspace failure details and cross-reference `$GOPROXY` coverage
+> - `(offline-inhibited, N>0)` — warming would have run but `--offline` overrode it; C117 reflects offline-mode degradation
+>
+> **The advisory log** — when your env is degraded AND you haven't set `--warm-go-cache` explicitly, mikebom emits exactly one INFO-level log line on stderr:
+>
+> ```
+> mikebom:go-transitive-fallback-count > 0 detected. Prime the cache with --warm-go-cache=per-workspace or 'go mod download' per workspace before scanning.
+> ```
+>
+> The message is grep-stable: `grep -F 'Prime the cache with --warm-go-cache=per-workspace'` matches whether mikebom's log formatter is plain-text or JSON. Suppressed when: (1) scan has no Go components, (2) `--offline` is set, (3) operator explicitly set `--warm-go-cache=<any>` (including `off`), or (4) C117 is `"0"`.
+>
+> **Where they live**:
+> - **CDX 1.6**: `metadata.properties[]` entries (document-scope). C118 is unconditional on Go presence; C119 is conditional on any-workspace-failed.
+> - **SPDX 2.3**: document-scope annotations on `SpdxDocument` in the `MikebomAnnotationCommentV1` envelope.
+> - **SPDX 3**: document-scope Annotation elements targeting the `SpdxDocument` root IRI.
+>
+> **What to do with them**: in CI, wire `mikebom:go-cache-warming-failed` to your monitoring — its presence is an actionable signal that specific workspaces couldn't warm. Common causes and fixes:
+> - `go-binary-absent` — install the Go toolchain in the CI image.
+> - `subcommand-failed` — typically an unreachable required module; check `$GOPROXY` coverage or add a `GOPRIVATE`/`GONOSUMCHECK` for internal modules.
+> - `timeout` — the workspace's module closure is too large for the 60-second per-workspace budget; either use a warmer proxy, run `go mod download` outside mikebom, or (future milestone) raise the timeout via a knob.
+> - `budget-exhausted` — the monorepo has more workspaces than fit in the 300-second overall budget at the chosen concurrency; raise `--warm-go-cache-concurrency` or split the scan.
+>
+> **Milestone**: 173 — added.
+> **Catalog**: [C118](sbom-format-mapping.md) + [C119](sbom-format-mapping.md)
+
+```jq
+# CDX — get the effective cache-warming mode:
+jq '.metadata.properties[]?
+    | select(.name == "mikebom:go-cache-warming-mode")
+    | .value' your.cdx.json
+```
+
+```jq
+# CDX — list failed workspaces:
+jq '.metadata.properties[]?
+    | select(.name == "mikebom:go-cache-warming-failed")
+    | .value
+    | fromjson
+    | map({workspace, reason})' your.cdx.json
+```
+
+```jq
+# CDX — full m160+m172+m173 Go-signals dashboard:
+jq '{
+  coverage:         (.metadata.properties[]? | select(.name == "mikebom:go-transitive-coverage") | .value // "no-go-signal"),
+  fallback_count:   (.metadata.properties[]? | select(.name == "mikebom:go-transitive-fallback-count") | .value // "not-emitted"),
+  warming_mode:     (.metadata.properties[]? | select(.name == "mikebom:go-cache-warming-mode") | .value // "not-emitted"),
+  warming_failures: ([.metadata.properties[]? | select(.name == "mikebom:go-cache-warming-failed") | .value | fromjson | .[]?] // [])
+}' your.cdx.json
+```
+
 #### `mikebom:peer-edge-targets`
 
 > **What it is**: alphabetically-sorted array of PURL strings naming the peer-driven `dependsOn` edges from a given npm component. npm `peerDependencies` are install-time conventional (npm 7+ auto-installs them) but semantically declarative — different from regular `dependencies`. mikebom emits peer-edges as standard `dependsOn` (matching the npm install reality) AND tags the source component with this annotation so consumers can distinguish install-driven edges from functional-dep edges. Emitted only on npm components with ≥1 resolved peer-driven edge.
@@ -835,6 +908,8 @@ Alphabetical order. Each entry links to the FIRST catalog row that mentions the 
 - **`mikebom:go-transitive-coverage`** — milestone-160 document-scope Go-transitive edge-resolution signal (`complete` / `partial` / `unknown`). Modern home for the Go-specific completeness question that pre-m170 lived at C44. See [§3.4](#34-transparency--completeness-gaps) for depth coverage. ([C110](sbom-format-mapping.md))
 - **`mikebom:go-transitive-coverage-reason`** — milestone-160 companion enumerating the reason class for non-`complete` Go-transitive coverage (e.g., `offline-mode`, `proxy-fetch-degraded`, `goproxy-off-in-chain`, `go-mod-graph-degraded`, `module-cache-empty-and-no-proxy`). ([C111](sbom-format-mapping.md))
 - **`mikebom:go-transitive-fallback-count`** — milestone-172 document-scope non-negative integer counting Go modules whose FINAL resolution step was the `go.sum` flat fallback (step 5 of the 5-step ladder). Companion to C110: gives the count that C110's verdict aggregates. See [§3.4](#34-transparency--completeness-gaps) for depth coverage. ([C117](sbom-format-mapping.md))
+- **`mikebom:go-cache-warming-mode`** — milestone-173 document-scope closed-enum string (`"off"` / `"per-workspace"` / `"offline-inhibited"`) reflecting the effective `--warm-go-cache` mode during the scan. See [§3.4](#34-transparency--completeness-gaps) for depth coverage. ([C118](sbom-format-mapping.md))
+- **`mikebom:go-cache-warming-failed`** — milestone-173 document-scope JSON-encoded array of per-workspace warming failure records (`{reason, workspace}`). Companion to C118. Emitted iff at least one workspace failed. ([C119](sbom-format-mapping.md))
 - **`mikebom:identifiers`** — milestone-073 user-defined identifier envelope (`<scheme>:<value>` records beyond the built-in `repo:` / `git:` / `image:` / `attestation:` schemes). See [identifiers.md](identifiers.md). ([C47](sbom-format-mapping.md))
 - **`mikebom:kmp-source-set`** — milestone-122 Kotlin Multiplatform source-set names that declared each dep. ([C68](sbom-format-mapping.md))
 - **`mikebom:layer-digest`** — milestone-133 OCI layer-digest attribution. See [§3.1](#31-vulnerability-scanning) for depth coverage. ([C88](sbom-format-mapping.md))
@@ -926,6 +1001,8 @@ Each depth-covered signal cites the milestone that introduced or stabilized it. 
 | `mikebom:go-transitive-coverage` | 160 | added (closes #494) — modern home for Go-scoped transitive-edge coverage; replaces the pre-m170 C44 emission |
 | `mikebom:go-transitive-coverage-reason` | 160 | added (closes #494) — companion for C110 |
 | `mikebom:go-transitive-fallback-count` | 172 | added — doc-scope count of Go modules that landed on step-5 go.sum flat fallback; companion to C110 giving the numeric count under the aggregate verdict |
+| `mikebom:go-cache-warming-mode` | 173 | added — doc-scope closed-enum ({off, per-workspace, offline-inhibited}) surfacing the operator's chosen cache-warming mode; companion to C117 tuple `(C118, C117)` is fully self-describing |
+| `mikebom:go-cache-warming-failed` | 173 | added — doc-scope JSON-encoded array of per-workspace warming failure records; emitted iff at least one workspace failed warming |
 | `mikebom:peer-edge-targets` | 147 | added (closes Trivy-comparison orphan gap on the looker-frontend npm lockfile) |
 
 mikebom releases follow the `v*-alpha.*` tag sequence. As of milestone 149, the released version is `v0.1.0-alpha.52`. To determine signal availability for a specific binary version, cross-reference the [CHANGELOG](../../CHANGELOG.md) for the release-to-milestone mapping.

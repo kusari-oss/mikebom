@@ -656,6 +656,10 @@ spdx3_anno!(c116_spdx3, "mikebom:dep-alternative-alternates",       component);
 // Milestone 172: C117 document-scope
 // `mikebom:go-transitive-fallback-count` annotation. Companion to C110.
 spdx3_anno!(c117_spdx3, "mikebom:go-transitive-fallback-count",     document);
+// Milestone 173: C118 + C119 document-scope Go cache-warming
+// annotations.
+spdx3_anno!(c118_spdx3, "mikebom:go-cache-warming-mode",            document);
+spdx3_anno!(c119_spdx3, "mikebom:go-cache-warming-failed",          document);
 
 // C67 — `mikebom:assertion-conflict` (milestone 119). Per-component
 // graph-element annotation carrying the JSON-encoded array of

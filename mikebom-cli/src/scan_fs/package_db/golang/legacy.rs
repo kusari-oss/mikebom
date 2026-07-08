@@ -1412,6 +1412,16 @@ pub struct GoScanSignals {
     /// `ScanDiagnostics.gosum_fallback_count`; wrapped in `Some(...)`
     /// at that boundary only when Go was actually scanned (per FR-002).
     pub gosum_fallback_count: usize,
+    /// Milestone 173: aggregated Go cache-warming outcome for this
+    /// scan. `None` iff no Go scan happened (i.e., no Go workspaces
+    /// were discovered). `Some(_)` when the warmer ran OR the mode
+    /// was `Off` / `OfflineInhibited` on a Go-containing scan (still
+    /// carries the mode value for C118 emission). Feeds the C118
+    /// (`mikebom:go-cache-warming-mode`) + C119
+    /// (`mikebom:go-cache-warming-failed`) doc-scope annotations.
+    pub cache_warming: Option<
+        crate::scan_fs::package_db::golang::warm_cache::CacheWarmingResult,
+    >,
     /// Milestone 161 (T009): workspace-mode detection outcome from
     /// parsing `<rootfs>/go.work`. `None` iff no `go.work` file was
     /// present at scan entry, OR `GOWORK=off` in the scan env.
@@ -1645,6 +1655,63 @@ pub fn read(
         GraphResolver, GraphResolverConfig, WorkspaceContext,
     };
     let resolver = GraphResolver::new(GraphResolverConfig::default());
+
+    // Milestone 173: opt-in Go cache warming. Read the effective mode
+    // from the `MIKEBOM_WARM_GO_CACHE_MODE` env var (set by scan_cmd.rs
+    // after `--offline` reconciliation per FR-003). Warming runs ONCE
+    // for all discovered workspaces before the resolver loop below —
+    // step 1 (`go mod graph`) then finds every module locally instead
+    // of falling through to step 5's flat go.sum fallback.
+    //
+    // The env-var carrier avoids threading two new params through the
+    // 75-callsite `scan_path → read_all → golang::read` chain — same
+    // convention as `MIKEBOM_INCLUDE_VENDORED` / `MIKEBOM_DEEP_HASH`.
+    let warm_mode: crate::scan_fs::package_db::golang::warm_cache::CacheWarmingMode = {
+        use crate::scan_fs::package_db::golang::warm_cache::CacheWarmingMode;
+        match std::env::var("MIKEBOM_WARM_GO_CACHE_MODE").as_deref() {
+            Ok("per-workspace") => CacheWarmingMode::PerWorkspace,
+            Ok("offline-inhibited") => CacheWarmingMode::OfflineInhibited,
+            _ => CacheWarmingMode::Off,
+        }
+    };
+    if !parsed_roots.is_empty() {
+        use crate::scan_fs::package_db::golang::warm_cache;
+        use std::time::Duration;
+
+        let workspace_paths: Vec<PathBuf> =
+            parsed_roots.iter().map(|(p, _, _)| p.clone()).collect();
+
+        if matches!(warm_mode, warm_cache::CacheWarmingMode::PerWorkspace) {
+            let concurrency_raw: u32 = std::env::var("MIKEBOM_WARM_GO_CACHE_CONCURRENCY")
+                .ok()
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(4);
+            let concurrency = warm_cache::effective_concurrency(concurrency_raw);
+            let per_workspace_timeout = Duration::from_secs(60); // research §R4
+            let overall_budget = Duration::from_secs(300); // research §R4
+            tracing::info!(
+                workspaces = workspace_paths.len(),
+                concurrency,
+                "warming Go module cache (--warm-go-cache=per-workspace)"
+            );
+            signals.cache_warming = Some(warm_cache::warm_workspaces(
+                warm_cache::CacheWarmingMode::PerWorkspace,
+                &workspace_paths,
+                rootfs,
+                concurrency,
+                per_workspace_timeout,
+                overall_budget,
+            ));
+        } else {
+            // `Off` or `OfflineInhibited` — no warming performed, but
+            // still record the mode so the C118 annotation surfaces the
+            // operator's request. `failures` is trivially empty.
+            signals.cache_warming = Some(warm_cache::CacheWarmingResult {
+                mode: warm_mode,
+                failures: Vec::new(),
+            });
+        }
+    }
 
     for (project_root, doc, sums) in &parsed_roots {
         let go_sum_path = project_root.join("go.sum");

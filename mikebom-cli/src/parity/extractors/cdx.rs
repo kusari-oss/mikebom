@@ -843,6 +843,11 @@ cdx_anno!(c116_cdx, "mikebom:dep-alternative-alternates",       component);
 // healthy Go scans per Q1 clarification; absent when no Go scan
 // happened.
 cdx_anno!(c117_cdx, "mikebom:go-transitive-fallback-count",     document);
+// Milestone 173: C118 + C119 document-scope Go cache-warming
+// annotations. C118 unconditional per Go-present scan; C119
+// conditional on at least one workspace failure.
+cdx_anno!(c118_cdx, "mikebom:go-cache-warming-mode",            document);
+cdx_anno!(c119_cdx, "mikebom:go-cache-warming-failed",          document);
 
 // ============================================================
 // Section D — Evidence (D1, D2 — CDX-native shape)

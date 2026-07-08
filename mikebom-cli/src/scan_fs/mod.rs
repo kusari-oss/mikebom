@@ -108,6 +108,20 @@ pub struct ScanResult {
     /// Source: `scan_result.diagnostics.gosum_fallback_count` (bare
     /// `usize` on `LadderSummary`).
     pub go_transitive_fallback_count: Option<usize>,
+    /// Milestone 173: Go cache-warming outcome for the scan. `None`
+    /// iff no Go workspaces were discovered (matches FR-011 emission
+    /// gate — annotation absent for non-Go scans). `Some(_)` on
+    /// Go-containing scans, with `mode` reflecting the effective
+    /// `--warm-go-cache` setting (`Off` / `PerWorkspace` /
+    /// `OfflineInhibited`) and `failures` naming any workspaces where
+    /// `go mod download` failed. Feeds C118
+    /// (`mikebom:go-cache-warming-mode`) unconditionally when
+    /// populated + C119 (`mikebom:go-cache-warming-failed`)
+    /// conditionally when `failures` is non-empty. Source:
+    /// `scan_result.diagnostics.go_cache_warming`.
+    pub go_cache_warming: Option<
+        crate::scan_fs::package_db::golang::CacheWarmingResult,
+    >,
     /// Milestone 161 (T012): workspace-mode detection outcome from
     /// `go.work` at scanned root. Distinct from
     /// `go_transitive_coverage` and `go_graph_completeness` per
@@ -283,6 +297,12 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
     // happened). Assigned alongside coverage below from
     // `scan_result.diagnostics.gosum_fallback_count`.
     let mut go_transitive_fallback_count: Option<usize> = None;
+    // Milestone 173: doc-scope Go cache-warming outcome. Sibling of
+    // go_transitive_coverage; both are Go-gated (`None` iff no Go
+    // scan happened). Assigned alongside coverage below from
+    // `scan_result.diagnostics.go_cache_warming`.
+    let mut go_cache_warming:
+        Option<package_db::golang::CacheWarmingResult> = None;
     // Milestone 161 (T012): doc-scope go-workspace-mode signal.
     // Distinct from `go_transitive_coverage` per research.md R1.
     // Carried through ScanResult into the format emitters for the
@@ -325,6 +345,9 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
         // ScanDiagnostics into the local for the ScanResult return.
         // `usize` is `Copy` — no clone needed.
         go_transitive_fallback_count = scan_result.diagnostics.gosum_fallback_count;
+        // Milestone 173: mirror cache-warming outcome from
+        // ScanDiagnostics into the local for the ScanResult return.
+        go_cache_warming = scan_result.diagnostics.go_cache_warming.clone();
         go_workspace_mode = scan_result.diagnostics.go_workspace_mode.clone();
         scan_target_coord = scan_result.scan_target_coord.clone();
         divergence_records = scan_result.diagnostics.divergence_records.clone();
@@ -828,6 +851,7 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
         os_release_missing_fields,
         go_transitive_coverage,
         go_transitive_fallback_count,
+        go_cache_warming,
         go_workspace_mode,
         scan_target_coord,
         divergence_records,

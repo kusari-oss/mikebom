@@ -1,0 +1,14 @@
+{
+  "name": "m181-yarn-berry-optional-fixture",
+  "version": "0.1.0",
+  "description": "Milestone 181 US2 fixture — SYNTHETIC package names (non-vulnerable, non-real) exercising yarn Berry's `dependenciesMeta.<name>.optional = true` classifier. `optional-lib` is marked optional; `runtime-util` is a regular runtime dep (regression guard).",
+  "private": true,
+  "packageManager": "yarn@4.0.0",
+  "dependencies": {
+    "optional-lib": "^1",
+    "runtime-util": "^1"
+  },
+  "dependenciesMeta": {
+    "optional-lib": { "optional": true }
+  }
+}

@@ -99,13 +99,20 @@ pub(crate) enum IpkParseError {
     /// forward-compat.
     #[allow(dead_code)]
     FilenameNonConforming,
-    /// The archive's first 8 bytes match the legacy ar magic
-    /// (`!<arch>\n`) rather than modern gzip magic. Per research
-    /// §R2b, mikebom treats this as "legacy pre-2015 opkg-build
-    /// format" and falls through to filename-only emission with a
-    /// tracing WARN. Adding a real ar-format parser is deferred
-    /// until empirical evidence surfaces the pattern.
-    LegacyArFormat,
+    /// Milestone 187 (#543) — the archive's first 8 bytes match the
+    /// ar magic (`!<arch>\n`) AND the [`parse_ar_archive`] helper
+    /// failed to enumerate members. Reasons: truncated header,
+    /// non-ASCII size field, or size overrun. Ships as the primary
+    /// failure class for post-2015 opkg-build ipks (which mikebom
+    /// pre-m187 misclassified as "legacy ar-format" and never
+    /// attempted to parse).
+    ArMalformed(String),
+    /// Milestone 187 (#543) — renamed from `LegacyArFormat`. The
+    /// pre-2015 `gzip(tar)` outer-envelope fallback path was tried
+    /// (after ar-format probe failed at magic-check) AND ALSO
+    /// failed. Ships as the SECONDARY failure class for ipks that
+    /// are neither ar-format nor well-formed gzip-tar.
+    LegacyGzipTarFallbackFailed(String),
     /// The inner `control.tar.gz`'s uncompressed size exceeded
     /// `IpkReaderConfig::max_control_size` per FR-012.
     ControlOversize { actual: u64, cap: u64 },
@@ -121,9 +128,13 @@ impl std::fmt::Display for IpkParseError {
             Self::FilenameNonConforming => {
                 write!(f, "filename does not match <name>_<version>_<arch>.ipk")
             }
-            Self::LegacyArFormat => write!(
+            Self::ArMalformed(reason) => write!(
                 f,
-                "legacy ar-format .ipk (pre-2015 opkg-build); falling back to filename-only per research §R2b"
+                "ar-format archive malformed: {reason}"
+            ),
+            Self::LegacyGzipTarFallbackFailed(reason) => write!(
+                f,
+                "pre-2015 gzip(tar) outer envelope parse failed: {reason}"
             ),
             Self::ControlOversize { actual, cap } => write!(
                 f,
@@ -131,6 +142,170 @@ impl std::fmt::Display for IpkParseError {
             ),
         }
     }
+}
+
+// -----------------------------------------------------------------
+// Milestone 187 (#543) — ar-format primary parser.
+// -----------------------------------------------------------------
+
+/// One entry from an ar-format archive (BSD ar spec) — a member name +
+/// its raw data body. m187 US1 (#543) — the primary parse type
+/// returned by [`parse_ar_archive`].
+///
+/// Members are returned in the order they appear in the archive.
+/// Caller scans for named members (`control.tar.gz`, `data.tar.gz`,
+/// `debian-binary`) without assuming any specific ordering per
+/// contracts/ipk-parse-pipeline.md §Branch 1.
+#[derive(Debug)]
+struct ArMember {
+    /// Member name, decoded from the 16-byte name field. Trailing
+    /// slash (BSD ar convention for null-padding) is stripped. Never
+    /// empty (the parser rejects empty names).
+    name: String,
+    /// Raw member data (unpadded). Length matches the header's
+    /// decimal `size` field.
+    data: Vec<u8>,
+}
+
+/// Milestone 187 (#543) — errors from [`parse_ar_archive`]. Distinct
+/// from [`IpkParseError`] so the caller can distinguish "malformed
+/// container" vs downstream failure classes.
+#[derive(Debug)]
+enum ArError {
+    /// The 60-byte header couldn't be read (archive body ended
+    /// mid-header).
+    TruncatedHeader,
+    /// The header's size field contained non-decimal bytes.
+    NonAsciiSizeField,
+    /// The size field claims more bytes than remain in the archive.
+    SizeOverrunsBody,
+}
+
+impl std::fmt::Display for ArError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TruncatedHeader => {
+                write!(f, "truncated ar header (archive ended mid-member)")
+            }
+            Self::NonAsciiSizeField => {
+                write!(f, "non-ASCII decimal size field in ar header")
+            }
+            Self::SizeOverrunsBody => {
+                write!(f, "ar member size overruns archive body")
+            }
+        }
+    }
+}
+
+/// Milestone 187 (#543) — parse a BSD ar-format archive into its
+/// member list.
+///
+/// Format:
+///   * 8-byte magic: `!<arch>\n`
+///   * per member: 60-byte header (16-byte name + 12 mtime + 6 uid +
+///     6 gid + 8 mode + 10-byte decimal size + 2-byte end marker
+///     `` `\n ``) followed by data padded to even byte boundary.
+///
+/// opkg-build produces short member names (`debian-binary`,
+/// `control.tar.gz`, `data.tar.gz`) that fit the 16-byte name field
+/// directly — no GNU ar long-name-table (`//`, `#1/N` inline-length)
+/// handling needed. If a member name contains `/`, everything from
+/// the first `/` onward is stripped (BSD convention: `/` is the
+/// name-terminator character).
+///
+/// Caller MUST have already verified the 8-byte magic.
+fn parse_ar_archive(bytes: &[u8]) -> Result<Vec<ArMember>, ArError> {
+    const MAGIC_LEN: usize = 8;
+    const HEADER_LEN: usize = 60;
+    if bytes.len() < MAGIC_LEN {
+        return Err(ArError::TruncatedHeader);
+    }
+    let mut cursor = MAGIC_LEN;
+    let mut members = Vec::new();
+    while cursor < bytes.len() {
+        // Skip optional 1-byte padding aligning to even byte boundary.
+        if !cursor.is_multiple_of(2) {
+            cursor += 1;
+        }
+        // Handle the case where padding advanced us past end-of-body.
+        if cursor >= bytes.len() {
+            break;
+        }
+        // Require a full 60-byte header remaining.
+        if bytes.len() - cursor < HEADER_LEN {
+            return Err(ArError::TruncatedHeader);
+        }
+        let header = &bytes[cursor..cursor + HEADER_LEN];
+        // Name: first 16 bytes, whitespace-padded per BSD ar. Strip
+        // trailing spaces and slash (BSD name-terminator convention).
+        let raw_name = std::str::from_utf8(&header[..16])
+            .map_err(|_| ArError::NonAsciiSizeField)?;
+        let name = raw_name
+            .split('/')
+            .next()
+            .unwrap_or("")
+            .trim_end()
+            .to_string();
+        // Size: bytes 48..58, ASCII decimal, whitespace-padded.
+        let size_str = std::str::from_utf8(&header[48..58])
+            .map_err(|_| ArError::NonAsciiSizeField)?
+            .trim();
+        let size: usize = size_str
+            .parse::<u64>()
+            .map_err(|_| ArError::NonAsciiSizeField)?
+            .try_into()
+            .map_err(|_| ArError::SizeOverrunsBody)?;
+        let data_start = cursor + HEADER_LEN;
+        let data_end = data_start
+            .checked_add(size)
+            .ok_or(ArError::SizeOverrunsBody)?;
+        if data_end > bytes.len() {
+            return Err(ArError::SizeOverrunsBody);
+        }
+        let data = bytes[data_start..data_end].to_vec();
+        if !name.is_empty() {
+            members.push(ArMember { name, data });
+        }
+        cursor = data_end;
+    }
+    Ok(members)
+}
+
+// -----------------------------------------------------------------
+// Milestone 187 (#542) — filename-fallback arch-source disambiguation.
+// -----------------------------------------------------------------
+
+/// Milestone 187 US2 (#542) — the origin of the `?arch=` PURL
+/// qualifier when the filename-fallback path is taken. Emitted as
+/// `mikebom:arch-source` property on the component per FR-013.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArchSource {
+    /// Parent-directory name matched the filename's `_<arch>` suffix
+    /// per FR-010 suffix-match gate.
+    ParentDirectory,
+    /// Fallback rsplit-based heuristic (no parent-dir agreement).
+    FilenameHeuristic,
+}
+
+impl ArchSource {
+    /// Wire-format string for the `mikebom:arch-source` property.
+    fn as_wire_str(self) -> &'static str {
+        match self {
+            Self::ParentDirectory => "parent-directory",
+            Self::FilenameHeuristic => "filename-heuristic",
+        }
+    }
+}
+
+/// Milestone 187 US2 (#542) — `parse_ipk_filename` return type
+/// carrying the arch-source signal for FR-013 diagnostic property
+/// emission.
+#[derive(Debug)]
+struct ParsedFilename {
+    name: String,
+    version: String,
+    arch: String,
+    arch_source: ArchSource,
 }
 
 /// Walk `<rootfs>` for `.ipk` files and emit one `PackageDbEntry` per
@@ -210,10 +385,35 @@ pub fn collect_claimed_paths(
         let Ok(bytes) = std::fs::read(&ipk_path) else {
             continue;
         };
-        // Skip legacy ar-format ipks per research §R2b (no ar parser
-        // yet; the archive-file reader falls back to filename-only
-        // emission which doesn't populate a claim set).
+        // Milestone 187 (#543) — ar-format primary branch. Extracts
+        // the data.tar[.gz] member's file-list and inserts into the
+        // claim set (mirrors the gzip-tar branch below). The pre-m187
+        // `continue` short-circuit that skipped ar-format ipks
+        // entirely was removed here — post-m187 both formats
+        // contribute to the claim set for m169 US4 dedup.
         if bytes.len() >= 8 && &bytes[..8] == b"!<arch>\n" {
+            let Ok(members) = parse_ar_archive(&bytes) else {
+                continue;
+            };
+            let Some(data_member) = members
+                .iter()
+                .find(|m| m.name == "data.tar.gz" || m.name == "data.tar")
+            else {
+                continue;
+            };
+            let file_list =
+                walk_data_tar_file_list(&data_member.data, data_member.name.ends_with(".gz"));
+            for cleaned in file_list {
+                let target = rootfs.join(&cleaned);
+                #[cfg(unix)]
+                {
+                    if let Ok(meta) = std::fs::metadata(&target) {
+                        use std::os::unix::fs::MetadataExt;
+                        claimed_inodes.insert((meta.dev(), meta.ino()));
+                    }
+                }
+                claimed.insert(target);
+            }
             continue;
         }
         let outer_reader = GzDecoder::new(std::io::Cursor::new(&bytes));
@@ -304,20 +504,33 @@ fn is_ipk_candidate(path: &Path) -> bool {
 /// Parse one `.ipk` file into a `PackageDbEntry`. Returns
 /// `Err(IpkParseError)` when the archive body fails; the caller
 /// decides whether to invoke the filename fallback or skip entirely.
+///
+/// Milestone 187 (#543) — the ar-format is now the PRIMARY parse
+/// path (per FR-001). Detection is at magic-byte level (`!<arch>\n`
+/// at offset 0). On ar-format success, mikebom emits
+/// `mikebom:source-mechanism = "ipk-file-archive-extraction"` +
+/// `mikebom:arch-source = "control-file"`. Pre-2015
+/// `gzip(tar)`-outer-envelope ipks are still handled by the
+/// SECONDARY path (unchanged wire format;
+/// `mikebom:source-mechanism = "ipk-file"`, no arch-source
+/// property per FR-014 / SC-005 byte-identity guarantee).
 fn parse_ipk_file(
     path: &Path,
     config: &IpkReaderConfig,
     distro_tag: Option<&str>,
 ) -> Result<PackageDbEntry, IpkParseError> {
-    // Format sniff: check magic bytes. Modern .ipk = gzip; legacy = ar.
     let bytes = std::fs::read(path).map_err(|e| {
         IpkParseError::OuterMalformed(format!("read failed: {e}"))
     })?;
+
+    // Milestone 187 (#543) — Branch 1: ar-format primary path.
     if bytes.len() >= 8 && &bytes[..8] == b"!<arch>\n" {
-        return Err(IpkParseError::LegacyArFormat);
+        let members = parse_ar_archive(&bytes)
+            .map_err(|e| IpkParseError::ArMalformed(e.to_string()))?;
+        return parse_ipk_from_ar_members(path, &members, config, distro_tag);
     }
 
-    // Parse outer gzip( tar { ... } ) envelope.
+    // Branch 2: pre-2015 gzip(tar) outer envelope (legacy path).
     let outer_reader = GzDecoder::new(std::io::Cursor::new(&bytes));
     let mut outer_tar = tar::Archive::new(outer_reader);
 
@@ -325,15 +538,15 @@ fn parse_ipk_file(
     let mut data_file_list: Vec<String> = Vec::new();
 
     let entries = outer_tar.entries().map_err(|e| {
-        IpkParseError::OuterMalformed(format!("outer tar.entries() failed: {e}"))
+        IpkParseError::LegacyGzipTarFallbackFailed(format!("outer tar.entries() failed: {e}"))
     })?;
 
     for entry_res in entries {
         let mut entry = entry_res.map_err(|e| {
-            IpkParseError::OuterMalformed(format!("outer tar entry read failed: {e}"))
+            IpkParseError::LegacyGzipTarFallbackFailed(format!("outer tar entry read failed: {e}"))
         })?;
         let entry_path = entry.path().map_err(|e| {
-            IpkParseError::OuterMalformed(format!("outer tar entry path failed: {e}"))
+            IpkParseError::LegacyGzipTarFallbackFailed(format!("outer tar entry path failed: {e}"))
         })?;
         let name = entry_path
             .file_name()
@@ -350,21 +563,19 @@ fn parse_ipk_file(
                 }
                 let mut buf = Vec::with_capacity(size as usize);
                 entry.read_to_end(&mut buf).map_err(|e| {
-                    IpkParseError::OuterMalformed(format!(
+                    IpkParseError::LegacyGzipTarFallbackFailed(format!(
                         "control.tar.gz read failed: {e}"
                     ))
                 })?;
                 control_tar_gz = Some(buf);
             }
             "data.tar.gz" => {
-                // Enumerate paths for FR-011/FR-017 skip-set feed (US4).
                 let inner = GzDecoder::new(&mut entry);
                 let mut inner_tar = tar::Archive::new(inner);
                 if let Ok(inner_entries) = inner_tar.entries() {
                     for inner_entry in inner_entries.flatten() {
                         if let Ok(p) = inner_entry.path() {
                             let s = p.to_string_lossy();
-                            // Drop leading "./" convention.
                             let cleaned = s.trim_start_matches("./").to_string();
                             if !cleaned.is_empty() {
                                 data_file_list.push(cleaned);
@@ -373,32 +584,148 @@ fn parse_ipk_file(
                     }
                 }
             }
-            "debian-binary" | "" => {
-                // Format-version marker or the "./" tar-root entry —
-                // ignore both.
-            }
-            _ => {
-                // Unknown extra entries in the outer tarball. Modern
-                // .ipk files don't have these; ignore silently.
-            }
+            "debian-binary" | "" => {}
+            _ => {}
         }
     }
 
     let control_bytes = control_tar_gz.ok_or(IpkParseError::ControlMissing)?;
-    let control_text = extract_control_file(&control_bytes)?;
+    let control_text = extract_control_from_gzipped_tar(&control_bytes)?;
 
-    build_entry_from_control(path, &control_text, &data_file_list, distro_tag)
-        .ok_or_else(|| {
-            IpkParseError::OuterMalformed(
-                "control file present but Package/Version/Architecture fields missing"
-                    .to_string(),
-            )
-        })
+    build_entry_from_control(
+        path,
+        &control_text,
+        &data_file_list,
+        distro_tag,
+        "ipk-file",
+        false, // legacy path: no arch-source property (SC-005 byte-identity)
+    )
+    .ok_or_else(|| {
+        IpkParseError::LegacyGzipTarFallbackFailed(
+            "control file present but Package/Version/Architecture fields missing"
+                .to_string(),
+        )
+    })
 }
 
-/// Extract the `./control` file body from a `control.tar.gz` byte slice.
-/// Returns the file contents as a UTF-8 string.
-fn extract_control_file(control_tar_gz_bytes: &[u8]) -> Result<String, IpkParseError> {
+/// Milestone 187 (#543) — ar-format branch of [`parse_ipk_file`].
+/// Scans the ar member list for `control.tar[.gz]` + `data.tar[.gz]`,
+/// extracts the control file, and calls `build_entry_from_control`
+/// with the archive-extraction source-mechanism value + arch-source
+/// property flag set.
+fn parse_ipk_from_ar_members(
+    path: &Path,
+    members: &[ArMember],
+    config: &IpkReaderConfig,
+    distro_tag: Option<&str>,
+) -> Result<PackageDbEntry, IpkParseError> {
+    // Scan for control member (gzipped or uncompressed).
+    let control_member = members
+        .iter()
+        .find(|m| m.name == "control.tar.gz" || m.name == "control.tar")
+        .ok_or(IpkParseError::ControlMissing)?;
+    if (control_member.data.len() as u64) > config.max_control_size {
+        return Err(IpkParseError::ControlOversize {
+            actual: control_member.data.len() as u64,
+            cap: config.max_control_size,
+        });
+    }
+    let control_gzipped = control_member.name.ends_with(".gz");
+    let control_text = extract_control_file_from_bytes(&control_member.data, control_gzipped)?;
+
+    // Scan for data member (optional; only used for file-list walk).
+    let data_file_list = members
+        .iter()
+        .find(|m| m.name == "data.tar.gz" || m.name == "data.tar")
+        .map(|m| walk_data_tar_file_list(&m.data, m.name.ends_with(".gz")))
+        .unwrap_or_default();
+
+    // debian-binary is optional per spec.md Edge Cases; log if absent
+    // or if content differs from `2.0\n`.
+    match members.iter().find(|m| m.name == "debian-binary") {
+        None => tracing::warn!(
+            path = %path.display(),
+            "ar-format ipk missing debian-binary member; proceeding with control extraction"
+        ),
+        Some(db) if db.data != b"2.0\n" => tracing::warn!(
+            path = %path.display(),
+            debian_binary = ?String::from_utf8_lossy(&db.data),
+            "ar-format ipk debian-binary content is not the standard `2.0\\n`; proceeding"
+        ),
+        _ => {}
+    }
+
+    build_entry_from_control(
+        path,
+        &control_text,
+        &data_file_list,
+        distro_tag,
+        "ipk-file-archive-extraction",
+        true, // ar path: emit mikebom:arch-source = "control-file"
+    )
+    .ok_or_else(|| {
+        IpkParseError::ArMalformed(
+            "control file present but Package/Version/Architecture fields missing"
+                .to_string(),
+        )
+    })
+}
+
+/// Milestone 187 (#543) — walk an inner tar (optionally gzipped) and
+/// return its file-list. Shared between the ar-format branch (T010)
+/// and the m169-era `collect_claimed_paths` gzip-tar branch (T014).
+fn walk_data_tar_file_list(data_bytes: &[u8], gzipped: bool) -> Vec<String> {
+    let mut out = Vec::new();
+    if gzipped {
+        let gz = GzDecoder::new(std::io::Cursor::new(data_bytes));
+        let mut tar = tar::Archive::new(gz);
+        if let Ok(entries) = tar.entries() {
+            for entry in entries.flatten() {
+                if let Ok(p) = entry.path() {
+                    let s = p.to_string_lossy();
+                    let cleaned = s.trim_start_matches("./").to_string();
+                    if !cleaned.is_empty() {
+                        out.push(cleaned);
+                    }
+                }
+            }
+        }
+    } else {
+        let mut tar = tar::Archive::new(std::io::Cursor::new(data_bytes));
+        if let Ok(entries) = tar.entries() {
+            for entry in entries.flatten() {
+                if let Ok(p) = entry.path() {
+                    let s = p.to_string_lossy();
+                    let cleaned = s.trim_start_matches("./").to_string();
+                    if !cleaned.is_empty() {
+                        out.push(cleaned);
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Milestone 187 (#543) — extract the `./control` file from a
+/// `control.tar[.gz]` byte slice. Both compressed (`.tar.gz`) and
+/// uncompressed (`.tar`) inner containers are supported per spec.md
+/// Edge Cases.
+fn extract_control_file_from_bytes(
+    control_bytes: &[u8],
+    gzipped: bool,
+) -> Result<String, IpkParseError> {
+    if gzipped {
+        extract_control_from_gzipped_tar(control_bytes)
+    } else {
+        extract_control_from_plain_tar(control_bytes)
+    }
+}
+
+/// Legacy helper — retained as-is for the gzip(tar) code path.
+/// Extracts the `./control` file body from a `control.tar.gz` byte
+/// slice. Returns the file contents as a UTF-8 string.
+fn extract_control_from_gzipped_tar(control_tar_gz_bytes: &[u8]) -> Result<String, IpkParseError> {
     let gz = GzDecoder::new(control_tar_gz_bytes);
     let mut ar = tar::Archive::new(gz);
     let entries = ar.entries().map_err(|e| {
@@ -428,15 +755,57 @@ fn extract_control_file(control_tar_gz_bytes: &[u8]) -> Result<String, IpkParseE
     Err(IpkParseError::ControlMissing)
 }
 
+/// Milestone 187 (#543) — extract the `./control` file from an
+/// uncompressed `control.tar` byte slice.
+fn extract_control_from_plain_tar(control_tar_bytes: &[u8]) -> Result<String, IpkParseError> {
+    let mut ar = tar::Archive::new(std::io::Cursor::new(control_tar_bytes));
+    let entries = ar.entries().map_err(|e| {
+        IpkParseError::OuterMalformed(format!("control.tar entries() failed: {e}"))
+    })?;
+    for entry_res in entries {
+        let mut entry = entry_res.map_err(|e| {
+            IpkParseError::OuterMalformed(format!("control.tar entry failed: {e}"))
+        })?;
+        let entry_path = entry.path().map_err(|e| {
+            IpkParseError::OuterMalformed(format!("control.tar path failed: {e}"))
+        })?;
+        let name = entry_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        if name == "control" {
+            let mut buf = String::new();
+            entry.read_to_string(&mut buf).map_err(|e| {
+                IpkParseError::OuterMalformed(format!(
+                    "control file read failed: {e}"
+                ))
+            })?;
+            return Ok(buf);
+        }
+    }
+    Err(IpkParseError::ControlMissing)
+}
+
 /// Build a `PackageDbEntry` from a parsed control file. Wires Q2
 /// alternative-list Depends handling + m152 SPDX license
 /// canonicalization + `mikebom:evidence-kind = "ipk-file"` (FR-009) +
 /// `sbom_tier = "analyzed"` (archive-file tier per m106 convention).
+///
+/// Milestone 187 (#543) — `source_mechanism_value` selects the
+/// `mikebom:source-mechanism` property value: `"ipk-file"` for the
+/// legacy `gzip(tar)` path (unchanged wire format), or
+/// `"ipk-file-archive-extraction"` for the new ar-format primary
+/// path. `emit_arch_source` controls whether the
+/// `mikebom:arch-source = "control-file"` property is emitted (true
+/// for ar path; false for legacy path per FR-014 / SC-005
+/// byte-identity guarantee).
 fn build_entry_from_control(
     ipk_path: &Path,
     control_text: &str,
     data_file_list: &[String],
     distro_tag: Option<&str>,
+    source_mechanism_value: &str,
+    emit_arch_source: bool,
 ) -> Option<PackageDbEntry> {
     let stanzas = parse_stanzas(control_text);
     let stanza = stanzas.first()?;
@@ -476,8 +845,17 @@ fn build_entry_from_control(
         Default::default();
     extra_annotations.insert(
         "mikebom:source-mechanism".to_string(),
-        serde_json::Value::String("ipk-file".to_string()),
+        serde_json::Value::String(source_mechanism_value.to_string()),
     );
+    // Milestone 187 US1 (FR-013) — emit arch-source ONLY for the ar
+    // primary path. The legacy gzip-tar path deliberately does NOT
+    // emit this property to preserve FR-014 / SC-005 byte-identity.
+    if emit_arch_source {
+        extra_annotations.insert(
+            "mikebom:arch-source".to_string(),
+            serde_json::Value::String("control-file".to_string()),
+        );
+    }
 
     // Q2: emit alternate list as annotation on the source component.
     if !alternates_by_source.is_empty() {
@@ -554,13 +932,24 @@ fn build_entry_from_control(
 /// `PackageDbEntry` with name/version/arch derived from the
 /// `<name>_<version>_<arch>.ipk` convention. Returns `None` if the
 /// filename doesn't match.
+///
+/// Milestone 187 US2 (#542) — consults the ipk's IMMEDIATE parent
+/// directory name for the authoritative `?arch=` source per FR-010
+/// suffix-match gate. On match, emits `mikebom:arch-source =
+/// "parent-directory"`. On no-match, falls back to the pre-m187
+/// rsplit-based filename heuristic + emits `mikebom:arch-source =
+/// "filename-heuristic"` per FR-012 / FR-013.
 fn filename_fallback_entry(
     path: &Path,
     distro_tag: Option<&str>,
 ) -> Option<PackageDbEntry> {
     let filename = path.file_name().and_then(|s| s.to_str())?;
-    let (name, version, arch) = parse_ipk_filename(filename)?;
-    let purl = build_opkg_purl(&name, &version, &arch, distro_tag)?;
+    let parent_dir_name = path
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|s| s.to_str());
+    let parsed = parse_ipk_filename(filename, parent_dir_name)?;
+    let purl = build_opkg_purl(&parsed.name, &parsed.version, &parsed.arch, distro_tag)?;
 
     let mut extra_annotations: std::collections::BTreeMap<String, serde_json::Value> =
         Default::default();
@@ -568,13 +957,18 @@ fn filename_fallback_entry(
         "mikebom:source-mechanism".to_string(),
         serde_json::Value::String("ipk-file-filename-fallback".to_string()),
     );
+    // Milestone 187 US2 (FR-013) — arch-source diagnostic property.
+    extra_annotations.insert(
+        "mikebom:arch-source".to_string(),
+        serde_json::Value::String(parsed.arch_source.as_wire_str().to_string()),
+    );
 
     Some(PackageDbEntry {
         build_inclusion: None,
         purl,
-        name,
-        version,
-        arch: Some(arch),
+        name: parsed.name,
+        version: parsed.version,
+        arch: Some(parsed.arch),
         source_path: path.to_string_lossy().into_owned(),
         depends: Vec::new(),
         maintainer: None,
@@ -602,45 +996,92 @@ fn filename_fallback_entry(
     })
 }
 
-/// Parse an ipk filename into `(name, version, arch)` triple per the
-/// canonical `<name>_<version>_<arch>.ipk` convention. Returns None
-/// for non-conforming filenames.
+/// Milestone 187 US2 (#542) — parent-directory arch-source
+/// disambiguation. Returns `Some(prefix)` IFF `filename_no_ext` ends
+/// with `_<parent_dir_name>` byte-for-byte case-sensitive. The
+/// returned prefix is everything BEFORE the matched suffix, feeding
+/// the existing `<name>_<version>` LEFT-split logic in
+/// [`parse_ipk_filename`].
+///
+/// Rationale per spec.md Clarifications Q1: the Yocto convention
+/// emits filenames with the arch as the last `_`-delimited segment
+/// AND places each ipk in an `<arch>/` directory. This suffix-match
+/// gate identifies parent-dir-as-arch without misfiring on loose-file
+/// layouts (`~/downloads/foo_1.0_all.ipk` — parent `downloads` does
+/// NOT match filename suffix `_all` → returns `None` → caller falls
+/// back to the rsplit heuristic).
+fn parent_dir_arch_match<'a>(
+    filename_no_ext: &'a str,
+    parent_dir_name: &str,
+) -> Option<&'a str> {
+    let suffix = format!("_{parent_dir_name}");
+    filename_no_ext.strip_suffix(&suffix)
+}
+
+/// Parse an ipk filename into a [`ParsedFilename`] per the canonical
+/// `<name>_<version>_<arch>.ipk` convention.
+///
+/// Milestone 187 US2 (#542) — when `parent_dir_name` is `Some` AND
+/// [`parent_dir_arch_match`] succeeds, the parent-dir name is used
+/// as the authoritative arch (per FR-010) and the version is
+/// preserved verbatim (per FR-011 — no arch-vs-version competition
+/// for the last `_` in the filename). This closes the m185
+/// underscore-in-arch regression documented at #542.
 ///
 /// Milestone 185 US1 (#538) — the version field itself may legally
 /// contain `_` when produced by BitBake's `SRCPV` expansion for
 /// git-sourced upstream recipes (e.g., Yocto kernel modules with
-/// versions like `6.6.127+git0+45f69741c7_70af2998be-r0`). To
-/// preserve the version-internal underscore, the parser splits
-/// asymmetrically:
+/// versions like `6.6.127+git0+45f69741c7_70af2998be-r0`). The
+/// legacy rsplit path preserves the version-internal underscore by
+/// splitting asymmetrically:
 ///   1. `split_once('_')` from the LEFT → peels off the name at the
 ///      first underscore (name never contains `_`).
 ///   2. `rsplit_once('_')` from the RIGHT on the remainder → peels
 ///      off the arch at the last underscore; version is everything
 ///      in between (may include underscores).
 ///
-/// Known limitation: if the arch itself contains an underscore
-/// (e.g., Yocto's `qemux86_64` for `qemux86-64` machine), the last
-/// segment of the arch bleeds into the arch field's tail while the
-/// preceding segment lands in the version field. This produces a
-/// syntactically-valid PURL with a truncated arch — better than
-/// pre-m185's null PURL. Handling the arch-with-underscore case
-/// perfectly requires an arch-name whitelist, which is out of m185
-/// scope (documented in spec.md Deferred to Future Milestones).
-fn parse_ipk_filename(filename: &str) -> Option<(String, String, String)> {
+/// The rsplit path is entered when `parent_dir_name` is `None` OR
+/// when the parent-dir suffix-match check returns `None`.
+fn parse_ipk_filename(
+    filename: &str,
+    parent_dir_name: Option<&str>,
+) -> Option<ParsedFilename> {
     // Strip `.ipk` extension.
     let stem = filename.strip_suffix(".ipk")?;
-    // Peel name from the LEFT (first `_` is the name/version boundary
-    // per ipk-spec — name is opaque but never contains `_`).
+
+    // Milestone 187 US2 (#542) — try parent-dir suffix match first.
+    if let Some(parent) = parent_dir_name {
+        if let Some(prefix) = parent_dir_arch_match(stem, parent) {
+            // Split prefix on FIRST `_` for <name>_<version>. If no
+            // `_` present (e.g. `foo` with parent `qemux86_64` for
+            // filename `foo_qemux86_64.ipk`), the ipk has no version
+            // — this is a hand-crafted / non-conforming shape; fall
+            // through to the rsplit heuristic per spec.md edge case.
+            if let Some((name, version)) = prefix.split_once('_') {
+                if !name.is_empty() && !version.is_empty() {
+                    return Some(ParsedFilename {
+                        name: name.to_string(),
+                        version: version.to_string(),
+                        arch: parent.to_string(),
+                        arch_source: ArchSource::ParentDirectory,
+                    });
+                }
+            }
+        }
+    }
+
+    // Fall through: legacy rsplit heuristic (pre-m187 behavior).
     let (name, rest) = stem.split_once('_')?;
-    // Peel arch from the RIGHT of the remainder (last `_` in the
-    // rest string is the version/arch boundary). Anything in between
-    // is the version, including any internal underscores from
-    // BitBake SRCPV expansion.
     let (version, arch) = rest.rsplit_once('_')?;
     if name.is_empty() || version.is_empty() || arch.is_empty() {
         return None;
     }
-    Some((name.to_string(), version.to_string(), arch.to_string()))
+    Some(ParsedFilename {
+        name: name.to_string(),
+        version: version.to_string(),
+        arch: arch.to_string(),
+        arch_source: ArchSource::FilenameHeuristic,
+    })
 }
 
 /// Build a `pkg:opkg/<name>@<version>?arch=<arch>[&distro=<tag>]` PURL
@@ -709,7 +1150,8 @@ mod tests {
                 cap: 16 * 1024 * 1024,
             },
             IpkParseError::FilenameNonConforming,
-            IpkParseError::LegacyArFormat,
+            IpkParseError::ArMalformed("truncated header".to_string()),
+            IpkParseError::LegacyGzipTarFallbackFailed("outer envelope corrupt".to_string()),
         ];
         for v in variants {
             let msg = format!("{v}");
@@ -1048,79 +1490,216 @@ mod tests {
     fn parse_ipk_filename_canonical_2underscore_still_parses() {
         // Row 1 of contracts/parser-decision-matrix.md — canonical
         // 2-underscore case MUST be byte-identical to pre-m185.
-        let out = parse_ipk_filename("test-pkg_1.0-r0_all.ipk");
-        assert_eq!(
-            out,
-            Some(("test-pkg".to_string(), "1.0-r0".to_string(), "all".to_string()))
-        );
+        let out = parse_ipk_filename("test-pkg_1.0-r0_all.ipk", None).unwrap();
+        assert_eq!(out.name, "test-pkg");
+        assert_eq!(out.version, "1.0-r0");
+        assert_eq!(out.arch, "all");
+        assert_eq!(out.arch_source, ArchSource::FilenameHeuristic);
     }
 
     #[test]
     fn parse_ipk_filename_multi_underscore_version_now_parses() {
         // Row 3 — the m185 fix. Pre-m185 returned None because
         // split('_').len() == 4.
-        let out = parse_ipk_filename("test-pkg_1.0+git0+abc_def-r0_all.ipk");
-        assert_eq!(
-            out,
-            Some((
-                "test-pkg".to_string(),
-                "1.0+git0+abc_def-r0".to_string(),
-                "all".to_string()
-            ))
-        );
+        let out = parse_ipk_filename("test-pkg_1.0+git0+abc_def-r0_all.ipk", None).unwrap();
+        assert_eq!(out.name, "test-pkg");
+        assert_eq!(out.version, "1.0+git0+abc_def-r0");
+        assert_eq!(out.arch, "all");
+        assert_eq!(out.arch_source, ArchSource::FilenameHeuristic);
     }
 
     #[test]
     fn parse_ipk_filename_yocto_kernel_module_shape() {
         // Row 4 — real BitBake SRCPV shape from issue #538 reproducer.
-        // Pre-m185 emitted the whole basename as `name` with
-        // empty `version` and null PURL.
-        //
-        // Post-m185: name is extracted correctly (split at first `_`).
-        // Version captures the multi-underscore SRCPV span. Arch is
-        // the LAST underscore-delimited segment — for the kernel
-        // fixture the "real" arch is `qemux86_64` (with internal
-        // underscore per Yocto's dash-to-underscore machine-name
-        // convention). Pure syntactic parsing cannot recover the
-        // arch-with-underscore case without a whitelist; the parser
-        // instead emits `arch = "64"` with the leading `qemux86`
-        // absorbed into the version-tail. This is a KNOWN LIMITATION
-        // (documented in the docstring + spec.md Deferred section) —
-        // strictly better than pre-m185's null PURL emission.
+        // With parent=None, the legacy rsplit heuristic runs and
+        // produces the m185 KNOWN LIMITATION (arch=`64`, version tail
+        // absorbs `_qemux86`). Post-m187 US2 fixes this via parent-dir
+        // suffix match — verified separately below.
         let filename = "kernel-module-nf-conntrack-tftp-6.6.127-yocto-standard_6.6.127+git0+45f69741c7_70af2998be-r0_qemux86_64.ipk";
-        let out = parse_ipk_filename(filename);
-        assert_eq!(
-            out,
-            Some((
-                "kernel-module-nf-conntrack-tftp-6.6.127-yocto-standard".to_string(),
-                "6.6.127+git0+45f69741c7_70af2998be-r0_qemux86".to_string(),
-                "64".to_string(),
-            ))
-        );
-        // Regardless of the arch truncation, mikebom now emits a
-        // valid non-null PURL — closes the primary issue-#538 bug.
+        let out = parse_ipk_filename(filename, None).unwrap();
+        assert_eq!(out.name, "kernel-module-nf-conntrack-tftp-6.6.127-yocto-standard");
+        assert_eq!(out.version, "6.6.127+git0+45f69741c7_70af2998be-r0_qemux86");
+        assert_eq!(out.arch, "64");
+        assert_eq!(out.arch_source, ArchSource::FilenameHeuristic);
     }
 
     #[test]
     fn parse_ipk_filename_no_ipk_suffix_still_none() {
         // Row 7 — extension guard preserved.
-        assert_eq!(parse_ipk_filename("test-pkg_1.0-r0_all"), None);
-        assert_eq!(parse_ipk_filename("test-pkg_1.0-r0_all.deb"), None);
-        assert_eq!(parse_ipk_filename("just-a-file.txt"), None);
+        assert!(parse_ipk_filename("test-pkg_1.0-r0_all", None).is_none());
+        assert!(parse_ipk_filename("test-pkg_1.0-r0_all.deb", None).is_none());
+        assert!(parse_ipk_filename("just-a-file.txt", None).is_none());
     }
 
     #[test]
     fn parse_ipk_filename_no_underscores_still_none() {
         // Rows 5-6 — need at least 2 underscores to extract 3 fields.
-        assert_eq!(parse_ipk_filename("no-underscores.ipk"), None);
-        assert_eq!(parse_ipk_filename("single_underscore.ipk"), None);
+        assert!(parse_ipk_filename("no-underscores.ipk", None).is_none());
+        assert!(parse_ipk_filename("single_underscore.ipk", None).is_none());
     }
 
     #[test]
     fn parse_ipk_filename_empty_field_still_none() {
         // Rows 8-10 — empty-field guard preserved.
-        assert_eq!(parse_ipk_filename("_1.0-r0_all.ipk"), None); // empty name
-        assert_eq!(parse_ipk_filename("test-pkg__all.ipk"), None); // empty version
-        assert_eq!(parse_ipk_filename("test-pkg_1.0-r0_.ipk"), None); // empty arch
+        assert!(parse_ipk_filename("_1.0-r0_all.ipk", None).is_none()); // empty name
+        assert!(parse_ipk_filename("test-pkg__all.ipk", None).is_none()); // empty version
+        assert!(parse_ipk_filename("test-pkg_1.0-r0_.ipk", None).is_none()); // empty arch
+    }
+
+    // ── Milestone 187 T008 (#543 US1) — ar-format parser unit tests ──
+
+    /// Helper: build a BSD ar member header (60 bytes) for a given
+    /// name + size. Fills mtime/uid/gid/mode with `0` (space-padded).
+    fn ar_header(name: &str, size: u64) -> Vec<u8> {
+        let mut h = vec![b' '; 60];
+        let name_bytes = name.as_bytes();
+        let name_slot = &mut h[..16];
+        name_slot[..name_bytes.len()].copy_from_slice(name_bytes);
+        // mtime (12), uid (6), gid (6), mode (8) — filled with `0` +
+        // spaces so the field is well-formed but content is trivial.
+        let mtime = "0           ".as_bytes(); // 12 chars
+        h[16..28].copy_from_slice(mtime);
+        let uid_gid_mode = "0     0     0       "; // 6+6+8
+        h[28..48].copy_from_slice(uid_gid_mode.as_bytes());
+        let size_str = format!("{size:<10}");
+        h[48..58].copy_from_slice(size_str.as_bytes());
+        h[58..60].copy_from_slice(b"`\n");
+        h
+    }
+
+    /// Helper: assemble a full ar archive (magic + n members).
+    fn ar_archive(members: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut out = b"!<arch>\n".to_vec();
+        for (name, data) in members {
+            out.extend_from_slice(&ar_header(name, data.len() as u64));
+            out.extend_from_slice(data);
+            if !data.len().is_multiple_of(2) {
+                out.push(b'\n');
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn parse_ar_archive_extracts_three_members() {
+        let bytes = ar_archive(&[
+            ("debian-binary", b"2.0\n"),
+            ("control.tar.gz", b"MOCK-CONTROL-BYTES"),
+            ("data.tar.gz", b"MOCK-DATA-BYTES"),
+        ]);
+        let members = parse_ar_archive(&bytes).unwrap();
+        assert_eq!(members.len(), 3);
+        assert_eq!(members[0].name, "debian-binary");
+        assert_eq!(members[0].data, b"2.0\n");
+        assert_eq!(members[1].name, "control.tar.gz");
+        assert_eq!(members[1].data, b"MOCK-CONTROL-BYTES");
+        assert_eq!(members[2].name, "data.tar.gz");
+        assert_eq!(members[2].data, b"MOCK-DATA-BYTES");
+    }
+
+    #[test]
+    fn parse_ar_archive_tolerates_missing_debian_binary() {
+        // Only control + data — some vendor builds omit debian-binary.
+        let bytes = ar_archive(&[
+            ("control.tar.gz", b"CONTROL"),
+            ("data.tar.gz", b"DATA"),
+        ]);
+        let members = parse_ar_archive(&bytes).unwrap();
+        assert_eq!(members.len(), 2);
+        assert!(members.iter().any(|m| m.name == "control.tar.gz"));
+        assert!(members.iter().any(|m| m.name == "data.tar.gz"));
+    }
+
+    #[test]
+    fn parse_ar_archive_handles_uncompressed_inner_tar() {
+        // control.tar (no .gz) + data.tar (no .gz) — the m187 edge
+        // case for uncompressed inner tar variants.
+        let bytes = ar_archive(&[
+            ("control.tar", b"CTRL"),
+            ("data.tar", b"DATA"),
+        ]);
+        let members = parse_ar_archive(&bytes).unwrap();
+        assert!(members.iter().any(|m| m.name == "control.tar"));
+        assert!(members.iter().any(|m| m.name == "data.tar"));
+    }
+
+    #[test]
+    fn parse_ar_archive_rejects_truncated_header() {
+        // 8-byte magic + 20 bytes = truncated first header.
+        let mut bytes = b"!<arch>\n".to_vec();
+        bytes.extend_from_slice(&[b' '; 20]);
+        assert!(matches!(
+            parse_ar_archive(&bytes),
+            Err(ArError::TruncatedHeader)
+        ));
+    }
+
+    #[test]
+    fn parse_ar_archive_rejects_non_ascii_size() {
+        let mut header = ar_header("control.tar.gz", 0);
+        // Overwrite the size field (bytes 48..58) with non-ASCII bytes.
+        header[48] = 0xFF;
+        header[49] = 0xFE;
+        let mut bytes = b"!<arch>\n".to_vec();
+        bytes.extend_from_slice(&header);
+        assert!(matches!(
+            parse_ar_archive(&bytes),
+            Err(ArError::NonAsciiSizeField)
+        ));
+    }
+
+    // ── Milestone 187 T016 (#542 US2) — parent-dir suffix match unit tests ──
+
+    #[test]
+    fn parent_dir_arch_match_matches_yocto_convention() {
+        assert_eq!(
+            parent_dir_arch_match("foo_1.0-r0_qemux86_64", "qemux86_64"),
+            Some("foo_1.0-r0")
+        );
+    }
+
+    #[test]
+    fn parent_dir_arch_match_rejects_loose_layout() {
+        // Filename `foo_1.0_all` in parent `downloads` — parent name
+        // doesn't match the filename's arch suffix → no match →
+        // caller falls through to rsplit heuristic.
+        assert_eq!(parent_dir_arch_match("foo_1.0_all", "downloads"), None);
+    }
+
+    #[test]
+    fn parent_dir_arch_match_handles_multi_underscore_arch() {
+        assert_eq!(
+            parent_dir_arch_match("foo_1.0_powerpc_e500v2", "powerpc_e500v2"),
+            Some("foo_1.0")
+        );
+        assert_eq!(
+            parent_dir_arch_match("foo_1.0_mips_i6400", "mips_i6400"),
+            Some("foo_1.0")
+        );
+    }
+
+    #[test]
+    fn parse_ipk_filename_uses_parent_dir_when_suffix_matches() {
+        // Full round-trip: Yocto kernel-module shape with parent dir
+        // consulting — the #542 fix. The version's internal `_` is
+        // preserved because arch is stripped as a suffix, not
+        // rsplit-competed.
+        let filename = "kernel-6.6.127_6.6.127+git0+45f69741c7_70af2998be-r0_qemux86_64.ipk";
+        let out = parse_ipk_filename(filename, Some("qemux86_64")).unwrap();
+        assert_eq!(out.name, "kernel-6.6.127");
+        assert_eq!(out.version, "6.6.127+git0+45f69741c7_70af2998be-r0");
+        assert_eq!(out.arch, "qemux86_64");
+        assert_eq!(out.arch_source, ArchSource::ParentDirectory);
+    }
+
+    #[test]
+    fn parse_ipk_filename_falls_back_to_rsplit_when_no_parent_match() {
+        // Loose-file layout: parent doesn't match filename suffix →
+        // rsplit heuristic runs → arch is filename's last _-segment.
+        let out = parse_ipk_filename("foo_1.0_arm.ipk", Some("downloads")).unwrap();
+        assert_eq!(out.name, "foo");
+        assert_eq!(out.version, "1.0");
+        assert_eq!(out.arch, "arm");
+        assert_eq!(out.arch_source, ArchSource::FilenameHeuristic);
     }
 }

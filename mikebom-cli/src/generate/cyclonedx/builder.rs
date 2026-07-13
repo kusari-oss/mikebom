@@ -1149,6 +1149,15 @@ impl CycloneDxBuilder {
                             // hardening. See spec.md FR-009 + FR-015.
                             | "ipk-file"
                             | "opkg-status-db"
+                            // Milestone 188 (#455) — Helm chart reader.
+                            // Chart-level components carry
+                            // `helm-chart-yaml` or `helm-chart-lock`;
+                            // image-ref components extracted from
+                            // `templates/*.yaml` carry
+                            // `helm-template-image-ref`.
+                            | "helm-chart-yaml"
+                            | "helm-chart-lock"
+                            | "helm-template-image-ref"
                     ),
                     "mikebom:evidence-kind value '{kind}' is not in the canonical \
                      enum (rpm-file | rpmdb-sqlite | rpmdb-bdb | \

@@ -32,6 +32,9 @@ pub mod go_binary;
 pub mod golang;
 pub mod gradle;
 pub mod haskell;
+// Milestone 188 (#455) — Helm chart reader. Auto-detects Chart.yaml
+// at scan root; composes with other package-DB readers.
+pub mod helm;
 pub mod ipk_file;
 pub mod kotlin_dsl;
 pub mod maven;
@@ -401,6 +404,35 @@ pub struct ScanDiagnostics {
     /// (cargo today; npm / maven / pip / gem / go-binary follow-ups
     /// converge on the same shape).
     pub divergence_records: Vec<mikebom_common::divergence::DivergenceRecord>,
+
+    /// Milestone 188 (#455) — Helm image-extraction mode signal for
+    /// document-scope `mikebom:image-extraction-completeness`
+    /// annotation. `None` when the scan didn't touch a Helm chart
+    /// (byte-identity per FR-016 / SC-005). `Some(Unrendered)` when
+    /// mikebom parsed a chart with default US2 line-based regex
+    /// extraction. `Some(Rendered)` when `--helm-render` succeeded and
+    /// mikebom extracted from `helm template`-rendered output.
+    ///
+    /// Drives the document-scope `partial`/`full` annotation emitted
+    /// at `generate/cyclonedx/metadata.rs`, `generate/spdx/*` (SPDX
+    /// 2.3), and `generate/spdx/v3_*` (SPDX 3).
+    pub helm_extraction_mode: Option<HelmExtractionMode>,
+}
+
+/// Milestone 188 (#455) — result-side classification of Helm
+/// image-extraction fidelity for the document-scope
+/// `mikebom:image-extraction-completeness` annotation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HelmExtractionMode {
+    /// US2 default — line-based regex over unrendered `templates/*.yaml`.
+    /// Templated image refs (`{{ .Values.image.tag }}`) emit with
+    /// `mikebom:image-ref-unresolved = "true"` markers.
+    Unrendered,
+    /// US3 opt-in — `helm template` shell-out succeeded. All Values
+    /// placeholders resolved to concrete image strings. Wired in a
+    /// follow-up milestone (m188 delivers Unrendered path only).
+    #[allow(dead_code)]
+    Rendered,
 }
 
 /// Document-level completeness classification for the Go ecosystem
@@ -1559,6 +1591,31 @@ pub fn read_all(
     // separately at line ~1341.
     let ipk_config = ipk_file::IpkReaderConfig::default();
     out.extend(ipk_file::read(rootfs, &ipk_config));
+
+    // Milestone 188 (#455) — Helm chart reader. Auto-detects
+    // `<rootfs>/Chart.yaml` presence per research §R1. `HelmRenderMode`
+    // is passed via env var (MIKEBOM_HELM_RENDER=1 set by scan_cmd.rs
+    // when the operator passes `--helm-render`), matching the m102
+    // MIKEBOM_INCLUDE_VENDORED precedent for avoiding read_all
+    // signature-churn. Composability preserved per m188 Clarifications
+    // Q1 — helm components emit alongside other package-DB readers.
+    let helm_render_mode = if std::env::var("MIKEBOM_HELM_RENDER")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+    {
+        helm::HelmRenderMode::OptIn
+    } else {
+        helm::HelmRenderMode::Off
+    };
+    match helm::read(rootfs, helm_render_mode, &mut diagnostics) {
+        Ok(helm_entries) => out.extend(helm_entries),
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "helm reader failed; continuing without helm components"
+            );
+        }
+    }
     // Milestone 004 US4: legacy BDB rpmdb reader (stub until T061–T065
     // land). Gated behind --include-legacy-rpmdb; no-op when flag unset.
     out.extend(rpmdb_bdb::read(rootfs, include_legacy_rpmdb));

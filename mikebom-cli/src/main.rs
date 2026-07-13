@@ -239,6 +239,7 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)] // m188: ScanArgs continues to grow with per-milestone flags; boxing per variant is more churn than the size delta justifies
 enum Commands {
     /// [EXPERIMENTAL, Linux-only] eBPF build-process tracing.
     /// Produces attestations bound to the build event. Requires CAP_BPF +

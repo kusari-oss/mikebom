@@ -85,6 +85,84 @@ pub enum SbomSourceMode {
     Either,
 }
 
+/// Milestone 188 (#455) — resolve `--helm-chart <path>` input.
+///
+/// When `<path>` ends in `.tgz`, extract to a tempdir + find the
+/// top-level chart directory (contains `Chart.yaml`); return that
+/// path. When `<path>` is a directory, return it verbatim.
+///
+/// Exits non-zero per FR-017 on: non-existent path, tarball extraction
+/// failure, tarball with no `Chart.yaml` at extracted top-level. A
+/// directory input WITHOUT `Chart.yaml` is NOT an error (matches
+/// `--path` semantics — other package-DB readers still run).
+fn resolve_helm_chart_input(
+    helm_chart_path: &std::path::Path,
+    tempdir_holder: &mut Option<tempfile::TempDir>,
+) -> anyhow::Result<PathBuf> {
+    if !helm_chart_path.exists() {
+        anyhow::bail!(
+            "--helm-chart path {} not found",
+            helm_chart_path.display()
+        );
+    }
+    // Directory input: pass through.
+    if helm_chart_path.is_dir() {
+        return Ok(helm_chart_path.to_path_buf());
+    }
+    // Tarball input: must end in `.tgz`.
+    let is_tgz = helm_chart_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("tgz"))
+        .unwrap_or(false);
+    if !is_tgz {
+        anyhow::bail!(
+            "--helm-chart path {} is not a directory or a .tgz tarball",
+            helm_chart_path.display()
+        );
+    }
+    let tempdir = tempfile::Builder::new()
+        .prefix("mikebom-helm-chart-")
+        .tempdir()
+        .with_context(|| "creating tempdir for --helm-chart tarball extraction")?;
+    let bytes = std::fs::read(helm_chart_path).with_context(|| {
+        format!(
+            "--helm-chart tarball {} could not be read",
+            helm_chart_path.display()
+        )
+    })?;
+    let gz = flate2::read::GzDecoder::new(std::io::Cursor::new(bytes));
+    let mut archive = tar::Archive::new(gz);
+    archive.unpack(tempdir.path()).with_context(|| {
+        format!(
+            "--helm-chart tarball {} could not be extracted",
+            helm_chart_path.display()
+        )
+    })?;
+    // Find the top-level directory containing Chart.yaml. Helm's
+    // `helm package` output wraps content in `<chart-name>/`.
+    let chart_root = find_helm_chart_root(tempdir.path()).ok_or_else(|| {
+        anyhow::anyhow!(
+            "--helm-chart tarball {} extracted successfully but no Chart.yaml \
+             found at top-level directory (expected <chart-name>/Chart.yaml)",
+            helm_chart_path.display()
+        )
+    })?;
+    *tempdir_holder = Some(tempdir);
+    Ok(chart_root)
+}
+
+fn find_helm_chart_root(extracted: &std::path::Path) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(extracted).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() && path.join("Chart.yaml").is_file() {
+            return Some(path);
+        }
+    }
+    None
+}
+
 /// Milestone 186 — wire-format string for the `--sbom-source` value used in
 /// FR-011 error messages. Matches the `#[clap(rename_all = "kebab-case")]`
 /// convention on `SbomSourceMode`.
@@ -296,6 +374,45 @@ pub struct ScanArgs {
     /// `--image <local-tarball-path>` or `--path` scans.
     #[arg(long = "sbom-source", value_enum, default_value_t = SbomSourceMode::Scan)]
     pub sbom_source: SbomSourceMode,
+
+    /// Milestone 188 (#455) — Helm chart tarball or directory to scan.
+    ///
+    /// When `<path>` ends in `.tgz`, mikebom extracts the tarball to a
+    /// tempdir and runs the scan pipeline against the extracted
+    /// contents. When it is a directory, behavior is identical to
+    /// `--path <path>` — Chart.yaml is auto-detected regardless.
+    ///
+    /// The `.tgz` MUST contain a `Chart.yaml` at the top-level
+    /// extracted directory; otherwise mikebom exits non-zero.
+    /// Directory inputs without Chart.yaml don't cause an error —
+    /// other package-DB readers (npm / cargo / etc.) still run.
+    ///
+    /// Composes freely with all other package-DB readers per
+    /// Clarifications Q1.
+    #[arg(long = "helm-chart", value_name = "PATH_OR_TGZ", conflicts_with = "path")]
+    pub helm_chart: Option<PathBuf>,
+
+    /// Milestone 188 (#455) — Opt-in Helm template rendering.
+    ///
+    /// When set, mikebom shells out to `helm template <chart-dir>`
+    /// before extracting container image references, resolving every
+    /// `{{ .Values.image.tag }}` placeholder to a concrete value.
+    /// Requires the `helm` binary on `$PATH`.
+    ///
+    /// On failure (missing binary, non-zero exit, timeout), mikebom
+    /// emits a WARN log and falls back to the default unrendered
+    /// extraction — the scan does NOT abort. The emitted SBOM's
+    /// document-scope `mikebom:image-extraction-completeness`
+    /// annotation surfaces whether extraction was "partial" (fallback)
+    /// or "full" (helm succeeded).
+    ///
+    /// Timeout: 60 seconds by default; override via
+    /// `MIKEBOM_HELM_RENDER_TIMEOUT_SECS=<n>` env var.
+    ///
+    /// Default (flag omitted): NO helm binary invocation. Zero
+    /// external-tool calls per FR-013.
+    #[arg(long = "helm-render", default_value_t = false)]
+    pub helm_render: bool,
 
     /// Output path override. Two forms are accepted:
     ///
@@ -1899,7 +2016,7 @@ async fn resolve_image_ref(
 }
 
 pub async fn execute(
-    args: ScanArgs,
+    mut args: ScanArgs,
     offline: bool,
     exclude_scope: Vec<mikebom_common::resolution::LifecycleScope>,
     include_legacy_rpmdb: bool,
@@ -1919,6 +2036,17 @@ pub async fn execute(
         // SAFETY: see comment above — single-threaded.
         unsafe {
             std::env::set_var("MIKEBOM_INCLUDE_VENDORED", "1");
+        }
+    }
+
+    // Milestone 188 (#455) — propagate `--helm-render` to the env var
+    // that the helm reader consumes. Same zero-plumbing pattern as
+    // MIKEBOM_INCLUDE_VENDORED. Absent env var → HelmRenderMode::Off.
+    // SAFETY: single-threaded at this point in the scan-cmd lifecycle.
+    if args.helm_render {
+        // SAFETY: see comment above — single-threaded.
+        unsafe {
+            std::env::set_var("MIKEBOM_HELM_RENDER", "1");
         }
     }
 
@@ -2049,8 +2177,20 @@ pub async fn execute(
     // Until the BDB reader lands (T064), the parameter rides through
     // as a no-op; default behaviour is unchanged from milestone 003.
     let _ = include_legacy_rpmdb;
+
+    // Milestone 188 (#455) — `--helm-chart <path>` input resolution.
+    // When `<path>` ends in `.tgz`, extract to a tempdir + descend into
+    // the top-level chart directory. When `<path>` is a directory,
+    // treat identically to `--path`. Held tempdir kept alive through
+    // the whole scan.
+    let mut _helm_chart_tempdir: Option<tempfile::TempDir> = None;
+    if let Some(helm_chart_path) = args.helm_chart.clone() {
+        let scan_path = resolve_helm_chart_input(&helm_chart_path, &mut _helm_chart_tempdir)?;
+        args.path = Some(scan_path);
+    }
+
     if args.path.is_none() && args.image.is_none() {
-        anyhow::bail!("one of --path or --image is required");
+        anyhow::bail!("one of --path, --image, or --helm-chart is required");
     }
 
     // Resolve format dispatch BEFORE any scan work so argument errors
@@ -4077,6 +4217,11 @@ mod tests {
             // Milestone 186 — test helper defaults preserve pre-m186
             // behavior (no Referrers-API query; byte-identity SC-004).
             sbom_source: SbomSourceMode::Scan,
+            // Milestone 188 — test helper defaults preserve pre-m188
+            // behavior (no Helm chart processing; byte-identity per
+            // FR-016 / SC-005).
+            helm_chart: None,
+            helm_render: false,
             output: vec![],
             format: vec![],
             max_file_size: 256 * 1024 * 1024,

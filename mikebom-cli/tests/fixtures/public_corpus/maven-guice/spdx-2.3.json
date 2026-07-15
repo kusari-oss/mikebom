@@ -117,7 +117,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"WORKSPACE\",\"sha256\":\"34dc42cedd0364394249cdfe002f70d747d1cb1f965e309416d59af3da475569\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"WORKSPACE\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -189,7 +189,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"WORKSPACE\",\"sha256\":\"34dc42cedd0364394249cdfe002f70d747d1cb1f965e309416d59af3da475569\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"WORKSPACE\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -267,7 +267,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -339,7 +339,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -411,7 +411,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/dagger-adapter/pom.xml\",\"sha256\":\"61185c650c49a09ef05c8580deb02d06eb3281b8f722955485eefd425c6b88ad\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/dagger-adapter/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -483,7 +483,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/dagger-adapter/pom.xml\",\"sha256\":\"61185c650c49a09ef05c8580deb02d06eb3281b8f722955485eefd425c6b88ad\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/dagger-adapter/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -555,7 +555,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/throwingproviders/pom.xml\",\"sha256\":\"1ed804ceed688464c9099d61906bbfb2b53a9c0d5e6cf8afd16de1c08fbd8c67\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/throwingproviders/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -627,7 +627,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/dagger-adapter/pom.xml\",\"sha256\":\"61185c650c49a09ef05c8580deb02d06eb3281b8f722955485eefd425c6b88ad\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/dagger-adapter/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -699,7 +699,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/dagger-adapter/pom.xml\",\"sha256\":\"61185c650c49a09ef05c8580deb02d06eb3281b8f722955485eefd425c6b88ad\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/dagger-adapter/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -783,7 +783,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -867,7 +867,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -939,7 +939,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -1011,7 +1011,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/grapher/pom.xml\",\"sha256\":\"adfd5be0f93bfca51c9a218a19152340847eb12f8e637b764d74d2438e982763\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/grapher/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -1083,7 +1083,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/struts2/pom.xml\",\"sha256\":\"b2afa7767284ecee884765642db12b75e9b466fd4340274d0ccc6a5bf449f821\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/struts2/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -1155,7 +1155,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"examples/guice-demo/pom.xml\",\"sha256\":\"44e913f331bf71a37ebc42cb6644762f127e48be9509982de86421be8c681dd1\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"examples/guice-demo/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -1227,7 +1227,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/testlib/pom.xml\",\"sha256\":\"7a64b9a713cae8e4f534a43ef07ad034e936085fe3eb77dd5f6972d42c6f5ca6\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/testlib/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -1293,7 +1293,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"examples/guice-demo/pom.xml\",\"sha256\":\"44e913f331bf71a37ebc42cb6644762f127e48be9509982de86421be8c681dd1\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"examples/guice-demo/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -1371,7 +1371,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -1449,7 +1449,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -1521,7 +1521,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -1599,7 +1599,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -1671,7 +1671,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/persist/pom.xml\",\"sha256\":\"d14f46c22d1c1d523c7b17e1e1d41db25e31ea02752375734c11664215f02eb4\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/persist/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -1743,7 +1743,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/persist/pom.xml\",\"sha256\":\"d14f46c22d1c1d523c7b17e1e1d41db25e31ea02752375734c11664215f02eb4\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/persist/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -1803,7 +1803,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"pom.xml\",\"sha256\":\"49aebfee3e6ceb861a882b9df3fcf3bc9f5aa4625257378b0c6cdab84a3f4f64\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -1881,7 +1881,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -1953,7 +1953,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/struts2/pom.xml\",\"sha256\":\"b2afa7767284ecee884765642db12b75e9b466fd4340274d0ccc6a5bf449f821\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/struts2/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -2025,7 +2025,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/persist/pom.xml\",\"sha256\":\"d14f46c22d1c1d523c7b17e1e1d41db25e31ea02752375734c11664215f02eb4\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/persist/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -2097,7 +2097,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/persist/pom.xml\",\"sha256\":\"d14f46c22d1c1d523c7b17e1e1d41db25e31ea02752375734c11664215f02eb4\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/persist/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -2169,7 +2169,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/persist/pom.xml\",\"sha256\":\"d14f46c22d1c1d523c7b17e1e1d41db25e31ea02752375734c11664215f02eb4\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/persist/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -2241,7 +2241,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/persist/pom.xml\",\"sha256\":\"d14f46c22d1c1d523c7b17e1e1d41db25e31ea02752375734c11664215f02eb4\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/persist/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -2313,7 +2313,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/persist/pom.xml\",\"sha256\":\"d14f46c22d1c1d523c7b17e1e1d41db25e31ea02752375734c11664215f02eb4\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/persist/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -2391,7 +2391,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"core/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -2469,7 +2469,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/persist/pom.xml\",\"sha256\":\"d14f46c22d1c1d523c7b17e1e1d41db25e31ea02752375734c11664215f02eb4\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/persist/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",
@@ -2541,7 +2541,7 @@
           "annotationDate": "<masked>",
           "annotationType": "OTHER",
           "annotator": "Tool: mikebom-0.1.0-alpha.62",
-          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/spring/pom.xml\",\"sha256\":\"cb1d4896ce5156905ca1b4d0fc7e67b7218c628383215bfb252eab06c6307220\"}]}"
+          "comment": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"extensions/spring/pom.xml\",\"sha256\":\"<masked-sha256>\"}]}"
         },
         {
           "annotationDate": "<masked>",

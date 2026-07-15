@@ -19,7 +19,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -68,7 +68,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -117,7 +117,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"96eaefbbd532b79f687e17d0418807257cddf6f9c1d15aad0b11683ebf23a382\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/celery/requirements.txt"
           }
         ]
@@ -170,7 +170,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -219,7 +219,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -277,7 +277,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"96eaefbbd532b79f687e17d0418807257cddf6f9c1d15aad0b11683ebf23a382\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/celery/requirements.txt"
           }
         ]
@@ -330,7 +330,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -379,7 +379,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"96eaefbbd532b79f687e17d0418807257cddf6f9c1d15aad0b11683ebf23a382\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/celery/requirements.txt"
           }
         ]
@@ -432,7 +432,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"96eaefbbd532b79f687e17d0418807257cddf6f9c1d15aad0b11683ebf23a382\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/celery/requirements.txt"
           }
         ]
@@ -485,7 +485,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -534,7 +534,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -583,7 +583,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"96eaefbbd532b79f687e17d0418807257cddf6f9c1d15aad0b11683ebf23a382\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/celery/requirements.txt"
           }
         ]
@@ -636,7 +636,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -685,7 +685,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -734,7 +734,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -783,7 +783,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -832,7 +832,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -881,7 +881,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"96eaefbbd532b79f687e17d0418807257cddf6f9c1d15aad0b11683ebf23a382\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/celery/requirements.txt"
           }
         ]
@@ -934,7 +934,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"96eaefbbd532b79f687e17d0418807257cddf6f9c1d15aad0b11683ebf23a382\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/celery/requirements.txt"
           }
         ]
@@ -987,7 +987,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"96eaefbbd532b79f687e17d0418807257cddf6f9c1d15aad0b11683ebf23a382\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/celery/requirements.txt"
           }
         ]
@@ -1040,7 +1040,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"96eaefbbd532b79f687e17d0418807257cddf6f9c1d15aad0b11683ebf23a382\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/celery/requirements.txt"
           }
         ]
@@ -1093,7 +1093,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -1142,7 +1142,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -1191,7 +1191,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -1240,7 +1240,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -1289,7 +1289,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -1338,7 +1338,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -1387,7 +1387,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -1436,7 +1436,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -1485,7 +1485,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"96eaefbbd532b79f687e17d0418807257cddf6f9c1d15aad0b11683ebf23a382\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/celery/requirements.txt"
           }
         ]
@@ -1538,7 +1538,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -1587,7 +1587,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -1636,7 +1636,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -1685,7 +1685,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -1734,7 +1734,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -1783,7 +1783,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -1832,7 +1832,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -1881,7 +1881,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -1930,7 +1930,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -1979,7 +1979,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -2028,7 +2028,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"96eaefbbd532b79f687e17d0418807257cddf6f9c1d15aad0b11683ebf23a382\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/celery/requirements.txt"
           }
         ]
@@ -2081,7 +2081,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -2130,7 +2130,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"96eaefbbd532b79f687e17d0418807257cddf6f9c1d15aad0b11683ebf23a382\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/celery/requirements.txt"
           }
         ]
@@ -2183,7 +2183,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -2232,7 +2232,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"96eaefbbd532b79f687e17d0418807257cddf6f9c1d15aad0b11683ebf23a382\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/celery/requirements.txt"
           }
         ]
@@ -2285,7 +2285,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"96eaefbbd532b79f687e17d0418807257cddf6f9c1d15aad0b11683ebf23a382\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/celery/requirements.txt"
           }
         ]
@@ -2338,7 +2338,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -2387,7 +2387,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -2436,7 +2436,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -2485,7 +2485,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -2534,7 +2534,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -2583,7 +2583,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -2632,7 +2632,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -2681,7 +2681,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -2730,7 +2730,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -2779,7 +2779,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -2828,7 +2828,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -2877,7 +2877,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"96eaefbbd532b79f687e17d0418807257cddf6f9c1d15aad0b11683ebf23a382\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/celery/requirements.txt"
           }
         ]
@@ -2930,7 +2930,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -2979,7 +2979,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -3028,7 +3028,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -3077,7 +3077,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -3126,7 +3126,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -3184,7 +3184,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -3242,7 +3242,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"96eaefbbd532b79f687e17d0418807257cddf6f9c1d15aad0b11683ebf23a382\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/celery/requirements.txt"
           }
         ]
@@ -3295,7 +3295,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -3344,7 +3344,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"96eaefbbd532b79f687e17d0418807257cddf6f9c1d15aad0b11683ebf23a382\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/celery/requirements.txt"
           }
         ]
@@ -3397,7 +3397,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -3446,7 +3446,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -3495,7 +3495,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -3544,7 +3544,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"96eaefbbd532b79f687e17d0418807257cddf6f9c1d15aad0b11683ebf23a382\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/celery/requirements.txt"
           }
         ]
@@ -3597,7 +3597,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -3646,7 +3646,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -3695,7 +3695,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -3744,7 +3744,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -3793,7 +3793,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -3842,7 +3842,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -3891,7 +3891,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -3940,7 +3940,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -3989,7 +3989,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -4038,7 +4038,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -4087,7 +4087,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -4136,7 +4136,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -4185,7 +4185,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -4234,7 +4234,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -4283,7 +4283,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -4332,7 +4332,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -4381,7 +4381,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -4430,7 +4430,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -4479,7 +4479,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -4528,7 +4528,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -4577,7 +4577,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -4626,7 +4626,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -4675,7 +4675,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -4724,7 +4724,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -4773,7 +4773,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -4822,7 +4822,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"96eaefbbd532b79f687e17d0418807257cddf6f9c1d15aad0b11683ebf23a382\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/celery/requirements.txt"
           }
         ]
@@ -4875,7 +4875,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -4924,7 +4924,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -4973,7 +4973,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"96eaefbbd532b79f687e17d0418807257cddf6f9c1d15aad0b11683ebf23a382\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/celery/requirements.txt"
           }
         ]
@@ -5026,7 +5026,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -5075,7 +5075,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"96eaefbbd532b79f687e17d0418807257cddf6f9c1d15aad0b11683ebf23a382\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/celery/requirements.txt"
           }
         ]
@@ -5128,7 +5128,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]
@@ -5177,7 +5177,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"447932c8140e451a45e55b6516429a6f6f2ca846b12edbb11a470fcc86c6a0ec\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "uv.lock"
           }
         ]

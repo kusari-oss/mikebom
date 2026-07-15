@@ -440,7 +440,7 @@
       "annotationType": "other",
       "creationInfo": "<masked>",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-<masked>/anno-3JAXCMCVZGPIRAF3",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"go.sum\",\"sha256\":\"593ec876c2e81922320a3425f652bb77a8e943760b2e069fb6ca9a8751840199\"}]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"go.sum\",\"sha256\":\"<masked-sha256>\"}]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-FSC6GHSSWDW2CDXJAIQNNPDP/pkg-TJPG6XJRAUO3XRD5",
       "type": "Annotation"
     },
@@ -520,7 +520,7 @@
       "annotationType": "other",
       "creationInfo": "<masked>",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-<masked>/anno-AANMTA5UE6KEYUZP",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"go.sum\",\"sha256\":\"593ec876c2e81922320a3425f652bb77a8e943760b2e069fb6ca9a8751840199\"}]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"go.sum\",\"sha256\":\"<masked-sha256>\"}]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-FSC6GHSSWDW2CDXJAIQNNPDP/pkg-FEEV6I7DXEM55JJ3",
       "type": "Annotation"
     },
@@ -544,7 +544,7 @@
       "annotationType": "other",
       "creationInfo": "<masked>",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-<masked>/anno-BQCFKZVN2FOVA632",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"go.sum\",\"sha256\":\"593ec876c2e81922320a3425f652bb77a8e943760b2e069fb6ca9a8751840199\"}]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"go.sum\",\"sha256\":\"<masked-sha256>\"}]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-FSC6GHSSWDW2CDXJAIQNNPDP/pkg-DJ3ZIKWTNBYO26BT",
       "type": "Annotation"
     },
@@ -632,7 +632,7 @@
       "annotationType": "other",
       "creationInfo": "<masked>",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-<masked>/anno-HRRIF4ZXMTCBXR2P",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"go.sum\",\"sha256\":\"593ec876c2e81922320a3425f652bb77a8e943760b2e069fb6ca9a8751840199\"}]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"go.sum\",\"sha256\":\"<masked-sha256>\"}]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-FSC6GHSSWDW2CDXJAIQNNPDP/pkg-OPPLTPJ24FIGRUY2",
       "type": "Annotation"
     },
@@ -832,7 +832,7 @@
       "annotationType": "other",
       "creationInfo": "<masked>",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-<masked>/anno-TLBQ3NKFHWJLNTDU",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"go.sum\",\"sha256\":\"593ec876c2e81922320a3425f652bb77a8e943760b2e069fb6ca9a8751840199\"}]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"go.sum\",\"sha256\":\"<masked-sha256>\"}]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-FSC6GHSSWDW2CDXJAIQNNPDP/pkg-7SX5NKBWT75DIDL7",
       "type": "Annotation"
     },
@@ -848,7 +848,7 @@
       "annotationType": "other",
       "creationInfo": "<masked>",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-<masked>/anno-TUUZDGFYMTNXZRHX",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"go.sum\",\"sha256\":\"593ec876c2e81922320a3425f652bb77a8e943760b2e069fb6ca9a8751840199\"}]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"go.sum\",\"sha256\":\"<masked-sha256>\"}]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-FSC6GHSSWDW2CDXJAIQNNPDP/pkg-HM5FXARQYFCATZ3B",
       "type": "Annotation"
     },
@@ -864,7 +864,7 @@
       "annotationType": "other",
       "creationInfo": "<masked>",
       "spdxId": "https://mikebom.kusari.dev/spdx3/doc-<masked>/anno-UYYHJYS6QYYNGOEZ",
-      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"go.sum\",\"sha256\":\"593ec876c2e81922320a3425f652bb77a8e943760b2e069fb6ca9a8751840199\"}]}",
+      "statement": "{\"schema\":\"mikebom-annotation/v1\",\"field\":\"evidence.occurrences\",\"value\":[{\"location\":\"go.sum\",\"sha256\":\"<masked-sha256>\"}]}",
       "subject": "https://mikebom.kusari.dev/spdx3/doc-FSC6GHSSWDW2CDXJAIQNNPDP/pkg-A3EJRWNXRJBCN4AR",
       "type": "Annotation"
     },

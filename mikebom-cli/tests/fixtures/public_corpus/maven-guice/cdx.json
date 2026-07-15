@@ -18,7 +18,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"34dc42cedd0364394249cdfe002f70d747d1cb1f965e309416d59af3da475569\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "WORKSPACE"
           }
         ]
@@ -77,7 +77,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"34dc42cedd0364394249cdfe002f70d747d1cb1f965e309416d59af3da475569\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "WORKSPACE"
           }
         ]
@@ -131,7 +131,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "core/pom.xml"
           }
         ]
@@ -184,7 +184,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "core/pom.xml"
           }
         ]
@@ -242,7 +242,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"61185c650c49a09ef05c8580deb02d06eb3281b8f722955485eefd425c6b88ad\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "extensions/dagger-adapter/pom.xml"
           }
         ]
@@ -300,7 +300,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"61185c650c49a09ef05c8580deb02d06eb3281b8f722955485eefd425c6b88ad\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "extensions/dagger-adapter/pom.xml"
           }
         ]
@@ -358,7 +358,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"1ed804ceed688464c9099d61906bbfb2b53a9c0d5e6cf8afd16de1c08fbd8c67\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "extensions/throwingproviders/pom.xml"
           }
         ]
@@ -415,7 +415,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"61185c650c49a09ef05c8580deb02d06eb3281b8f722955485eefd425c6b88ad\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "extensions/dagger-adapter/pom.xml"
           }
         ]
@@ -473,7 +473,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"61185c650c49a09ef05c8580deb02d06eb3281b8f722955485eefd425c6b88ad\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "extensions/dagger-adapter/pom.xml"
           }
         ]
@@ -535,7 +535,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "core/pom.xml"
           }
         ]
@@ -601,7 +601,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "core/pom.xml"
           }
         ]
@@ -663,7 +663,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "core/pom.xml"
           }
         ]
@@ -720,7 +720,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"adfd5be0f93bfca51c9a218a19152340847eb12f8e637b764d74d2438e982763\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "extensions/grapher/pom.xml"
           }
         ]
@@ -777,7 +777,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"b2afa7767284ecee884765642db12b75e9b466fd4340274d0ccc6a5bf449f821\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "extensions/struts2/pom.xml"
           }
         ]
@@ -834,7 +834,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"44e913f331bf71a37ebc42cb6644762f127e48be9509982de86421be8c681dd1\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/guice-demo/pom.xml"
           }
         ]
@@ -892,7 +892,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"7a64b9a713cae8e4f534a43ef07ad034e936085fe3eb77dd5f6972d42c6f5ca6\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "extensions/testlib/pom.xml"
           }
         ]
@@ -949,7 +949,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"44e913f331bf71a37ebc42cb6644762f127e48be9509982de86421be8c681dd1\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "examples/guice-demo/pom.xml"
           }
         ]
@@ -1002,7 +1002,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "core/pom.xml"
           }
         ]
@@ -1064,7 +1064,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "core/pom.xml"
           }
         ]
@@ -1126,7 +1126,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "core/pom.xml"
           }
         ]
@@ -1183,7 +1183,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "core/pom.xml"
           }
         ]
@@ -1245,7 +1245,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"d14f46c22d1c1d523c7b17e1e1d41db25e31ea02752375734c11664215f02eb4\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "extensions/persist/pom.xml"
           }
         ]
@@ -1303,7 +1303,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"d14f46c22d1c1d523c7b17e1e1d41db25e31ea02752375734c11664215f02eb4\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "extensions/persist/pom.xml"
           }
         ]
@@ -1361,7 +1361,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"49aebfee3e6ceb861a882b9df3fcf3bc9f5aa4625257378b0c6cdab84a3f4f64\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "pom.xml"
           }
         ]
@@ -1414,7 +1414,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "core/pom.xml"
           }
         ]
@@ -1472,7 +1472,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"b2afa7767284ecee884765642db12b75e9b466fd4340274d0ccc6a5bf449f821\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "extensions/struts2/pom.xml"
           }
         ]
@@ -1530,7 +1530,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"d14f46c22d1c1d523c7b17e1e1d41db25e31ea02752375734c11664215f02eb4\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "extensions/persist/pom.xml"
           }
         ]
@@ -1588,7 +1588,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"d14f46c22d1c1d523c7b17e1e1d41db25e31ea02752375734c11664215f02eb4\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "extensions/persist/pom.xml"
           }
         ]
@@ -1646,7 +1646,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"d14f46c22d1c1d523c7b17e1e1d41db25e31ea02752375734c11664215f02eb4\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "extensions/persist/pom.xml"
           }
         ]
@@ -1704,7 +1704,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"d14f46c22d1c1d523c7b17e1e1d41db25e31ea02752375734c11664215f02eb4\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "extensions/persist/pom.xml"
           }
         ]
@@ -1762,7 +1762,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"d14f46c22d1c1d523c7b17e1e1d41db25e31ea02752375734c11664215f02eb4\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "extensions/persist/pom.xml"
           }
         ]
@@ -1820,7 +1820,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"9446ac2f27aaf0303a59a237e2aa95daa1dec75881f8923772f47d33a4dc7977\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "core/pom.xml"
           }
         ]
@@ -1886,7 +1886,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"d14f46c22d1c1d523c7b17e1e1d41db25e31ea02752375734c11664215f02eb4\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "extensions/persist/pom.xml"
           }
         ]
@@ -1944,7 +1944,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"cb1d4896ce5156905ca1b4d0fc7e67b7218c628383215bfb252eab06c6307220\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "extensions/spring/pom.xml"
           }
         ]

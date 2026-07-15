@@ -19,7 +19,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"593ec876c2e81922320a3425f652bb77a8e943760b2e069fb6ca9a8751840199\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "go.sum"
           }
         ]
@@ -92,7 +92,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"593ec876c2e81922320a3425f652bb77a8e943760b2e069fb6ca9a8751840199\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "go.sum"
           }
         ]
@@ -165,7 +165,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"593ec876c2e81922320a3425f652bb77a8e943760b2e069fb6ca9a8751840199\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "go.sum"
           }
         ]
@@ -238,7 +238,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"593ec876c2e81922320a3425f652bb77a8e943760b2e069fb6ca9a8751840199\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "go.sum"
           }
         ]
@@ -311,7 +311,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"593ec876c2e81922320a3425f652bb77a8e943760b2e069fb6ca9a8751840199\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "go.sum"
           }
         ]
@@ -378,7 +378,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"593ec876c2e81922320a3425f652bb77a8e943760b2e069fb6ca9a8751840199\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "go.sum"
           }
         ]
@@ -445,7 +445,7 @@
         ],
         "occurrences": [
           {
-            "additionalContext": "{\"sha256\":\"593ec876c2e81922320a3425f652bb77a8e943760b2e069fb6ca9a8751840199\"}",
+            "additionalContext": "{\"sha256\":\"<masked-sha256>\"}",
             "location": "go.sum"
           }
         ]

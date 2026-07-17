@@ -232,6 +232,62 @@ impl From<SpdxExpression> for String {
     }
 }
 
+/// Milestone 202 (FR-002, closes #579) — shared license-operand sanitizer.
+///
+/// Extracted from `mikebom-cli/src/scan_fs/package_db/rpm_file.rs::sanitize_to_license_ref_idstring`
+/// (m185 US2). Same behavior: filter to alphanumeric + `-` + `.`, collapse
+/// dash runs, trim leading/trailing dashes. Returns the sanitized id-suffix
+/// (without a `LicenseRef-` prefix) or `None` if the filtered result is
+/// empty. Callers responsible for prepending `LicenseRef-` to the return
+/// value before emitting.
+///
+/// Consumers post-extraction:
+/// - m185 SPDX 2.3 emission path in `rpm_file.rs` (via re-export from this module)
+/// - m202 CDX splitter's `license_entry_for_token` Branch 3 (new caller for #579)
+///
+/// The shared home ensures CDX and SPDX 2.3 emitters produce byte-identical
+/// `LicenseRef-<sanitized>` identifiers for the same input token — the FR-002
+/// parity guarantee that lets downstream consumers cross-reference the two
+/// wire-format outputs via the LicenseRef join key.
+///
+/// Worked examples (from the m185 doc comment):
+///
+/// | Input             | Output                  |
+/// |-------------------|-------------------------|
+/// | `"GPLv2+"`        | `Some("GPLv2")`         |
+/// | `"My License v2"` | `Some("My-License-v2")` |
+/// | `"(custom)"`      | `Some("custom")`        |
+/// | `"LGPL-2.1+"`     | `Some("LGPL-2.1")`      |
+/// | `"bzip2-1.0.4"`   | `Some("bzip2-1.0.4")`   |
+/// | `"PD"`            | `Some("PD")`            |
+/// | `"!@#$"`          | `None`                  |
+/// | `""`              | `None`                  |
+/// | `"---"`           | `None`                  |
+pub fn sanitize_license_operand_to_ref(s: &str) -> Option<String> {
+    let mut out = String::with_capacity(s.len());
+    let mut prev_was_dash = false;
+    for c in s.chars() {
+        let safe = c.is_ascii_alphanumeric() || c == '-' || c == '.';
+        let emit = if safe { c } else { '-' };
+        if emit == '-' {
+            if !prev_was_dash {
+                out.push('-');
+                prev_was_dash = true;
+            }
+            // else: skip — collapses run of dashes to one
+        } else {
+            out.push(emit);
+            prev_was_dash = false;
+        }
+    }
+    let trimmed = out.trim_matches('-').to_string();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

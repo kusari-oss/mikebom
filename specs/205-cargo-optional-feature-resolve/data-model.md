@@ -69,11 +69,17 @@ pub(super) enum CargoMetadataResolveFailure {
 2. **Spawn** worker thread that runs:
    ```rust
    Command::new("cargo")
-       .args(["metadata", "--format-version", "1"])
+       .args(["metadata", "--format-version", "1", "--offline", "--locked"])
        .current_dir(workspace_root)
        .output()
    ```
    Sends result via `mpsc::channel`.
+
+   **Flag rationale**:
+   - `--offline` is REQUIRED per FR-006. Blocks cargo from reaching over the wire to update the registry index. Without it, a workspace whose Cargo.toml declares a dep whose version isn't in the local index cache would trigger a network fetch (violating FR-006 and slowing the scan). With it, cargo exits non-zero on any operation that would need network → FR-004 NonZeroExit fallback path fires cleanly.
+   - `--locked` is REQUIRED for determinism (FR-007). Requires Cargo.lock to exist AND be up-to-date; forbids cargo from mutating it. Without it, cargo may rewrite Cargo.lock as a side effect of `cargo metadata` (a real Cargo behavior when the manifest has been touched since the lockfile was last generated), which would (a) mutate the scanned workspace under the operator's feet, and (b) produce non-deterministic scan output. With it, any lockfile drift triggers non-zero exit → FR-004 fallback.
+
+   Both flags failing produce the same outcome (`NonZeroExit` with stderr_head describing the cargo-side reason), which the FR-004 fallback handles uniformly.
 3. **Wait** with `rx.recv_timeout(timeout)`. Return `Err(Timeout)` on channel timeout.
 4. **Classify** subprocess result:
    - `Err` I/O → `Err(IoError(e))`.

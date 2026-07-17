@@ -37,7 +37,7 @@ description: "Task list for m205 — fix cargo optional-dep over-exclusion via f
 - [ ] T005 [P] Add `resolve_cargo_metadata_timeout() -> Duration` helper to `cargo.rs` per data-model E2 — reads `MIKEBOM_CARGO_METADATA_TIMEOUT_SECS`, parses as `u64`, clamps to `[1, 3600]`, defaults 60 on absent/parse-fail. 4-8 LOC. Include doc-comment citing m203 precedent.
 - [ ] T006 Add `resolve_activated_deps_via_cargo_metadata(workspace_root: &Path, timeout: Duration) -> Result<HashSet<String>, CargoMetadataResolveFailure>` to `cargo.rs` per data-model E3 + research R1's cargo metadata shape + R3's m055 subprocess pattern. Structure:
   - Probe `Command::new("cargo").arg("--version").output()` → BinaryNotFound on `ErrorKind::NotFound`, IoError otherwise.
-  - Spawn worker thread: `Command::new("cargo").args(["metadata", "--format-version", "1"]).current_dir(workspace_root).output()`; send result via `mpsc::channel`.
+  - Spawn worker thread: `Command::new("cargo").args(["metadata", "--format-version", "1", "--offline", "--locked"]).current_dir(workspace_root).output()`; send result via `mpsc::channel`. **`--offline` is REQUIRED per FR-006** (blocks network access; if cargo would need to fetch the registry index, it errors out cleanly rather than reaching over the wire). **`--locked` is REQUIRED for determinism** (fails cleanly if Cargo.lock is missing/stale rather than mutating it). Either flag failing → subprocess non-zero exit → FR-004 NonZeroExit fallback fires (safe over-inclusion + WARN with stderr_head naming the cargo-side reason).
   - `rx.recv_timeout(timeout)` → Timeout on channel timeout, IoError on subprocess I/O err, NonZeroExit with `stderr_head` (capped 20 lines per m203 `cap_stderr_lines` precedent — reuse helper OR inline equivalent) on non-zero exit.
   - Zero exit → `serde_json::from_slice(&output.stdout)?` → navigate to `.resolve.nodes[]` → for each node, extend `HashSet` with `deps[i].name`. Return `Ok(activated_names)`. ParseError on serde err.
 - [ ] T007 [P] Add unit tests to `cargo.rs::tests` covering T004-T006:
@@ -107,7 +107,7 @@ description: "Task list for m205 — fix cargo optional-dep over-exclusion via f
   - Assert:
     - (a) Scan exits 0 (mikebom never aborts on cargo-absent fallback; FR-004 + Constitution Principle III).
     - (b) stderr contains BOTH substrings `"cargo metadata"` AND `"falling back"` (WARN log fired; matches the exact log fixture pinned in T009's data-model E5 wording).
-    - (c) stderr contains ONE OF `"BinaryNotFound"` / `"cargo\` binary not found on $PATH"` (matches `CargoMetadataResolveFailure::BinaryNotFound` Display from T004; pinned in T007's `cargo_metadata_resolve_failure_display_formats_all_variants_m205` unit test).
+    - (c) stderr contains the substring `binary not found on $PATH` (matches `CargoMetadataResolveFailure::BinaryNotFound` Display value verbatim per T007's `cargo_metadata_resolve_failure_display_formats_all_variants_m205` unit test — tracing `reason = %e` uses Display, so this is the actual bytes on the wire; the variant name `BinaryNotFound` does not appear in stderr).
     - (d) Emitted CDX: `serde`'s component `.scope` is `"runtime"` (or absent = default runtime), NOT `"excluded"`. Safe over-inclusion verified — even without cargo resolving activation, optional deps default to Runtime.
     - (e) Emitted CDX: `serde`'s component `.properties[]` does NOT contain `{name: "mikebom:optional-derivation"}` (the Optional branch was unreachable → no derivation annotation emitted).
 

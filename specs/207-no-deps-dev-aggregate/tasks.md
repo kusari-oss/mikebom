@@ -66,7 +66,8 @@ description: "Task list for m207 — fix --no-deps-dev flag UX (aggregate disabl
   - `resolve_enrich_no_deps_dev_license_and_graph_equals_aggregate_m207` — `no_deps_dev_license = true` + `no_deps_dev_graph = true` → same as `--no-deps-dev` alone (composition sanity).
   - `resolve_enrich_sources_allowlist_overrides_no_deps_dev_m207` — `enrich_sources = [DepsDev]` AND `no_deps_dev = true` → `EnrichConfig { deps_dev: true, ... }` (allowlist wins per FR-004).
   - `resolve_enrich_no_clearly_defined_unaffected_by_no_deps_dev_m207` — `no_deps_dev = true` alone leaves `clearly_defined: true` (regression guard).
-- [ ] T009 Update the existing default-flags-off test at `mikebom-cli/src/cli/scan_cmd.rs:4178-4179` (or wherever `!parsed.inner.no_deps_dev` + `!parsed.inner.no_deps_dev_graph` is asserted) to ALSO assert `!parsed.inner.no_deps_dev_license` (new default: OFF).
+  - **F4 remediation** `no_deps_dev_help_mentions_enrich_sources_m207` — invoke `<ScanArgsForTest as clap::CommandFactory>::command().debug_assert()` (or fetch the `--no-deps-dev` arg's `long_help`/`help` via clap's introspection API) and assert the help text contains the substring `"enrich-sources"`. Pins FR-008 — operators reading `mikebom sbom scan --help` see the composition hint next to the flag they're setting.
+- [ ] T009 **F6 remediation** — locate the existing default-flags-off test via `grep -n "!parsed.inner.no_deps_dev\b" mikebom-cli/src/cli/scan_cmd.rs` (avoids brittle hard-coded line numbers per m199-m206 lesson). Extend the found assertion to ALSO assert `!parsed.inner.no_deps_dev_license` (new default: OFF).
 
 ## Phase 3: User Story 1 — Aggregate disable "just works" (Priority: P1)
 
@@ -74,16 +75,13 @@ description: "Task list for m207 — fix --no-deps-dev flag UX (aggregate disabl
 
 **Independent Test Criterion**: SC-001. Scan any project with `--no-deps-dev`; assert `grep deps.dev` on the emitted SBOM returns zero component-provenance hits.
 
-- [ ] T010 [US1] Add integration test `fr001_no_deps_dev_produces_no_deps_dev_provenance_m207` in a NEW file `mikebom-cli/tests/scan_no_deps_dev.rs`. Setup:
-  - Build a synthetic minimal project via `tempfile::tempdir()`: a `Cargo.toml` with `[package]` + one runtime dep (`serde = "1"`) + a `Cargo.lock` via `cargo generate-lockfile` (fetch-free is fine since we scan static state).
-  - Shell out to mikebom binary via `env!("CARGO_BIN_EXE_mikebom")` with `sbom scan --offline --no-deps-dev --path <tempdir> --format cyclonedx-json --output <out>`.
-  - `--offline` ensures the test doesn't require network access; the semantic-change is testable regardless (under `--offline`, network fetches are already skipped — the fix's assertion is that `mikebom:source-files: ["deps.dev"]` provenance annotations are ALSO absent, which was pre-m207-emitable when the dep-graph enrichment path stamped components regardless of `--offline`; actually the dep-graph enrichment respects `--offline` too, so we need to prove the fix via `--no-deps-dev` alone rather than `--offline`).
-  - Actually simpler: skip `--offline`. Run `mikebom sbom scan --no-deps-dev --path <tempdir>`. Under the fix, the dep-graph enrichment path is disabled by `--no-deps-dev` alone → components carrying `mikebom:source-files: ["deps.dev"]` are absent.
-  - Test needs network access for a truly-end-to-end assertion. If CI runs offline, use `--offline` and rely on the unit-test truth table (T008) for the semantic-change coverage; the integration test then asserts the WARN log fires.
-  - Concrete assertions:
-    - (a) Scan exits 0.
-    - (b) `.components[]` contains ZERO entries with a `.properties[]` entry where `name == "mikebom:source-files"` AND `value == "[\"deps.dev\"]"`.
-    - (c) stderr contains the substring `"m207 aggregate semantic"` (FR-006 migration signal per E3).
+- [ ] T010 [US1] **F1+F2 remediation** — network-content assertion under `--offline` is untestable (both pre-m207 and post-m207 produce identical output because `--offline` short-circuits every deps.dev enrichment path regardless of `--no-deps-dev`). Reduce T010 to a scan-succeeds smoke test in a NEW file `mikebom-cli/tests/scan_no_deps_dev.rs`. SC-001 content verification (reporter's exact invocation → zero deps.dev-provenance components) moves to the PR-body manual reproducer per quickstart.md Reproducer 1 (network-required). Task body:
+  - Add test `us1_no_deps_dev_scan_succeeds_and_fires_migration_log_m207` to `mikebom-cli/tests/scan_no_deps_dev.rs`.
+  - Scan any pre-existing non-image fixture (`mikebom-cli/tests/fixtures/public_corpus/npm-express`) with `--offline --no-deps-dev`.
+  - Assertions:
+    - (a) Scan exits 0 (FR-007 no new failure modes).
+    - (b) stderr contains the substring `"m207 aggregate semantic"` — FR-006 migration signal fires. (T011 pins the same assertion in a dedicated stderr-only test; T010 asserts it alongside the scan-succeeds guarantee to ensure the log is emitted from a real end-to-end scan, not just a synthesized invocation.)
+  - Behavioral proof of the semantic change lives in T008's truth table (unit tests) + the manual quickstart Reproducer 1 verification captured in T016's PR body checklist.
 - [ ] T011 [P] [US1] Add stderr-assertion helper test `fr006_migration_info_log_fires_when_aggregate_flag_used_alone_m207` in `mikebom-cli/tests/scan_no_deps_dev.rs`:
   - Scan a non-image `--path` fixture (e.g., npm-express from public_corpus) with `--offline --no-deps-dev`.
   - Assert stderr contains `"m207 aggregate semantic"` exactly once.
@@ -97,11 +95,12 @@ description: "Task list for m207 — fix --no-deps-dev flag UX (aggregate disabl
 
 **Independent Test Criterion**: Passing `--no-deps-dev-license` alone leaves the dep-graph enrichment active; passing `--no-deps-dev-graph` alone leaves the license enrichment active. Verified via T008's truth-table unit tests (`_disables_license_only` and `_disables_graph_only`).
 
-- [ ] T013 [US2] Add integration test `us2_no_deps_dev_license_alone_still_stamps_graph_provenance_m207` in `mikebom-cli/tests/scan_no_deps_dev.rs`:
-  - Scan `--no-deps-dev-license` WITHOUT `--offline` (network access required for the graph fetch to actually produce provenance-stamped components).
-  - Gate: skip cleanly if no network / registry index cache is warm; assert exit 0 and skip the deeper content assertion. Simpler: skip the actual network dependency and rely on T008's truth-table proof (`no_deps_dev_license_disables_license_only_m207` — CDX `deps_dev = false`, `deps_dev_graph = true`).
-  - Alternative (network-free): assert stderr does NOT contain `"m207 aggregate semantic"` when `--no-deps-dev-license` is set alone (per data-model E3 — the migration log fires only for aggregate-flag-alone).
-  - Recommended: implement the alternative (stderr-only assertion) for a network-free integration test.
+- [ ] T013 [US2] **F3 remediation** — network-free stderr-only assertion (same pattern as T011/T012). Add test `us2_no_deps_dev_license_alone_does_not_fire_aggregate_migration_log_m207` to `mikebom-cli/tests/scan_no_deps_dev.rs`:
+  - Scan any pre-existing non-image fixture (`mikebom-cli/tests/fixtures/public_corpus/npm-express`) with `--offline --no-deps-dev-license` (aggregate flag NOT set; only fine-grained license flag).
+  - Assertions:
+    - (a) Scan exits 0.
+    - (b) stderr does NOT contain the substring `"m207 aggregate semantic"` — the migration log fires ONLY for `--no-deps-dev` alone per data-model E3 rationale (fine-grained-aware operators aren't spammed).
+  - Behavioral proof that `--no-deps-dev-license` correctly disables the license path but leaves the graph path active lives in T008's truth-table unit test `resolve_enrich_no_deps_dev_license_disables_license_only_m207`.
 
 ## Phase 5: Polish & Delivery
 
@@ -113,8 +112,9 @@ description: "Task list for m207 — fix --no-deps-dev flag UX (aggregate disabl
   - (a) 1-paragraph summary: root cause (name-vs-semantic mismatch), fix (1-line semantic change at scan_cmd.rs:1642 + new `--no-deps-dev-license` fine-grained flag + FR-006 migration INFO log).
   - (b) Reporter attribution (external gist / issue #596 opened during m206 session).
   - (c) Migration guidance: operators relying on the pre-m207 `--no-deps-dev` semantic can migrate by renaming to `--no-deps-dev-license`. The INFO log fires the first time an operator uses the aggregate flag without fine-grained escape hatches so they see it in their scan logs.
-  - (d) Test coverage: 8 unit tests covering the truth table + 3 integration tests (stderr assertions on migration signal presence/absence + eventual network-required content assertion).
-  - (e) Zero wire-format change; zero emitter touched; zero new Cargo deps.
+  - (d) Test coverage: 9 unit tests covering the truth table (including F4 help-text assertion) + 3 integration tests (T010 scan-succeeds + FR-006 log-fires; T011 log-fires-alone; T012 log-suppressed-with-fine-grained; T013 US2 fine-grained-flag stderr assertion).
+  - (e) **Manual pre-merge SC-001 reproducer checklist** (per F1+F2 remediation — network-required content assertion is out of scope for automated CI). Reviewer performs quickstart.md Reproducer 1 verbatim against any real project + verifies (i) `jq '[.components[]? | .properties[]? | select(.name == "mikebom:source-files") | .value | select(. == "[\"deps.dev\"]")] | length'` returns `0` post-m207, and (ii) stderr contains the m207 migration INFO log line. Include the commands verbatim in the PR body so the reviewer just copy-pastes.
+  - (f) Zero wire-format change; zero emitter touched; zero new Cargo deps.
 
 ---
 

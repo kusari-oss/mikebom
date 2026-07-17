@@ -45,7 +45,17 @@ const FIXTURE_SUBPATH: &str = "cargo";
 // that were previously scope-filtered as dev-tier now surface as
 // runtime edges. Verified deterministic across 3 consecutive runs.
 // See FR-002 / FR-003 in specs/200-*/spec.md.
-const EXPECTED_MIKEBOM_EDGE_COUNT: usize = 321;
+//
+// Milestone 205 (#593): bumped from 321 → 322 (delta +1). The cargo
+// optional-dep feature-resolution fix (`cargo metadata --format-version 1
+// --offline`) correctly identifies one dep in the clap workspace whose
+// `optional = true` declaration IS activated by a default feature —
+// pre-m205 this was classified `LifecycleScope::Optional` (excluded from
+// DEPENDS_ON edge emission); post-m205 it correctly classifies as
+// `Runtime` and its parent's outgoing edge surfaces in the audited edge
+// set. Matches the FR-001 spec semantic (feature-activated optional
+// deps are runtime-in-effect). See FR-001 / FR-002 in specs/205-*/spec.md.
+const EXPECTED_MIKEBOM_EDGE_COUNT: usize = 322;
 
 /// Representative edges that mikebom **actually emits** today — pinning
 /// current behavior so future milestones can't silently regress.

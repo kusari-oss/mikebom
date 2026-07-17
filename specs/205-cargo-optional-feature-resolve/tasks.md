@@ -21,9 +21,9 @@ description: "Task list for m205 — fix cargo optional-dep over-exclusion via f
 
 **Purpose**: Establish pre-m205 baseline for SC-004 (byte-identity) and SC-005 (pre-PR delta). Re-verify all quickstart.md `Empirical re-verification` grep results actually match the current tree.
 
-- [ ] T001 Verify pre-m205 baseline pre-PR is green by running `./scripts/pre-pr.sh` on branch `205-cargo-optional-feature-resolve` HEAD (post-checkout, pre-implementation) and capture wall-clock time to `/tmp/m205-prepr-baseline.txt` for SC-005 delta measurement.
-- [ ] T002 [P] Golden-drift baseline: `git diff --stat main -- mikebom-cli/tests/fixtures/` (expected: empty — branch is spec+plan only) — record to `/tmp/m205-golden-baseline.txt`. Post-implementation the diff MUST show ZERO drift for non-Cargo fixtures (SC-004 assertion).
-- [ ] T003 [P] Recon: verify every line number cited in plan.md / data-model.md is still valid by running quickstart.md's `Empirical re-verification at implement time` block. Record grep outputs to `/tmp/m205-recon.txt` for downstream tasks to consume. Concretely:
+- [X] T001 Verify pre-m205 baseline pre-PR is green by running `./scripts/pre-pr.sh` on branch `205-cargo-optional-feature-resolve` HEAD (post-checkout, pre-implementation) and capture wall-clock time to `/tmp/m205-prepr-baseline.txt` for SC-005 delta measurement.
+- [X] T002 [P] Golden-drift baseline: `git diff --stat main -- mikebom-cli/tests/fixtures/` (expected: empty — branch is spec+plan only) — record to `/tmp/m205-golden-baseline.txt`. Post-implementation the diff MUST show ZERO drift for non-Cargo fixtures (SC-004 assertion).
+- [X] T003 [P] Recon: verify every line number cited in plan.md / data-model.md is still valid by running quickstart.md's `Empirical re-verification at implement time` block. Record grep outputs to `/tmp/m205-recon.txt` for downstream tasks to consume. Concretely:
   - `grep -n "optional_names.contains" mikebom-cli/src/scan_fs/package_db/cargo.rs` — expect single site at line 1155.
   - `grep -n "collect_optional_dep_keys\|fn parse_lockfile" mikebom-cli/src/scan_fs/package_db/cargo.rs` — confirm parse_lockfile def at line 1057; collect_optional_dep_keys at line 813.
   - `grep -c "parse_lockfile(" mikebom-cli/src/scan_fs/package_db/cargo.rs` — count call sites (~1 production at line 1259 + test callsites; tally so T008's signature update is precise).
@@ -33,14 +33,14 @@ description: "Task list for m205 — fix cargo optional-dep over-exclusion via f
 
 **Purpose**: Add the subprocess resolver + error enum + timeout helper. NO classifier behavior changes yet — those land in Phase 3. Every user story test (Phases 3-6) transitively depends on these types.
 
-- [ ] T004 Add `CargoMetadataResolveFailure` enum to `mikebom-cli/src/scan_fs/package_db/cargo.rs` per data-model E1 (adjacent to existing `CargoError` enum). 5 variants: `BinaryNotFound`, `NonZeroExit { code, stderr_head }`, `Timeout { timeout_secs }`, `ParseError { source: serde_json::Error }`, `IoError(#[from] std::io::Error)`. Derive `Debug, thiserror::Error`. Display strings exactly as data-model E1 specifies (whitespace + backtick placement matters for the WARN log fixture in T013).
-- [ ] T005 [P] Add `resolve_cargo_metadata_timeout() -> Duration` helper to `cargo.rs` per data-model E2 — reads `MIKEBOM_CARGO_METADATA_TIMEOUT_SECS`, parses as `u64`, clamps to `[1, 3600]`, defaults 60 on absent/parse-fail. 4-8 LOC. Include doc-comment citing m203 precedent.
-- [ ] T006 Add `resolve_activated_deps_via_cargo_metadata(workspace_root: &Path, timeout: Duration) -> Result<HashSet<String>, CargoMetadataResolveFailure>` to `cargo.rs` per data-model E3 + research R1's cargo metadata shape + R3's m055 subprocess pattern. Structure:
+- [X] T004 Add `CargoMetadataResolveFailure` enum to `mikebom-cli/src/scan_fs/package_db/cargo.rs` per data-model E1 (adjacent to existing `CargoError` enum). 5 variants: `BinaryNotFound`, `NonZeroExit { code, stderr_head }`, `Timeout { timeout_secs }`, `ParseError { source: serde_json::Error }`, `IoError(#[from] std::io::Error)`. Derive `Debug, thiserror::Error`. Display strings exactly as data-model E1 specifies (whitespace + backtick placement matters for the WARN log fixture in T013).
+- [X] T005 [P] Add `resolve_cargo_metadata_timeout() -> Duration` helper to `cargo.rs` per data-model E2 — reads `MIKEBOM_CARGO_METADATA_TIMEOUT_SECS`, parses as `u64`, clamps to `[1, 3600]`, defaults 60 on absent/parse-fail. 4-8 LOC. Include doc-comment citing m203 precedent.
+- [X] T006 Add `resolve_activated_deps_via_cargo_metadata(workspace_root: &Path, timeout: Duration) -> Result<HashSet<String>, CargoMetadataResolveFailure>` to `cargo.rs` per data-model E3 + research R1's cargo metadata shape + R3's m055 subprocess pattern. Structure:
   - Probe `Command::new("cargo").arg("--version").output()` → BinaryNotFound on `ErrorKind::NotFound`, IoError otherwise.
   - Spawn worker thread: `Command::new("cargo").args(["metadata", "--format-version", "1", "--offline", "--locked"]).current_dir(workspace_root).output()`; send result via `mpsc::channel`. **`--offline` is REQUIRED per FR-006** (blocks network access; if cargo would need to fetch the registry index, it errors out cleanly rather than reaching over the wire). **`--locked` is REQUIRED for determinism** (fails cleanly if Cargo.lock is missing/stale rather than mutating it). Either flag failing → subprocess non-zero exit → FR-004 NonZeroExit fallback fires (safe over-inclusion + WARN with stderr_head naming the cargo-side reason).
   - `rx.recv_timeout(timeout)` → Timeout on channel timeout, IoError on subprocess I/O err, NonZeroExit with `stderr_head` (capped 20 lines per m203 `cap_stderr_lines` precedent — reuse helper OR inline equivalent) on non-zero exit.
   - Zero exit → `serde_json::from_slice(&output.stdout)?` → navigate to `.resolve.nodes[]` → for each node, extend `HashSet` with `deps[i].name`. Return `Ok(activated_names)`. ParseError on serde err.
-- [ ] T007 [P] Add unit tests to `cargo.rs::tests` covering T004-T006:
+- [X] T007 [P] Add unit tests to `cargo.rs::tests` covering T004-T006:
   - `resolve_cargo_metadata_timeout_default_when_env_var_absent_m205` — unset env → `Duration::from_secs(60)`.
   - `resolve_cargo_metadata_timeout_honors_env_var_m205` — `=42` → 42s.
   - `resolve_cargo_metadata_timeout_clamps_below_min_m205` — `=0` → 1s.
@@ -48,7 +48,7 @@ description: "Task list for m205 — fix cargo optional-dep over-exclusion via f
   - `resolve_cargo_metadata_timeout_ignores_parse_error_m205` — `=notanumber` → 60s.
   - `cargo_metadata_resolve_failure_display_formats_all_variants_m205` — construct all 5 variants + format each, assert human-readable Display matches data-model E1 exactly (needed by T013 which greps stderr for these strings).
   - Use a `with_env` helper mirroring m203's `with_helm_render_timeout_env` (env-var-mutating tests require serial execution per `--test-threads=1`).
-- [ ] T008 Post-T004/T005/T006/T007 sanity: run `CARGO_TARGET_DIR=/tmp/m205-c cargo +stable check --workspace --tests 2>&1 | tail -20`. Expected: clean compile. The `as_wire_str`-style dead-code warning may appear on `resolve_activated_deps_via_cargo_metadata` until Phase 3 wires it in — acceptable at this checkpoint (will resolve at T009).
+- [X] T008 Post-T004/T005/T006/T007 sanity: run `CARGO_TARGET_DIR=/tmp/m205-c cargo +stable check --workspace --tests 2>&1 | tail -20`. Expected: clean compile. The `as_wire_str`-style dead-code warning may appear on `resolve_activated_deps_via_cargo_metadata` until Phase 3 wires it in — acceptable at this checkpoint (will resolve at T009).
 
 ## Phase 3: User Story 1 — Feature-activated optional dep is Runtime (Priority: P1)
 
@@ -56,12 +56,12 @@ description: "Task list for m205 — fix cargo optional-dep over-exclusion via f
 
 **Independent Test Criterion**: Synthetic workspace with `[dependencies] serde = { optional = true }` + `[features] default = ["serde"]` produces `serde`'s CDX scope as `"runtime"` (or absent, defaulting to runtime). The `mikebom:optional-derivation` property is absent for `serde`.
 
-- [ ] T009 [US1] Classifier delta + caller wiring in `mikebom-cli/src/scan_fs/package_db/cargo.rs` per data-model E4 + E5:
+- [X] T009 [US1] Classifier delta + caller wiring in `mikebom-cli/src/scan_fs/package_db/cargo.rs` per data-model E4 + E5:
   - **E4** at `cargo.rs:1155`: change the classifier check from `optional_names.contains(&pkg.name)` to `optional_names.contains(&pkg.name) && !activated_names.contains(&pkg.name)`. Add doc-comment explaining the fallback interaction (per data-model E4 verbatim comment).
   - Add `activated_names: &HashSet<String>` as a new parameter to `parse_lockfile` (line 1057; insert between `optional_names` and `root_names` params per data-model E4).
   - **E5** at `cargo.rs:1259` (parse_lockfile invocation site): before calling `parse_lockfile`, compute `let workspace_root = lock_path.parent().unwrap_or(&lock_path);`, call `resolve_activated_deps_via_cargo_metadata(workspace_root, resolve_cargo_metadata_timeout())`. On `Ok(names)`, pass `&names`. On `Err(e)`, emit the FR-004 WARN log per data-model E5 verbatim (`tracing::warn!(workspace = %workspace_root.display(), reason = %e, "cargo metadata failed; falling back to name-only optional classification (safe over-inclusion — deps marked Runtime instead of Optional so vuln-scanners never miss shipped deps)")`), then populate `activated_names = workspace_sections.optional_deps.clone()` (safe over-inclusion).
   - Update every test callsite of `parse_lockfile` inside `cargo.rs::tests` (per T003 recon count) to pass an appropriate `activated_names`. For most unit tests: pass `&HashSet::new()` — the tests scope to non-optional-dep classification and don't exercise the new gate.
-- [ ] T010 [US1] Integration test `us1_default_feature_activated_optional_dep_is_runtime` in a NEW file `mikebom-cli/tests/cargo_optional_feature_resolve.rs`:
+- [X] T010 [US1] Integration test `us1_default_feature_activated_optional_dep_is_runtime` in a NEW file `mikebom-cli/tests/cargo_optional_feature_resolve.rs`:
   - Build synthetic Cargo workspace via `tempfile::tempdir()`: `Cargo.toml` with `[package]`, `[dependencies] serde = { version = "1", optional = true }`, `[features] default = ["serde"]`; `src/main.rs` with `fn main() {}`.
   - Shell out to `cargo generate-lockfile` in the tempdir (matches m087 test pattern) so Cargo.lock exists for the scan. Skip cleanly with `eprintln!` if `cargo` not on PATH (default CI has cargo; per m173/m203 precedent).
   - Shell out to the mikebom binary via `env!("CARGO_BIN_EXE_mikebom")`: `sbom scan --offline --path <tempdir> --format cyclonedx-json --output <out>`.
@@ -77,7 +77,7 @@ description: "Task list for m205 — fix cargo optional-dep over-exclusion via f
 
 **Independent Test Criterion**: Synthetic workspace with `[dependencies] regex = { optional = true }` + `[features] enable-regex = ["regex"]` (NOT in `default`) produces `regex`'s CDX scope as `"excluded"` + `mikebom:optional-derivation = "cargo-optional-true"` annotation.
 
-- [ ] T011 [US2] Integration test `us2_truly_optional_dep_stays_optional` in `mikebom-cli/tests/cargo_optional_feature_resolve.rs`:
+- [X] T011 [US2] Integration test `us2_truly_optional_dep_stays_optional` in `mikebom-cli/tests/cargo_optional_feature_resolve.rs`:
   - Build synthetic Cargo workspace via tempdir: `Cargo.toml` with `[dependencies] regex = { version = "1", optional = true }` + `[features] enable-regex = ["regex"]` (NO `default = [...]` entry, or `default = []`).
   - `cargo generate-lockfile` + mikebom scan (same shape as T010).
   - Assert:
@@ -92,7 +92,7 @@ description: "Task list for m205 — fix cargo optional-dep over-exclusion via f
 
 **Independent Test Criterion**: Scanning an existing non-Cargo public_corpus fixture (npm-express, go-cobra, python-flask, maven-guice) produces byte-identical output pre-m205 vs post-m205.
 
-- [ ] T012 [US3] Integration test `us3_non_cargo_scan_byte_identical` in `mikebom-cli/tests/cargo_optional_feature_resolve.rs`:
+- [X] T012 [US3] Integration test `us3_non_cargo_scan_byte_identical` in `mikebom-cli/tests/cargo_optional_feature_resolve.rs`:
   - Sanity assertion approach (byte-identity vs pre-existing golden is verified via T015's audit and the workspace-wide test suite; this integration test is a lighter-weight in-process regression guard).
   - Shell out to mikebom binary scanning `mikebom-cli/tests/fixtures/public_corpus/npm-express/` (a fixture with no Cargo files at all).
   - Assert: emitted CDX contains NO component whose `.properties[]` has `{name: "mikebom:optional-derivation"}` (would indicate the cargo reader spuriously fired) AND stderr contains NO substring `"cargo metadata"` (would indicate the resolver invoked on a non-Cargo scan).
@@ -101,7 +101,7 @@ description: "Task list for m205 — fix cargo optional-dep over-exclusion via f
 
 **Purpose**: THE ask the user surfaced explicitly. FR-004 mandates that when `cargo metadata` fails, mikebom (a) WARNs with workspace + reason, (b) falls back to safe over-inclusion (all optional → Runtime), (c) never silently under-reports vulns. This phase adds the dedicated regression test.
 
-- [ ] T013 [P] Integration test `fr004_cargo_absent_warns_and_falls_back` in `mikebom-cli/tests/cargo_optional_feature_resolve.rs`, `#[cfg(unix)]` per m203 precedent (PATH scrubbing is POSIX-only; Windows uses PATHEXT resolution + skips):
+- [X] T013 [P] Integration test `fr004_cargo_absent_warns_and_falls_back` in `mikebom-cli/tests/cargo_optional_feature_resolve.rs`, `#[cfg(unix)]` per m203 precedent (PATH scrubbing is POSIX-only; Windows uses PATHEXT resolution + skips):
   - Reuse the synthetic workspace from T010 (default-feature-activated optional dep). Requires cargo present to build the initial lockfile (via `cargo generate-lockfile`), BUT the mikebom scan invocation runs with `PATH=""` (scrubbed) so mikebom itself cannot find cargo → `BinaryNotFound` fallback fires.
   - Shell out to mikebom binary with `.env("PATH", "")` (matches m203's `scan_dir_with_env` pattern at `helm_reader.rs` verbatim; may copy helper from there or introduce local equivalent).
   - Assert:
@@ -115,8 +115,8 @@ description: "Task list for m205 — fix cargo optional-dep over-exclusion via f
 
 **Purpose**: Verification, quickstart re-verify, PR body draft.
 
-- [ ] T014 [P] Run every existing cargo-related test to confirm zero regression: `cargo +stable test --manifest-path mikebom-cli/Cargo.toml --lib -- scan_fs::package_db::cargo::tests --no-fail-fast 2>&1 | tail -3` (expected: `ok. N passed; 0 failed`). Also run `cargo +stable test --manifest-path mikebom-cli/Cargo.toml --test transitive_parity_cargo --no-fail-fast 2>&1 | tail -3` (m083 cargo audit fixture — must stay green; may need minor adjustment if a fixture dep was mis-Optional-classified pre-fix and now flips to Runtime, but the shape of that fixture's audit script is scope-agnostic).
-- [ ] T015 Re-run T002 audit post-implementation: `git diff --stat mikebom-cli/tests/fixtures/`. Compare to /tmp/m205-golden-baseline.txt. Assert delta is limited to `public_corpus/rust-ripgrep/*` (the sole Cargo fixture in the corpus — post-fix, its goldens may need regeneration IF the ripgrep workspace has any mis-Optional-classified deps under alpha.63; if none, ZERO drift is expected). If drift extends beyond that path, STOP and diagnose (indicates the cargo reader is spuriously invoking on non-Cargo scans, violating FR-005).
+- [X] T014 [P] Run every existing cargo-related test to confirm zero regression: `cargo +stable test --manifest-path mikebom-cli/Cargo.toml --lib -- scan_fs::package_db::cargo::tests --no-fail-fast 2>&1 | tail -3` (expected: `ok. N passed; 0 failed`). Also run `cargo +stable test --manifest-path mikebom-cli/Cargo.toml --test transitive_parity_cargo --no-fail-fast 2>&1 | tail -3` (m083 cargo audit fixture — must stay green; may need minor adjustment if a fixture dep was mis-Optional-classified pre-fix and now flips to Runtime, but the shape of that fixture's audit script is scope-agnostic).
+- [X] T015 Re-run T002 audit post-implementation: `git diff --stat mikebom-cli/tests/fixtures/`. Compare to /tmp/m205-golden-baseline.txt. Assert delta is limited to `public_corpus/rust-ripgrep/*` (the sole Cargo fixture in the corpus — post-fix, its goldens may need regeneration IF the ripgrep workspace has any mis-Optional-classified deps under alpha.63; if none, ZERO drift is expected). If drift extends beyond that path, STOP and diagnose (indicates the cargo reader is spuriously invoking on non-Cargo scans, violating FR-005).
 - [ ] T016 Regenerate `rust-ripgrep` goldens if T015 shows drift there. Use the standard `MIKEBOM_UPDATE_PUBLIC_CORPUS_GOLDEN=1` env var per `docs/dev/regen-goldens.md`. Verify per-file diff is limited to reclassifying misclassified optional deps (typically 0-3 components flipping `scope: excluded` → `scope: runtime`).
 - [ ] T017 Run `./scripts/pre-pr.sh` post-implementation. Capture wall-clock time; compute delta vs T001 baseline; MUST be ≤ 10 seconds per SC-005. Enumerate every `^---- .+ stdout ----` line if any test binary fails (per `feedback_prepr_gate_bails_on_first_failure` memory).
 - [ ] T018 [P] (Requires `test-vaultwarden` cloned locally) Manually execute quickstart.md Reproducer 1 against the reporter's original test case. Confirm `reqsign-aws-v4@3.0.1`'s CDX `.scope` is `"runtime"` (NOT `"excluded"`) and `quick-xml@0.40.1` reappears (was orphaned pre-fix). SC-001 verified against the reporter's exact scenario.

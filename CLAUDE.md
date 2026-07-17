@@ -262,6 +262,7 @@ Auto-generated from all feature plans. Last updated: 2026-07-16
 - Rust stable (workspace toolchain inherited from milestones 001–199; no nightly). + Existing only — `toml = "0.8"` (already used pervasively by cargo.rs), `std::collections::HashSet` (already used), `serde`/`serde_json` (annotation values), `tracing` (existing parse-error warn logs), `anyhow`/`thiserror`. **No new crates.** No subprocess calls. No network access. (200-cargo-workspace-root-scope)
 - N/A — all state in-process per scan; matches every reader milestone since 002. (200-cargo-workspace-root-scope)
 - Rust stable (workspace toolchain inherited from milestones 001–200; no nightly). + Existing only — `toml = "0.8"` (already used pervasively by cargo.rs; needed to detect `[workspace]` block presence in a Cargo.toml), `std::collections::HashSet` / `HashMap` (already used), `serde`/`serde_json` (annotation values), `tracing`, `anyhow`/`thiserror`. **No new crates.** No subprocess calls. No network access. (201-root-selector-workspace-root-fix)
+- Rust stable (workspace toolchain inherited from milestones 001–201; no nightly). + Existing only — `spdx = "0.10"` (already used by `SpdxExpression::try_canonical` at `mikebom-common/src/types/license.rs`), `serde_json` (already pervasive in the CDX builder). **No new crates.** No subprocess calls. No network access. (202-cdx-license-id-slot-fix)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -324,9 +325,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 202-cdx-license-id-slot-fix: Added Rust stable (workspace toolchain inherited from milestones 001–201; no nightly). + Existing only — `spdx = "0.10"` (already used by `SpdxExpression::try_canonical` at `mikebom-common/src/types/license.rs`), `serde_json` (already pervasive in the CDX builder). **No new crates.** No subprocess calls. No network access.
 - 201-root-selector-workspace-root-fix: Added Rust stable (workspace toolchain inherited from milestones 001–200; no nightly). + Existing only — `toml = "0.8"` (already used pervasively by cargo.rs; needed to detect `[workspace]` block presence in a Cargo.toml), `std::collections::HashSet` / `HashMap` (already used), `serde`/`serde_json` (annotation values), `tracing`, `anyhow`/`thiserror`. **No new crates.** No subprocess calls. No network access.
 - 200-cargo-workspace-root-scope: Added Rust stable (workspace toolchain inherited from milestones 001–199; no nightly). + Existing only — `toml = "0.8"` (already used pervasively by cargo.rs), `std::collections::HashSet` (already used), `serde`/`serde_json` (annotation values), `tracing` (existing parse-error warn logs), `anyhow`/`thiserror`. **No new crates.** No subprocess calls. No network access.
-- 199-reconciler-array-alias: Added Rust stable (workspace toolchain inherited from milestones 001–198; no nightly). + Existing only — `mikebom_common::resolution::ResolvedComponent` (survivor type), `serde_json::Value` (annotation array construction), the m159 `AliasResolution` struct at `mikebom-cli/src/scan_fs/package_db/npm/alias_mapping.rs:37` with `local_name` (alias) + `aliased_name` (resolved) fields already distinct. Zero new crates.
 
 
 <!-- MANUAL ADDITIONS START -->

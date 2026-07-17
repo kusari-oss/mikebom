@@ -775,30 +775,10 @@ fn is_recognized_spdx_operand(s: &str) -> bool {
 /// `pub(crate) fn` so `opkg.rs::build_entry` can reuse this helper
 /// for its m185 4th-pass wholesale-wrap fallback. Zero behavior
 /// change on the rpm.rs call site.
-pub(crate) fn sanitize_to_license_ref_idstring(s: &str) -> Option<String> {
-    let mut out = String::with_capacity(s.len());
-    let mut prev_was_dash = false;
-    for c in s.chars() {
-        let safe = c.is_ascii_alphanumeric() || c == '-' || c == '.';
-        let emit = if safe { c } else { '-' };
-        if emit == '-' {
-            if !prev_was_dash {
-                out.push('-');
-                prev_was_dash = true;
-            }
-            // else: skip — collapses run of dashes to one
-        } else {
-            out.push(emit);
-            prev_was_dash = false;
-        }
-    }
-    let trimmed = out.trim_matches('-').to_string();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed)
-    }
-}
+/// Milestone 202 (FR-002, closes #579): extracted to `mikebom_common::types::license::sanitize_license_operand_to_ref`
+/// for CDX/SPDX 2.3 emitter parity. This local alias preserves the
+/// pre-m202 call-site ergonomics via a thin re-export.
+pub(crate) use mikebom_common::types::license::sanitize_license_operand_to_ref as sanitize_to_license_ref_idstring;
 
 /// Wrap each unrecognized operand in a compound SPDX license expression as
 /// `LicenseRef-<sanitized>` to preserve the recognized portion when

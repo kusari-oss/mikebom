@@ -975,7 +975,15 @@ impl CycloneDxBuilder {
                         }));
                     } else if let Some(tokens) = try_split_or_compound(l.as_str()) {
                         for tok in tokens {
-                            all_licenses.push(license_entry_for_token(&tok, ack));
+                            // Milestone 202: license_entry_for_token may
+                            // return `Value::Null` for tokens whose
+                            // sanitizer returns None (all-invalid-chars).
+                            // Drop those rather than emitting a null in
+                            // the licenses[] array.
+                            let entry = license_entry_for_token(&tok, ack);
+                            if !entry.is_null() {
+                                all_licenses.push(entry);
+                            }
                         }
                     } else {
                         pending_expression = Some((l.as_str(), ack));
@@ -1486,26 +1494,57 @@ fn try_split_or_compound(expr: &str) -> Option<Vec<String>> {
 }
 
 /// Map one split-expression token to the right CDX `license` shape.
-/// SPDX-list IDs go into `license.id` (the canonical place, and
-/// the CDX 1.6 schema enforces the SPDX list for that field).
-/// `LicenseRef-*` / `DocumentRef-*` aren't on the SPDX list so they
-/// go into `license.name` — schema-legal as a free-text label and
-/// still counted by sbomqs's `comp_with_licenses`.
+///
+/// Three-branch classifier post-milestone 202 (closes #579):
+///
+/// 1. **Pre-formed reference** (`LicenseRef-*` / `DocumentRef-*`): route to
+///    `license.name` verbatim (schema-legal free-text label; sbomqs counts
+///    it via `comp_with_licenses`).
+/// 2. **SPDX-list-canonical identifier** (member of the SPDX License List
+///    per `spdx::license_id`, or an SPDX exception per `spdx::exception_id`):
+///    route to `license.id` — the canonical CDX 1.6 §5.4.4.1 slot. Value
+///    preserved verbatim (no `try_canonical` normalization — that would
+///    silently rewrite legacy long-form names like `GPL-2.0` → `GPL-2.0-only`
+///    and drift emitted goldens).
+/// 3. **Non-canonical operand** (compound-expression operand that isn't on
+///    the SPDX List, e.g. `bzip2-1.0.4` from a Yocto recipe License field):
+///    route to `license.name = "LicenseRef-<sanitized>"` per CDX 1.6
+///    §5.4.4.2 escape-hatch convention. Uses the shared
+///    `mikebom_common::types::license::sanitize_license_operand_to_ref`
+///    helper — same function the SPDX 2.3 emitter uses (m152) — so both
+///    formats produce byte-identical `LicenseRef-*` identifiers for the
+///    same input token (FR-002 CDX/SPDX 2.3 parity).
+///
+/// Defensive fallback: if the sanitizer returns `None` (all-invalid-chars
+/// input after filtering), emit `serde_json::Value::Null` so the caller's
+/// filter drops the entry rather than producing schema-invalid output.
 fn license_entry_for_token(token: &str, acknowledgement: &str) -> serde_json::Value {
     if token.starts_with("LicenseRef-") || token.starts_with("DocumentRef-") {
-        json!({
+        return json!({
             "license": {
                 "name": token,
                 "acknowledgement": acknowledgement,
             }
-        })
-    } else {
-        json!({
+        });
+    }
+    let is_spdx_list_id =
+        spdx::license_id(token).is_some() || spdx::exception_id(token).is_some();
+    if is_spdx_list_id {
+        return json!({
             "license": {
                 "id": token,
                 "acknowledgement": acknowledgement,
             }
-        })
+        });
+    }
+    match mikebom_common::types::license::sanitize_license_operand_to_ref(token) {
+        Some(sanitized) => json!({
+            "license": {
+                "name": format!("LicenseRef-{sanitized}"),
+                "acknowledgement": acknowledgement,
+            }
+        }),
+        None => serde_json::Value::Null,
     }
 }
 
@@ -1515,6 +1554,109 @@ mod tests {
     use super::*;
     use mikebom_common::resolution::{ResolutionEvidence, ResolutionTechnique};
     use mikebom_common::types::purl::Purl;
+
+    // ---- Milestone 202 (issue #579) — license_entry_for_token ----
+
+    /// FR-001 Branch 2: SPDX-list-canonical identifier routes to `license.id`.
+    #[test]
+    fn license_entry_for_token_routes_canonical_to_id_slot_m202() {
+        let entry = license_entry_for_token("MIT", "declared");
+        assert_eq!(
+            entry,
+            json!({"license": {"id": "MIT", "acknowledgement": "declared"}})
+        );
+        // Cross-check with additional canonical identifiers.
+        for canonical in &["Apache-2.0", "GPL-3.0-only", "BSD-2-Clause", "MPL-2.0"] {
+            let e = license_entry_for_token(canonical, "declared");
+            assert_eq!(
+                e["license"]["id"].as_str(),
+                Some(*canonical),
+                "canonical id `{canonical}` MUST route to license.id; got {e:?}"
+            );
+            assert!(
+                e["license"]["name"].is_null(),
+                "canonical id `{canonical}` MUST NOT populate license.name; got {e:?}"
+            );
+        }
+    }
+
+    /// FR-001 Branch 3: non-canonical operand routes to `license.name` with
+    /// the `LicenseRef-<sanitized>` prefix per CDX 1.6 §5.4.4.2.
+    #[test]
+    fn license_entry_for_token_routes_non_canonical_to_licenseref_name_slot_m202() {
+        let entry = license_entry_for_token("bzip2-1.0.4", "declared");
+        assert_eq!(
+            entry,
+            json!({"license": {"name": "LicenseRef-bzip2-1.0.4", "acknowledgement": "declared"}})
+        );
+        // Cross-check additional non-canonical operands.
+        for (operand, expected_ref) in &[
+            ("custom-license", "LicenseRef-custom-license"),
+            ("made-up-name-2.0", "LicenseRef-made-up-name-2.0"),
+        ] {
+            let e = license_entry_for_token(operand, "declared");
+            assert_eq!(
+                e["license"]["name"].as_str(),
+                Some(*expected_ref),
+                "non-canonical `{operand}` MUST route to LicenseRef-* via license.name; got {e:?}"
+            );
+            assert!(
+                e["license"]["id"].is_null(),
+                "non-canonical `{operand}` MUST NOT populate license.id; got {e:?}"
+            );
+        }
+    }
+
+    /// FR-003: pre-formed `LicenseRef-*` / `DocumentRef-*` tokens pass
+    /// through verbatim — no double-prefixing.
+    #[test]
+    fn license_entry_for_token_preserves_pre_formed_licenseref_verbatim_m202() {
+        for pre_formed in &[
+            "LicenseRef-user-supplied",
+            "LicenseRef-bzip2-1.0.4",
+            "DocumentRef-doc:LicenseRef-external",
+        ] {
+            let entry = license_entry_for_token(pre_formed, "declared");
+            assert_eq!(
+                entry["license"]["name"].as_str(),
+                Some(*pre_formed),
+                "pre-formed `{pre_formed}` MUST pass through unchanged (no double-prefixing); got {entry:?}"
+            );
+        }
+    }
+
+    /// FR-002 sanitizer parity: the CDX splitter's sanitizer output MUST
+    /// match the SPDX 2.3 side by using the SAME shared sanitizer function.
+    /// Verifies the structural single-source-of-truth guarantee.
+    #[test]
+    fn license_entry_for_token_uses_shared_sanitizer_m202() {
+        // Compute the expected LicenseRef- output by calling the shared
+        // sanitizer directly.
+        let expected_sanitized =
+            mikebom_common::types::license::sanitize_license_operand_to_ref("bzip2 with spaces!")
+                .expect("sanitizer produces non-empty output for this input");
+        let expected_ref = format!("LicenseRef-{expected_sanitized}");
+
+        // Compute the CDX splitter output for the same input.
+        let entry = license_entry_for_token("bzip2 with spaces!", "declared");
+        let cdx_name = entry["license"]["name"]
+            .as_str()
+            .expect("license.name populated for non-canonical operand");
+
+        assert_eq!(
+            cdx_name, expected_ref,
+            "CDX splitter MUST call the shared sanitizer — structural parity per FR-002"
+        );
+    }
+
+    /// Defensive fallback: all-invalid-chars input → sanitizer returns None
+    /// → splitter emits Value::Null → caller filter drops the entry (no
+    /// schema-invalid empty licenses[] element in output).
+    #[test]
+    fn license_entry_for_token_returns_null_for_all_invalid_chars_m202() {
+        let entry = license_entry_for_token("!@#$", "declared");
+        assert!(entry.is_null(), "all-invalid-chars input MUST return Value::Null");
+    }
 
     fn clean_integrity() -> TraceIntegrity {
         TraceIntegrity {

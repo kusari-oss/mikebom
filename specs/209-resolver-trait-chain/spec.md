@@ -5,6 +5,13 @@
 **Status**: Draft
 **Input**: User description: "601: refactor resolve pipeline to Resolver trait plus chain architecture mirroring SBOMit plugin design. Extract each ecosystem resolver into a self-contained module implementing a common trait. Rewrite pipeline orchestration to iterate over a resolver chain rather than calling functions in a fixed sequence. Byte-identical resolution output on existing test corpus, net zero semantic change, enables per-resolver unit testing and additive ecosystem additions. Closes 601."
 
+## Clarifications
+
+### Session 2026-07-18
+
+- Q: How does the Resolver trait distinguish transient failure from clean no-match? → A: `resolve(...)` returns `Result<Vec<ResolvedComponent>, ResolverError>` — errors bubble up to the pipeline which logs a WARN and continues to the next resolver (same policy as FR-013 panic-catch); empty `Vec` inside `Ok` denotes a clean no-match.
+- Q: When is the priority-uniqueness invariant enforced? → A: Compile-time. Two resolvers declaring the same priority MUST fail `cargo build` with an error message naming both colliding resolvers. Mechanism deferred to plan phase (candidates: `const fn` uniqueness check on a resolver-registry array, trait-associated-const validated via `const_assert!`, or a proc macro expanding the registration table into a compile-checked const).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 — Add a new ecosystem resolver without touching orchestration code (Priority: P1)
@@ -56,7 +63,7 @@ Downstream consumers (audit tools, VEX correlators, confidence-based policy engi
 ### Edge Cases
 
 - **A single input matches multiple resolvers**: the pipeline runs each resolver in priority order; the highest-confidence result wins per the existing deduplication contract. Priority is a property of the resolver, not the pipeline.
-- **A resolver panics or returns an error**: the pipeline catches the panic (per Constitution Principle IV — production code MUST NOT panic) and logs a WARN with the resolver's name; subsequent resolvers still run. A resolver's failure MUST NOT block the pipeline.
+- **A resolver returns `Err(ResolverError)` or panics**: the pipeline catches both cases uniformly (per Constitution Principle IV — production code MUST NOT panic; the panic-catch is a defense-in-depth measure), logs a WARN naming the resolver + the failure kind (error vs. panic), and continues with the remaining resolvers. Per FR-013, a resolver's failure MUST NOT block the pipeline.
 - **A resolver produces zero components on legitimate input**: not an error condition; the next resolver in the chain gets a chance. Matches existing behavior.
 - **Two resolvers claim the same PURL with different confidence**: the existing deduplication merge logic runs unchanged; the higher-confidence entry wins the primary identity, the other becomes evidence.
 - **A resolver depends on state from a previous resolver's output**: the trait interface does NOT allow this. Resolvers are stateless — they take input, return output, no cross-resolver coordination. If a use case genuinely needs staged resolution (e.g., "resolve URLs first, then use the results to enrich path matches"), that is a follow-up milestone with an explicit contract, not an emergent property of the trait design.
@@ -67,7 +74,7 @@ Downstream consumers (audit tools, VEX correlators, confidence-based policy engi
 
 ### Functional Requirements
 
-- **FR-001**: The system MUST define a common Resolver interface exposing at minimum a name (stable identifier string) and a resolve method (takes a traced connection and pipeline context, returns a list of resolved components).
+- **FR-001**: The system MUST define a common Resolver interface exposing at minimum a name (stable identifier string) and a `resolve` method that takes a traced connection plus pipeline context and returns `Result<Vec<ResolvedComponent>, ResolverError>`. `Ok(vec![])` denotes a clean no-match; `Err(...)` denotes a transient or internal failure that the pipeline logs and skips (per FR-013).
 - **FR-002**: The system MUST split the current URL-resolution monolith into per-ecosystem resolver modules, one per ecosystem (cargo, pypi, npm, golang, maven, rubygems, deb). No ecosystem's regex or dispatch logic may live outside its own module.
 - **FR-003**: The system MUST wrap the deps.dev hash-resolution logic as a Resolver-interface implementation while preserving all existing behavior (timeout, offline-mode gating, confidence 0.90).
 - **FR-004**: The system MUST wrap the path-heuristic resolution logic as a Resolver-interface implementation while preserving all existing behavior (confidence 0.70).
@@ -79,10 +86,11 @@ Downstream consumers (audit tools, VEX correlators, confidence-based policy engi
 - **FR-010**: Adding a new ecosystem resolver MUST NOT require editing the pipeline dispatch code — verified by adding a scaffolded new resolver and asserting the pipeline dispatch file is unchanged.
 - **FR-011**: The existing `--skip-purl-validation` CLI flag MUST continue to disable the deps.dev-hash resolver specifically, without disabling other resolvers.
 - **FR-012**: The existing INFO logs at resolver-boundary transitions MUST be preserved with equivalent field content (resolver name, component count, confidence) — no operator-visible logging regression.
-- **FR-013**: The system MUST catch panics inside individual resolvers, log a WARN naming the resolver, and continue running the remaining resolvers in the chain. A single resolver's failure MUST NOT abort the pipeline.
+- **FR-013**: The system MUST handle single-resolver failures without aborting the pipeline. Both `Err(...)` returns from `resolve` (transient / internal error surfaced by the resolver itself) AND panics (unrecoverable programmer error escaping the resolver) MUST be caught at the pipeline layer, logged as WARN naming the resolver + the failure kind (error vs. panic), and MUST leave the remaining resolvers in the chain to run.
 - **FR-014**: Resolvers MUST be stateless — no interior mutable state, no cross-resolver coordination via shared references. Each resolve call is a pure function of its inputs plus the read-only pipeline context.
 - **FR-015**: The Resolver interface MUST accommodate both synchronous resolvers (URL, path, hostname) and asynchronous resolvers (deps.dev hash lookup with network I/O) via a single trait shape.
 - **FR-016**: The resolver-registration point MUST be documented such that a contributor adding a new ecosystem can copy an existing resolver, adapt it to the new ecosystem, register it, and see the pipeline dispatch to it — all without reading pipeline-orchestration code.
+- **FR-017**: Two resolvers declaring the same priority MUST cause `cargo build` to fail with an error message naming both colliding resolvers (per Clarifications Q2). The error MUST surface at compile time, before any test or binary run.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -90,6 +98,7 @@ Downstream consumers (audit tools, VEX correlators, confidence-based policy engi
 - **Resolver chain**: The ordered list of resolvers the pipeline dispatches through. Constructed at pipeline startup from the compile-in registration point; each entry is a resolver implementation.
 - **Resolution context**: The per-pipeline-invocation context passed to every resolver (config flags, timeout budgets, etc.). Read-only from the resolver's perspective; the pipeline manages its lifetime.
 - **Resolved component**: The output of a resolver's resolve call — a component identity (PURL, name, version) plus resolution evidence (confidence, technique, source connection identifiers).
+- **Resolver error**: The failure surface a resolver returns when its `resolve` call cannot complete cleanly (transient network failure, malformed input parse, downstream API-timeout, etc.). Structured enough for the pipeline WARN log to name the failure kind. Distinct from a panic (panics are unrecoverable escapes; errors are anticipated failure modes the resolver chose to surface).
 
 ## Success Criteria *(mandatory)*
 
@@ -107,7 +116,7 @@ Downstream consumers (audit tools, VEX correlators, confidence-based policy engi
 - **Compile-in registration**: Resolvers are registered at compile time via a single source-code line in the pipeline setup module. Dynamic loading of external plugin binaries is out of scope for this milestone (tracked separately at #453).
 - **Stateless resolver contract**: Resolvers hold no mutable state across invocations. If a future use case genuinely needs staged resolution (resolver B enriches from resolver A's output), that is a separate design conversation — the trait interface for this milestone is stateless.
 - **Deduplication contract unchanged**: The existing post-pipeline deduplication pass runs unchanged. The refactor changes how resolvers are dispatched, not how their results are merged.
-- **Priority declared per resolver, not per chain-position**: Each resolver returns its priority via a trait method rather than being ordered by position in the registration list. Two resolvers cannot declare the same priority (compile-time or startup-time check).
+- **Priority declared per resolver, not per chain-position**: Each resolver returns its priority via a trait method rather than being ordered by position in the registration list. Two resolvers declaring the same priority MUST fail `cargo build` with a compile-time error naming both colliding resolvers (per Clarifications Q2). The specific mechanism (const-fn uniqueness check, trait-associated-const with `const_assert!`, or a proc-macro registration table) is deferred to plan phase.
 - **Sync + async in one trait**: The trait handles both synchronous resolvers (URL, path, hostname) and asynchronous resolvers (deps.dev). The specific mechanism is a plan-phase design decision.
 - **Panic safety**: Existing test suite already exercises Constitution Principle IV's no-panic-in-production discipline; the refactor preserves that. Individual resolver panics are caught at the pipeline layer per FR-013.
 - **CLI surface unchanged**: No new CLI flags. `--skip-purl-validation` continues to work per FR-011.

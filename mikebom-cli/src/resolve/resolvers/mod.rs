@@ -16,3 +16,15 @@
 //! check in `resolver_chain.rs`).
 //!
 //! Modules populated during US1 (Phase 3 of tasks.md).
+
+pub(crate) mod cargo;
+pub(crate) mod pypi;
+pub(crate) mod npm;
+pub(crate) mod golang;
+pub(crate) mod maven;
+pub(crate) mod rubygems;
+pub(crate) mod deb;
+pub(crate) mod deps_dev_hash;
+pub(crate) mod path;
+pub(crate) mod hostname_fallback;
+mod common;

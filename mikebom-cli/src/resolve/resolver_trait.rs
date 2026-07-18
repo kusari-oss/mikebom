@@ -6,8 +6,8 @@
 //! from `resolve`).
 //!
 //! Public API contract locked in
-//! `specs/209-resolver-trait-chain/contracts/resolver-trait.md` (C-1
-//! + C-2). Data-model + validation rules at
+//! `specs/209-resolver-trait-chain/contracts/resolver-trait.md` (C-1 + C-2).
+//! Data-model + validation rules at
 //! `specs/209-resolver-trait-chain/data-model.md` (E1..E4).
 //!
 //! Design decisions:
@@ -33,7 +33,6 @@ use std::pin::Pin;
 use mikebom_common::attestation::file::FileOperation;
 use mikebom_common::attestation::network::Connection;
 use mikebom_common::resolution::{ResolutionTechnique, ResolvedComponent};
-use mikebom_common::types::hash::ContentHash;
 
 /// The non-panicking failure surface a resolver returns when its
 /// `resolve` call cannot complete cleanly. See data-model E4.
@@ -44,6 +43,7 @@ use mikebom_common::types::hash::ContentHash;
 /// and treated identically — a single resolver's failure NEVER
 /// aborts the pipeline.
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)] // MalformedInput + Unavailable are for resolvers that will surface them in future work
 pub enum ResolverError {
     /// A transient network error occurred (deps.dev timeout, TCP
     /// reset, etc.). The pipeline logs WARN + continues.
@@ -84,10 +84,13 @@ pub enum ResolveInput<'a> {
     /// hash resolver + the hostname-fallback resolver consume this.
     Connection {
         connection: &'a Connection,
-        /// Basename-to-content-hash correlation table built once
-        /// per pipeline invocation from file-operation events.
-        /// Passed by reference so resolvers don't need to rebuild it.
-        basename_to_hash: &'a HashMap<&'a str, &'a ContentHash>,
+        /// Basename → `FileOperation` correlation table built once
+        /// per pipeline invocation from `file_access.operations`.
+        /// URL-family resolvers use this to attach the observed
+        /// content hash + originating file path to the emitted
+        /// component (matching pre-refactor pipeline.rs behavior).
+        /// Passed by reference so resolvers don't rebuild it.
+        basename_to_file_op: &'a HashMap<&'a str, &'a FileOperation>,
     },
     /// A traced file-operation event. The path resolver consumes
     /// this (only ecosystem-neutral file-path resolution — the
@@ -142,7 +145,7 @@ pub trait Resolver: Send + Sync {
     fn technique(&self) -> ResolutionTechnique;
 
     /// Confidence attached to every component this resolver emits.
-    fn confidence(&self) -> f32;
+    fn confidence(&self) -> f64;
 
     /// Cheap filter — returns `true` if this resolver applies to
     /// the given input type / shape. Called before each
@@ -187,7 +190,7 @@ mod tests {
             ResolutionTechnique::UrlPattern
         }
 
-        fn confidence(&self) -> f32 {
+        fn confidence(&self) -> f64 {
             0.5
         }
 
@@ -216,7 +219,7 @@ mod tests {
         assert_eq!(r.name(), "test");
         assert_eq!(r.priority(), 50);
         assert_eq!(r.technique(), ResolutionTechnique::UrlPattern);
-        assert!((r.confidence() - 0.5).abs() < f32::EPSILON);
+        assert!((r.confidence() - 0.5).abs() < f64::EPSILON);
     }
 
     #[test]

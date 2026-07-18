@@ -1,6 +1,6 @@
 # mikebom Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-07-17
+Auto-generated from all feature plans. Last updated: 2026-07-18
 
 ## Active Technologies
 - Rust stable (user-space only; no eBPF touched in this milestone) (002-python-npm-ecosystem)
@@ -272,6 +272,8 @@ Auto-generated from all feature plans. Last updated: 2026-07-17
 - N/A — all state in-process per scan; scratch tarball lives in a `tempfile::tempdir()` for the duration of the scan and is dropped at return. (206-podman-source)
 - Rust stable (workspace toolchain inherited from milestones 001–206; no nightly). + Existing only — `clap` (workspace, `Args` derive picks up the new flag), `tracing` (workspace, FR-006 WARN log). **Zero new Cargo dependencies.** (207-no-deps-dev-aggregate)
 - N/A — CLI-flag semantic change; no state, no persistence. (207-no-deps-dev-aggregate)
+- Rust stable (workspace toolchain inherited from milestones 001–207). Requires the RPITIT (return-position `impl Trait` in trait) feature stabilized in Rust 1.75 — no MSRV bump since the workspace is already past 1.75 (verified: milestone 100 confirmed Windows/macOS/Linux support). No nightly features. + Existing only — `tokio` (async runtime, already pervasive), `anyhow`/`thiserror` (error surface), `tracing` (WARN + INFO logs), `std::panic::catch_unwind` + `std::panic::AssertUnwindSafe` (panic-catch per FR-013). **Zero new Cargo dependencies.** No `async-trait` crate needed (RPITIT covers it). (209-resolver-trait-chain)
+- N/A — pipeline state lives on the stack for the duration of a single `resolve()` call. Matches every resolver milestone. (209-resolver-trait-chain)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -334,9 +336,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 209-resolver-trait-chain: Added Rust stable (workspace toolchain inherited from milestones 001–207). Requires the RPITIT (return-position `impl Trait` in trait) feature stabilized in Rust 1.75. + Existing only — `tokio`, `anyhow`/`thiserror`, `tracing`, `std::panic::catch_unwind`. **Zero new Cargo dependencies.** No `async-trait` crate needed (RPITIT covers it).
 - 207-no-deps-dev-aggregate: Added Rust stable (workspace toolchain inherited from milestones 001–206; no nightly). + Existing only — `clap` (workspace, `Args` derive picks up the new flag), `tracing` (workspace, FR-006 WARN log). **Zero new Cargo dependencies.**
 - 206-podman-source: Added Rust stable (workspace toolchain inherited from milestones 001–205; no nightly). + Existing only —
-- 205-cargo-optional-feature-resolve: Added Rust stable (workspace toolchain inherited from milestones 001–204; no nightly). + Existing only — `serde` / `serde_json` (parsing cargo metadata JSON output; workspace-pervasive), `std::process::Command` (subprocess spawn, same pattern as m053 / m055 / m173 / m203), `tracing` (WARN log per FR-004), `anyhow` / `thiserror` (error propagation). **Zero new Cargo dependencies.** No new subprocess types beyond the existing `Command`-with-timeout pattern; no network access; no filesystem writes beyond emitted SBOM output.
 
 
 <!-- MANUAL ADDITIONS START -->

@@ -29,11 +29,11 @@
 
 **Wire shape**: string enum with the following values:
 - `"traced"` — read-set captured via eBPF observation.
-- `"cache-hit"` — compiler cache served the artifact; read-set omitted per FR-015.
+- `"cache-hit"` — **RESERVED**. Emitted only when a future milestone adds compiler-cache-server tracing (sccache/ccache/mold). MVP does NOT emit this value.
 - `"trace-attach-late"` — trace attached mid-build; read-set may be partial.
-- `"unknown"` — component didn't map to any compiler-invocation write-set.
+- `"unknown"` — component didn't map to any compiler-invocation write-set. In MVP, this includes cache-served components (per FR-015 revised: MVP cannot distinguish cache-hit from other unmapped cases without cache-server tracing).
 
-**Presence rules**: emitted on EVERY component the compiler-pipeline data covers. When value is `"traced"`, C130 is also present. When `"cache-hit"` or `"unknown"`, C130 is OMITTED. When `"trace-attach-late"`, C130 is present but marked `partial: true`.
+**Presence rules**: emitted on EVERY component the compiler-pipeline data covers. When value is `"traced"`, C130 is also present. When `"unknown"` (or the future `"cache-hit"`), C130 is OMITTED. When `"trace-attach-late"`, C130 is present but marked `partial: true`.
 
 ## A-3: C132 — `mikebom:compiler-pipeline-completeness` (document-scope)
 

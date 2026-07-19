@@ -77,7 +77,8 @@ Each task follows: `- [ ] T### [P?] [Story?] Description with file path`. `[P]` 
 
 ### Integration test
 
-- [ ] T035 [US1] Write SC-001 integration test `mikebom-cli/tests/compiler_pipeline_two_binaries.rs` — spawn `mikebom trace run -- cargo build --release` against the T015 fixture; parse the emitted SBOM; assert (a) `safe-only`'s source-read-set does NOT contain `libvuln`, (b) `vuln-included`'s source-read-set contains both `libsafe` + `libvuln`, (c) both contain `libsafe`. Gated behind `#[cfg(all(target_os = "linux", feature = "ebpf-tracing"))]` per m020 test-isolation convention; skips with a diagnostic when run without `CAP_BPF`
+- [ ] T035 [US1] Write SC-001 integration test `mikebom-cli/tests/compiler_pipeline_two_binaries.rs` — spawn `mikebom trace run -- cargo build --release` against the T015 fixture; parse the emitted SBOM; assert (a) `safe-only`'s source-read-set does NOT contain `libvuln`, (b) `vuln-included`'s source-read-set contains both `libsafe` + `libvuln`, (c) both contain `libsafe`. Gated behind `#[cfg(all(target_os = "linux", feature = "ebpf-tracing"))]` per m020 test-isolation convention; skips with a diagnostic when run without `CAP_BPF`. **Plus a FR-012 cross-compilation subtest (C2 analyze remediation)**: `cross_compilation_attribution_preserved` — same fixture built with `cargo build --release --target x86_64-unknown-linux-musl` (assumes musl target installed OR skips cleanly with diagnostic if `rustup target list --installed` doesn't include it); asserts attribution semantics are identical to the host-arch case (per FR-012 preservation)
+- [ ] T035a [US1] Write SC-002 self-build coverage test `mikebom-cli/tests/compiler_pipeline_self_build.rs` (C1 analyze remediation) — spawn `sudo mikebom trace run -- cargo build -p mikebom --release --features ebpf-tracing` (or equivalent hermetic invocation); parse the emitted SBOM; assert every emitted binary component has a non-empty `mikebom:source-read-set` containing at minimum the top-level `main.rs` / `lib.rs` files of the crate that produced it. Gated behind `#[cfg(all(target_os = "linux", feature = "ebpf-tracing"))]` + `#[ignore]`-gated (mikebom self-build is heavy — runs opt-in via `--ignored` or in a dedicated CI perf lane). Documents SC-002 as the reachability-assertion regression guard the perf test does NOT provide
 
 **Checkpoint**: US1 done. `sudo mikebom trace run` on the two-binaries fixture emits SBOMs with correct source-read-set attribution. Run `./scripts/pre-pr.sh` with default features (no ebpf-tracing) — clean. Run `MIKEBOM_PREPR_EBPF=1 ./scripts/pre-pr.sh` on a Linux host — clean.
 
@@ -240,9 +241,9 @@ T054 [P] contributor guide
 
 - **Setup**: 5 (T001–T005)
 - **Foundational**: 12 (T006–T017)
-- **US1 (P1, MVP)**: 18 (T018–T035)
+- **US1 (P1, MVP)**: 19 (T018–T035 + T035a — one added per analyze remediation C1 for SC-002 self-build coverage; T035 amended per C2 for FR-012 cross-compilation subtest)
 - **US2 (P2)**: 3 (T036–T038)
 - **US3 (P3)**: 3 (T039–T041)
 - **Polish**: 16 (T042–T057)
 
-**Total**: 57 tasks
+**Total**: 58 tasks

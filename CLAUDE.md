@@ -274,6 +274,8 @@ Auto-generated from all feature plans. Last updated: 2026-07-18
 - N/A — CLI-flag semantic change; no state, no persistence. (207-no-deps-dev-aggregate)
 - Rust stable (workspace toolchain inherited from milestones 001–207). Requires the RPITIT (return-position `impl Trait` in trait) feature stabilized in Rust 1.75 — no MSRV bump since the workspace is already past 1.75 (verified: milestone 100 confirmed Windows/macOS/Linux support). No nightly features. + Existing only — `tokio` (async runtime, already pervasive), `anyhow`/`thiserror` (error surface), `tracing` (WARN + INFO logs), `std::panic::catch_unwind` + `std::panic::AssertUnwindSafe` (panic-catch per FR-013). **Zero new Cargo dependencies.** No `async-trait` crate needed (RPITIT covers it). (209-resolver-trait-chain)
 - N/A — pipeline state lives on the stack for the duration of a single `resolve()` call. Matches every resolver milestone. (209-resolver-trait-chain)
+- Rust stable for user-space (workspace toolchain inherited from milestones 001–209); Rust nightly for the eBPF target via `aya-ebpf` (already required per m020). No new nightly features needed on top of what m020 pins. + Existing only — `aya` (user-space eBPF loader; already in the dep graph behind the `ebpf-tracing` feature per m020), `aya-ebpf` (kernel-space; already in `mikebom-ebpf`), `aya-log` (logging; already), `sha2` (SHA-256 hashing at close-time; already pervasive), `serde`/`serde_json` (attestation serialization), `tracing`/`anyhow`/`thiserror` (error propagation + logs). **Zero new Cargo dependencies.** (210-compiler-pipeline-trace)
+- N/A — compiler-invocation records + per-invocation read/write sets live in-process for the duration of a single trace. Emitted into the attestation JSON at trace-end. Matches every trace-mode milestone since 001. (210-compiler-pipeline-trace)
 
 - Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`) + aya, aya-ebpf, aya-build, tokio, clap, reqwest, serde/serde_json, cyclonedx-bom, packageurl, sha2, chrono, thiserror, anyhow, tracing (001-build-trace-pipeline)
 
@@ -336,9 +338,9 @@ of CI-readiness — they are not equivalent.
 Rust stable (user-space) + nightly (eBPF target via `aya-ebpf`): Follow standard conventions
 
 ## Recent Changes
+- 210-compiler-pipeline-trace: Added Rust stable for user-space (workspace toolchain inherited from milestones 001–209); Rust nightly for the eBPF target via `aya-ebpf` (already required per m020). No new nightly features needed on top of what m020 pins. + Existing only — `aya` (user-space eBPF loader; already in the dep graph behind the `ebpf-tracing` feature per m020), `aya-ebpf` (kernel-space; already in `mikebom-ebpf`), `aya-log` (logging; already), `sha2` (SHA-256 hashing at close-time; already pervasive), `serde`/`serde_json` (attestation serialization), `tracing`/`anyhow`/`thiserror` (error propagation + logs). **Zero new Cargo dependencies.**
 - 209-resolver-trait-chain: Added Rust stable (workspace toolchain inherited from milestones 001–207). Requires the RPITIT (return-position `impl Trait` in trait) feature stabilized in Rust 1.75. + Existing only — `tokio`, `anyhow`/`thiserror`, `tracing`, `std::panic::catch_unwind`. **Zero new Cargo dependencies.** No `async-trait` crate needed (RPITIT covers it).
 - 207-no-deps-dev-aggregate: Added Rust stable (workspace toolchain inherited from milestones 001–206; no nightly). + Existing only — `clap` (workspace, `Args` derive picks up the new flag), `tracing` (workspace, FR-006 WARN log). **Zero new Cargo dependencies.**
-- 206-podman-source: Added Rust stable (workspace toolchain inherited from milestones 001–205; no nightly). + Existing only —
 
 
 <!-- MANUAL ADDITIONS START -->

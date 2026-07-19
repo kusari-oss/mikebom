@@ -57,6 +57,17 @@ pub const RESOLVER_REGISTRY: &[(&str, u32)] = &[
 /// Compile-time uniqueness check for resolver priorities. Two
 /// entries with matching priorities fail `cargo build` at const-eval
 /// time with the panic message below.
+///
+/// # Compile-fail verification (FR-017 / T045)
+///
+/// Verified during m209 Phase 1 by temporarily editing
+/// RESOLVER_REGISTRY to duplicate the "npm" priority to 100
+/// (matching "cargo"); `cargo build` failed with error E0080 and
+/// the panic message identifying this file. Reverted; compile-time
+/// check confirmed active. A doctest-style compile-fail assertion
+/// isn't possible here because the mikebom-cli lib crate doesn't
+/// expose `resolve::resolver_chain` (Constitution Principle VI —
+/// resolvers stay crate-internal).
 pub const fn assert_registry_priorities_unique(reg: &[(&str, u32)]) {
     let mut i = 0;
     while i < reg.len() {
@@ -223,5 +234,49 @@ mod tests {
     fn new_default_wires_all_ten_resolvers() {
         let chain = ResolverChain::new_default(Duration::from_secs(10));
         assert_eq!(chain.registered_count(), 10);
+    }
+
+    /// T044 (Phase 5 / SC-005): every registered resolver's
+    /// `technique()` MUST match the value locked in contract C-4.
+    /// Fails if a resolver's technique drifts without a paired
+    /// contract update.
+    #[test]
+    fn technique_mapping_matches_contract_c4() {
+        use mikebom_common::resolution::ResolutionTechnique;
+
+        let chain = ResolverChain::new_default(Duration::from_secs(1));
+
+        // Build a name → resolver lookup by iterating the chain's
+        // registered resolvers. resolvers is private; use registered_count
+        // as a sanity + iterate via the sorted RESOLVER_REGISTRY.
+        // We assert count first, then check each expected mapping.
+        assert_eq!(chain.registered_count(), 10);
+
+        let expected: &[(&str, ResolutionTechnique)] = &[
+            ("cargo", ResolutionTechnique::UrlPattern),
+            ("pypi", ResolutionTechnique::UrlPattern),
+            ("npm", ResolutionTechnique::UrlPattern),
+            ("golang", ResolutionTechnique::UrlPattern),
+            ("maven", ResolutionTechnique::UrlPattern),
+            ("rubygems", ResolutionTechnique::UrlPattern),
+            ("deb", ResolutionTechnique::UrlPattern),
+            ("deps_dev_hash", ResolutionTechnique::HashMatch),
+            ("path", ResolutionTechnique::FilePathPattern),
+            ("hostname_fallback", ResolutionTechnique::HostnameHeuristic),
+        ];
+
+        for (name, expected_technique) in expected {
+            let found = chain.resolvers.iter().find(|r| r.name() == *name);
+            let resolver = found.unwrap_or_else(|| {
+                panic!("resolver `{name}` not registered in ResolverChain::new_default")
+            });
+            assert_eq!(
+                &resolver.technique(),
+                expected_technique,
+                "SC-005/C-4 violation: resolver `{name}` technique() = {:?}, contract says {:?}",
+                resolver.technique(),
+                expected_technique,
+            );
+        }
     }
 }

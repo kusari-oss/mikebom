@@ -28,3 +28,5 @@ pub(crate) mod deps_dev_hash;
 pub(crate) mod path;
 pub(crate) mod hostname_fallback;
 mod common;
+#[cfg(test)]
+mod tests_common;

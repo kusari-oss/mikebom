@@ -18,7 +18,7 @@ mod inner {
     use std::path::{Path, PathBuf};
 
     use anyhow::{Context, Result};
-    use aya::programs::{KProbe, UProbe};
+    use aya::programs::{KProbe, TracePoint, UProbe};
     use aya::Ebpf;
     use tracing::{debug, info, warn};
 
@@ -130,8 +130,46 @@ mod inner {
             warn!("could not attach vfs_open kprobe: {e}");
         }
 
+        // Milestone 210 — compiler-pipeline tracepoints. Best-effort:
+        // if any of the three fail to attach (missing symbol, kernel
+        // config nostops), warn + continue. The compiler-pipeline
+        // observation gracefully degrades to "no data" — the rest of
+        // the trace pipeline (network, file-ops for non-compiler
+        // pids) keeps working.
+        if let Err(e) =
+            attach_tracepoint(&mut bpf, "sched_process_exec", "sched", "sched_process_exec")
+        {
+            warn!("could not attach sched_process_exec tracepoint: {e}");
+        }
+        if let Err(e) =
+            attach_tracepoint(&mut bpf, "sched_process_fork", "sched", "sched_process_fork")
+        {
+            warn!("could not attach sched_process_fork tracepoint: {e}");
+        }
+        if let Err(e) =
+            attach_tracepoint(&mut bpf, "sched_process_exit", "sched", "sched_process_exit")
+        {
+            warn!("could not attach sched_process_exit tracepoint: {e}");
+        }
+
         info!("All probes attached");
         Ok(EbpfHandle { bpf })
+    }
+
+    fn attach_tracepoint(
+        bpf: &mut Ebpf,
+        prog: &str,
+        category: &str,
+        event: &str,
+    ) -> Result<()> {
+        let p: &mut TracePoint = bpf
+            .program_mut(prog)
+            .and_then(|p| p.try_into().ok())
+            .with_context(|| format!("program '{prog}' not found"))?;
+        p.load()?;
+        p.attach(category, event)?;
+        debug!(prog, category, event, "tracepoint attached");
+        Ok(())
     }
 
     fn attach_uprobe(bpf: &mut Ebpf, prog: &str, lib: &Path, fn_name: &str) -> Result<()> {

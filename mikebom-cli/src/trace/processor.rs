@@ -75,7 +75,7 @@ mod inner {
     use tokio::sync::mpsc;
     use tracing::{debug, trace, warn};
 
-    use mikebom_common::events::{FileEvent, NetworkEvent};
+    use mikebom_common::events::{CompilerExecEvent, FileEvent, NetworkEvent};
 
     use super::{LiveStats, TraceStats};
 
@@ -90,11 +90,18 @@ mod inner {
         pub async fn run(
             mut network_rb: RingBuf<&mut aya::maps::MapData>,
             mut file_rb: RingBuf<&mut aya::maps::MapData>,
+            compiler_rb: Option<RingBuf<&mut aya::maps::MapData>>,
             network_tx: mpsc::Sender<NetworkEvent>,
             file_tx: mpsc::Sender<FileEvent>,
+            compiler_tx: Option<mpsc::Sender<CompilerExecEvent>>,
             stop: Arc<std::sync::atomic::AtomicBool>,
             stats: Arc<LiveStats>,
         ) -> Result<TraceStats> {
+            // Milestone 210: compiler ring buffer is optional so
+            // pre-m210 callers don't have to change. When Some(_),
+            // events flow to `compiler_tx` (typically consumed by
+            // `mikebom-cli/src/trace/compiler_pipeline.rs::CompilerPipelineAggregator`).
+            let mut compiler_rb = compiler_rb;
             debug!("Trace processor started");
 
             while !stop.load(Ordering::Relaxed) {
@@ -153,6 +160,36 @@ mod inner {
 
                     if file_tx.try_send(event).is_err() {
                         stats.events_dropped.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+
+                // Milestone 210: poll compiler-pipeline ring buffer
+                // when wired.
+                if let (Some(compiler_rb), Some(compiler_tx)) =
+                    (compiler_rb.as_mut(), compiler_tx.as_ref())
+                {
+                    while let Some(item) = compiler_rb.next() {
+                        let data: &[u8] = item.as_ref();
+                        if data.len() < std::mem::size_of::<CompilerExecEvent>() {
+                            warn!(
+                                len = data.len(),
+                                expected = std::mem::size_of::<CompilerExecEvent>(),
+                                "Short compiler event, dropping"
+                            );
+                            stats.events_dropped.fetch_add(1, Ordering::Relaxed);
+                            continue;
+                        }
+                        let event: CompilerExecEvent =
+                            unsafe { std::ptr::read_unaligned(data.as_ptr().cast()) };
+                        stats.file_events.fetch_add(1, Ordering::Relaxed);
+                        trace!(
+                            pid = event.pid,
+                            comm = event.comm_str(),
+                            "Compiler exec/exit event"
+                        );
+                        if compiler_tx.try_send(event).is_err() {
+                            stats.events_dropped.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
                 }
 

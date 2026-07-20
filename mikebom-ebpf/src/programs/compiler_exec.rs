@@ -42,7 +42,9 @@ use aya_ebpf::{
 
 use mikebom_common::events::{CompilerExecEvent, CompilerExecEventKind};
 
-use crate::maps::{COMPILER_EXEC_EVENTS, COMPILER_INVOCATIONS};
+use crate::maps::{
+    COMPILER_DIRECT_EXECS, COMPILER_EXEC_EVENTS, COMPILER_INVOCATIONS, PID_TO_PPID,
+};
 
 /// Compiler whitelist per FR-002. Matched against the 16-byte
 /// comm-field in-kernel; longer names truncate (e.g.
@@ -157,17 +159,67 @@ fn try_sched_process_exec(_ctx: &TracePointContext) -> Result<u32, i64> {
     let pid = (pid_tgid >> 32) as u32;
     let ts_ns = unsafe { bpf_ktime_get_ns() };
 
-    // ppid isn't directly available from bpf_get_current_pid_tgid
-    // helpers — walk the task_struct in a follow-up. For MVP we
-    // set ppid=0 in the emitted event and rely on
-    // sched_process_fork propagation for parent-child linking.
-    let ppid: u32 = 0;
+    // Milestone 210 (issue #610) — resolve `ppid` by walking up the
+    // PID_TO_PPID chain looking for the nearest tracked-compiler
+    // ancestor. Real compiler pipelines have non-compiler
+    // intermediates (e.g. rustc → cc → collect2 → ld); returning
+    // ld's IMMEDIATE ppid (collect2's pid — unknown to userspace)
+    // breaks the DAG. Walking up to find the rustc ancestor gives
+    // userspace a pid its `pid_to_invocation_id` table can join on.
+    // Returns the IMMEDIATE ppid as a fallback when no compiler
+    // ancestor is found within the depth limit — this at least
+    // gives userspace something to correlate against instead of 0.
+    //
+    // Depth limit 16 covers typical linker toolchain chains (cargo
+    // → rustc → cc → collect2 → ld = 5 hops) plus headroom for
+    // Bazel/Buck-style wrapper stacks. The verifier accepts this
+    // bounded loop because each iteration is a single map lookup +
+    // one branch; total ~30 instructions per iteration × 16 = ~500
+    // instructions, well under the 1M budget.
+    // Bounded ancestry walk: start with the immediate parent as a
+    // fallback (userspace still gets *some* correlatable pid even
+    // when no compiler ancestor exists), then walk up the chain
+    // looking for a direct-exec compiler ancestor. When found,
+    // overwrite `ppid` with that ancestor's pid so userspace's
+    // pid_to_invocation_id join produces the strongest possible
+    // DAG edge. When NOT found within 16 hops (typical cargo
+    // topology: cargo directly forks rustc AND ld's wrapper chain
+    // — the compilers are process-siblings, not ancestors), fall
+    // back to the immediate ppid which userspace can still use for
+    // "known-untracked parent" bookkeeping.
+    //
+    // Depth limit 16 covers typical linker toolchain chains (cargo
+    // → rustc → cc → collect2 → ld = 5 hops) plus headroom for
+    // Bazel/Buck wrapper stacks. Verifier accepts easily because
+    // each iteration is one map lookup + one branch (~30 insns per
+    // iter × 16 = ~500 insns, well under the 1M budget).
+    let immediate_ppid = unsafe { PID_TO_PPID.get(&pid).copied() }.unwrap_or(0);
+    let mut ppid: u32 = immediate_ppid;
+    let mut cursor: u32 = pid;
+    let mut i = 0;
+    while i < 16 {
+        let parent = unsafe { PID_TO_PPID.get(&cursor).copied() }.unwrap_or(0);
+        if parent == 0 {
+            break;
+        }
+        if unsafe { COMPILER_DIRECT_EXECS.get(&parent).is_some() } {
+            ppid = parent;
+            break;
+        }
+        cursor = parent;
+        i += 1;
+    }
 
     // Assign invocation-id = ktime (unique per invocation within a
     // boot). Kernel writes COMPILER_INVOCATIONS[pid] = ts_ns; userspace
     // consumes ts_ns as the invocation-id verbatim.
     let invocation_id = ts_ns;
     let _ = unsafe { COMPILER_INVOCATIONS.insert(&pid, &invocation_id, 0) };
+    // Milestone 210 (issue #610) — mark this pid as a DIRECT-exec
+    // compiler so the ancestry walk in subsequent exec events can
+    // distinguish it from fork-propagated descendants.
+    let one: u8 = 1;
+    let _ = unsafe { COMPILER_DIRECT_EXECS.insert(&pid, &one, 0) };
 
     if let Some(mut buf) = COMPILER_EXEC_EVENTS.reserve::<CompilerExecEvent>(0) {
         let ev = buf.as_mut_ptr();
@@ -210,6 +262,17 @@ fn try_sched_process_fork(ctx: &TracePointContext) -> Result<u32, i64> {
     let parent_pid: u32 = unsafe { ctx.read_at::<u32>(24).map_err(|e| e as i64)? };
     let child_pid: u32 = unsafe { ctx.read_at::<u32>(44).map_err(|e| e as i64)? };
 
+    // Milestone 210 (issue #610) — always record the fork lineage,
+    // regardless of whether the parent is a tracked compiler. The
+    // `sched_process_exec` tracepoint reads back from this map to
+    // populate `ppid` in the emitted event, which is what userspace
+    // joins on to derive `parent_invocation_id` + build `dag_edges`.
+    // Insert-with-any (BPF_ANY = 0) so we overwrite on pid reuse.
+    let _ = unsafe { PID_TO_PPID.insert(&child_pid, &parent_pid, 0) };
+
+    // Compiler-descendant propagation: if the parent is a tracked
+    // compiler, the child inherits its invocation-id so downstream
+    // file-op kprobes fire on the child too.
     let parent_id = parent_invocation_id(parent_pid);
     if parent_id != 0 {
         let _ = unsafe { COMPILER_INVOCATIONS.insert(&child_pid, &parent_id, 0) };
@@ -232,6 +295,14 @@ pub fn sched_process_exit(ctx: TracePointContext) -> u32 {
 fn try_sched_process_exit(_ctx: &TracePointContext) -> Result<u32, i64> {
     let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
     let pid = (pid_tgid >> 32) as u32;
+
+    // Milestone 210 (issue #610) — purge PID_TO_PPID unconditionally
+    // on any exit so the map doesn't grow unbounded. The map holds
+    // every fork's child→parent link regardless of compiler
+    // whitelist, so pruning has to be as broad as insertion. Runs
+    // BEFORE the early-return for non-compiler pids so cleanup
+    // still fires on ordinary process exits.
+    let _ = unsafe { PID_TO_PPID.remove(&pid) };
 
     let invocation_id = unsafe { COMPILER_INVOCATIONS.get(&pid).copied() };
     let Some(id) = invocation_id else {
@@ -267,6 +338,7 @@ fn try_sched_process_exit(_ctx: &TracePointContext) -> Result<u32, i64> {
     // For MVP, always remove; userspace's aggregator is idempotent
     // on unknown pids.
     let _ = unsafe { COMPILER_INVOCATIONS.remove(&pid) };
+    let _ = unsafe { COMPILER_DIRECT_EXECS.remove(&pid) };
     let _ = id;
     Ok(0)
 }

@@ -74,3 +74,45 @@ pub static COMPILER_INVOCATIONS: HashMap<u32, u64> =
 #[map]
 pub static COMPILER_EXEC_EVENTS: RingBuf =
     RingBuf::with_byte_size(256 * 1024, 0);
+
+/// Milestone 210 (issue #610) — pids that DIRECTLY exec'd a
+/// whitelisted compiler (as opposed to pids that inherited a
+/// compiler-invocation-id via fork propagation into
+/// `COMPILER_INVOCATIONS`). Populated by `sched_process_exec` on
+/// whitelist match; queried by the ancestry-walk in the same
+/// tracepoint to find the nearest tracked-compiler ancestor for
+/// `ppid` resolution.
+///
+/// Without this distinction the walk terminates prematurely at any
+/// pid that inherited a COMPILER_INVOCATIONS entry via fork (e.g.
+/// rustc → cc-wrapper: cc-wrapper's pid gets rustc's invocation-id
+/// propagated on fork; the walk from ld would see cc-wrapper in
+/// COMPILER_INVOCATIONS and stop there instead of continuing up to
+/// rustc). Same sizing rationale as COMPILER_INVOCATIONS (4096
+/// concurrent direct-exec compiler pids).
+///
+/// Value = 1 (presence marker only; the actual invocation-id lives
+/// in COMPILER_INVOCATIONS).
+#[map]
+pub static COMPILER_DIRECT_EXECS: HashMap<u32, u8> =
+    HashMap::with_max_entries(4096, 0);
+
+/// Milestone 210 (issue #610) — PID → parent-PID map populated by
+/// `sched_process_fork` on EVERY fork (unfiltered), so the exec
+/// tracepoint can look up `ppid` at exec time without walking
+/// `task_struct` (kernel-version-fragile) or requiring BPF CO-RE.
+///
+/// Emitted event's `ppid` field is `PID_TO_PPID.get(&pid).unwrap_or(0)`.
+/// Userspace then joins on `event.ppid` against its own pid-to-
+/// invocation-id table to derive the parent invocation-id (research
+/// R3). Without this map every emitted event carried `ppid: 0` and
+/// `dag_edges: []` stayed empty (issue #610).
+///
+/// Sized at 32 K entries — every process on the host contributes an
+/// entry until it exits, so this needs headroom above typical build-
+/// host PID density. On overflow the fork tracepoint's `insert` fails
+/// silently; downstream cost is a missing `ppid` on one event rather
+/// than a load-time abort.
+#[map]
+pub static PID_TO_PPID: HashMap<u32, u32> =
+    HashMap::with_max_entries(32768, 0);

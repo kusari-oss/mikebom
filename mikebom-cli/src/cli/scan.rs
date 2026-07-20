@@ -369,6 +369,7 @@ async fn execute_scan(args: ScanArgs) -> anyhow::Result<()> {
     fn drain_file(
         bpf: &mut aya::Ebpf,
         agg: &mut EventAggregator,
+        compiler_agg: &mut CompilerPipelineAggregator,
         count: &mut u64,
         max: usize,
         target_pids: &std::collections::HashSet<u32>,
@@ -389,6 +390,17 @@ async fn execute_scan(args: ScanArgs) -> anyhow::Result<()> {
                         };
                         if target_pids.is_empty() || target_pids.contains(&ev.pid) {
                             agg.handle_file_event(&ev);
+                            // Milestone 211 (post-#611 follow-up): also route
+                            // to the m210 compiler-pipeline aggregator so
+                            // per-invocation read_set/write_set populates.
+                            // The compiler_agg keys on pid_to_invocation_id,
+                            // so events from non-compiler pids no-op harmlessly.
+                            // Without this dual-dispatch the compiler-pipeline
+                            // invocation buckets stayed empty even with file
+                            // events flowing through the doc-level file_access
+                            // — which in turn kept m210's C130 always emitting
+                            // empty payloads.
+                            compiler_agg.handle_file_event(&ev);
                             *count += 1;
                         }
                         n += 1;
@@ -414,13 +426,21 @@ async fn execute_scan(args: ScanArgs) -> anyhow::Result<()> {
         let active_filter = if filter_by_pid { &target_pids } else { &empty };
 
         drain_network(&mut handle.bpf, &mut agg, &mut net_count, MAX_PER_ITER, active_filter);
-        drain_file(&mut handle.bpf, &mut agg, &mut file_count, MAX_PER_ITER, active_filter);
+        // Milestone 211 post-#611 follow-up: drain compiler exec events
+        // BEFORE file events on each iteration. compiler exec/exit
+        // events populate `compiler_agg.pid_to_invocation_id` which the
+        // per-invocation read_set/write_set routing in
+        // `compiler_agg.handle_file_event` reads. If file events drain
+        // first, they arrive for pids not yet in the map → the
+        // compiler_agg drops them silently → invocation buckets stay
+        // empty even when both event streams are healthy.
         drain_compiler(
             &mut handle.bpf,
             &mut compiler_agg,
             &mut compiler_count,
             MAX_PER_ITER,
         );
+        drain_file(&mut handle.bpf, &mut agg, &mut compiler_agg, &mut file_count, MAX_PER_ITER, active_filter);
 
         if done {
             // Settling drain: pull remaining events with a hard deadline so
@@ -428,13 +448,13 @@ async fn execute_scan(args: ScanArgs) -> anyhow::Result<()> {
             let deadline = Instant::now() + Duration::from_millis(250);
             while Instant::now() < deadline {
                 let n = drain_network(&mut handle.bpf, &mut agg, &mut net_count, MAX_PER_ITER, active_filter)
-                    + drain_file(&mut handle.bpf, &mut agg, &mut file_count, MAX_PER_ITER, active_filter)
                     + drain_compiler(
                         &mut handle.bpf,
                         &mut compiler_agg,
                         &mut compiler_count,
                         MAX_PER_ITER,
-                    );
+                    )
+                    + drain_file(&mut handle.bpf, &mut agg, &mut compiler_agg, &mut file_count, MAX_PER_ITER, active_filter);
                 if n == 0 {
                     break;
                 }

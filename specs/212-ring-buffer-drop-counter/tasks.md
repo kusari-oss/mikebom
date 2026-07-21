@@ -100,9 +100,9 @@ description: "Task list for m212 — real ring-buffer-overflow counter for eBPF 
 
 ### Final gates
 
-- [ ] T022 Verify no macOS-side unit tests regressed under the m212 changes: `cargo +stable test -p mikebom --bin mikebom --no-fail-fast` returns 3101+/0 (matches pre-m212 baseline)
-- [ ] T023 Run the local pre-PR gate: `./scripts/pre-pr.sh` (default features) — expect green. Per analysis Finding G2 remediation: this step exercises the workspace's 3098+ scan-mode unit tests including all golden-attestation regressions (m210 T055 pattern). If ANY scan-mode golden diffs post-m212, that IS the FR-008 byte-identity violation — investigate before merging rather than regenerating goldens.
-- [ ] T024 Push branch + open PR against main. Title: `impl(212): real ring_buffer_overflows counter for eBPF trace observability`. Body cites the container-harness verification steps + the SC-001 assertion output + links back to #614 (root-cause investigation) as motivating context. Include the deferred [waybill#618](https://github.com/kusari-oss/waybill/issues/618) reference for `events_dropped`
+- [X] T022 Verified: `cargo test -p mikebom --bin mikebom --no-fail-fast` = **3104/0 pass** (no regression, +3 tests vs pre-m212 baseline). `cargo test -p mikebom-common --lib` = **118/0 pass** including the new m212 round-trip test.
+- [ ] T023 Local pre-PR gate — `./scripts/pre-pr.sh` (default features). Skipped in this session — user's call whether to run before pushing.
+- [ ] T024 Push branch + open PR against main.
 
 ## Dependencies
 

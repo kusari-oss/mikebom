@@ -160,6 +160,52 @@ jobs:
             exit 1
           fi
 
+      - name: "m214 rename-completeness grep gate (SC-001)"
+        shell: bash
+        run: |
+          # Milestone 214 project-name-rename SC-001 enforcement gate.
+          # Fails the build if the pre-rename identifier (see PATTERN
+          # variable below) appears in a functional-identifier position.
+          # Historical spec docs, docs/audits/, docs/migration/, README
+          # heritage sentences are allowlisted per contract. The sibling
+          # test-fixtures repo is out of rename scope; its cross-repo
+          # reference substring is excluded.
+          set -u
+          PATTERN='\bmikebom\b'
+          EXCLUDE='mikebom-test-fixtures'
+          IN_SCOPE=(
+            waybill-cli/src
+            waybill-common/src
+            waybill-ebpf/src
+            xtask/src
+            Cargo.toml
+            waybill-cli/Cargo.toml
+            waybill-common/Cargo.toml
+            waybill-ebpf/Cargo.toml
+            xtask/Cargo.toml
+            Dockerfile.ebpf-test
+            scripts
+          )
+          # NOTE: .github/workflows/*.yml is INTENTIONALLY OMITTED from
+          # IN_SCOPE — this gate's own comments reference the pre-rename
+          # identifier to describe what the gate checks; including
+          # workflows here would false-positive on this file itself.
+          # Workflow-file renames are covered by direct edit + PR review.
+          BADHITS=$(grep -rE "$PATTERN" "${IN_SCOPE[@]}" 2>/dev/null | \
+            grep -v '^Binary file' | \
+            grep -vE "$EXCLUDE" || true)
+          if [ -n "$BADHITS" ]; then
+            echo "::error::m214 rename gate — pre-rename identifier found in functional-identifier positions:"
+            echo "$BADHITS" | head -30
+            COUNT=$(echo "$BADHITS" | wc -l)
+            if [ "$COUNT" -gt 30 ]; then
+              echo "::error::… and $((COUNT - 30)) more hits (showing first 30)"
+            fi
+            echo "::error::Fix by renaming to the post-rename identifier or (if legitimately preserved) add path to allowlist in this workflow step."
+            exit 1
+          fi
+          echo "m214 rename gate: SC-001 satisfied (zero pre-rename identifier hits in functional-identifier paths)"
+
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable (2026-04-25)
         with:

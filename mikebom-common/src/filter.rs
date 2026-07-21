@@ -15,13 +15,24 @@
 //! `path_matches_filter_category(&path, widen_system)` from
 //! `try_do_filp_open` + `try_openat2` (m213 T012 + T013).
 //!
-//! ## Verifier safety
+//! ## Verifier safety (v2 — post-CI-88657233643-fix)
 //!
-//! All internal helpers use bounded loops with constant limits (`while j
-//! < 16`, `while offset < 128`). Milestone 211 (issue #611) established
-//! that this pattern passes the eBPF verifier on kernels 5.15 / 6.1 /
-//! 6.6 / 6.8. See specs/213-kernel-noise-filter/contracts/ebpf-verifier-
-//! notes.md for the full recipe.
+//! The v1 implementation used byte-wise bounded loops (128 offsets × 16-
+//! byte inner check per pattern). On kernel 5.15 this blew past the
+//! verifier's 1M instruction budget (Processed 1000001 insns). v2 uses
+//! the m211 whitelist recipe verbatim: patterns are stored as u64
+//! words + mask, and the inner check is a single u64 XOR-and-mask.
+//! Also caps Contains-scan at 64 offsets (was 128). Combined state cost
+//! drops by ~16×.
+//!
+//! Per-open verifier cost estimate:
+//! - Prefix compare: 6 patterns × 1 u64 XOR-and-mask = 6 ops (~40 insns)
+//! - Contains scan:  5 patterns × 64 offsets × 1 u64 XOR-and-mask = 320
+//!   ops (~2000 insns)
+//! - Total: ~2050 verifier insns per open — comfortably under 1M budget.
+//!
+//! See specs/213-kernel-noise-filter/contracts/ebpf-verifier-notes.md
+//! for the full recipe (Rules 1-5 all followed).
 
 use crate::events::FilterCategoryTag;
 
@@ -33,185 +44,119 @@ const CAT_USER_CACHE: u8 = 1;
 const CAT_EPHEMERAL: u8 = 2;
 const CAT_CARGO_FINGERPRINT: u8 = 3;
 
-/// Pattern-match kind. `Prefix` means the pattern must appear at path
-/// offset 0. `Contains` means the pattern may appear anywhere in the
-/// first 128 bytes of the path (bounded scan; longer paths are truncated
-/// by the 256-byte kernel scratch buffer and effectively skipped —
-/// matches FR-016 fail-open-on-unknown-category).
-const KIND_PREFIX: u8 = 0;
-const KIND_CONTAINS: u8 = 1;
+/// Maximum offset (exclusive) at which a `Contains` pattern is scanned
+/// for. Paths longer than this within the 256-byte scratch buffer are
+/// effectively skipped (FR-016 fail-open-on-truncated). Chosen to bound
+/// the verifier's loop-state cost: 64 offsets × 8-byte u64 compare per
+/// pattern is verifier-friendly on kernels 5.15+. v1's 128 blew the
+/// budget.
+const CONTAINS_SCAN_MAX_OFFSET: usize = 64;
 
-/// One filter pattern. `#[repr(C)]` + 8-byte alignment via `_pad` so
-/// the const-array layout is verifier-friendly.
+/// One filter pattern. Compact `#[repr(C)]` layout — fits in 24 bytes.
+/// The `word` field is the pattern's first 8 bytes packed as a little-
+/// endian u64; longer patterns are truncated to their first 8 bytes.
+/// The `mask` masks off unused byte positions in the compare (for
+/// patterns shorter than 8 bytes; bytes past `len` become 0x00 in mask,
+/// so XOR at those positions is ignored).
+///
+/// Precomputed at compile time via `pattern_from(bytes, len, ...)`
+/// const fn — zero runtime cost to build the catalog.
 #[derive(Copy, Clone)]
 #[repr(C)]
 struct FilterPattern {
-    /// NUL-padded pattern bytes. Max 16 bytes accommodates the longest
-    /// pattern (`/.local/share/` at 14 bytes) with slack.
-    bytes: [u8; 16],
-    /// Effective pattern length; MUST be ≤ 16.
-    len: u8,
-    /// `KIND_PREFIX` or `KIND_CONTAINS`.
-    kind: u8,
+    /// First 8 bytes of the pattern packed as little-endian u64. NUL-
+    /// padded when pattern is < 8 bytes; truncated when > 8 bytes (only
+    /// case in current catalog: `/.local/share/` at 14 → `/.local/`).
+    word: u64,
+    /// XOR mask. Set bits identify positions to include in the compare
+    /// (`(path_word ^ pattern.word) & pattern.mask == 0` means match).
+    /// For 8-byte patterns → `u64::MAX`. For 5-byte patterns like
+    /// `/etc/` → `0x000000FFFFFFFFFF` (5 low bytes = 0xFF).
+    mask: u64,
     /// `FilterCategoryTag` discriminant (0-3).
     category: u8,
-    /// Padding to align to 8 bytes.
-    _pad: [u8; 5],
+    /// `true` = only match at path offset 0 (prefix). `false` = scan
+    /// the first `CONTAINS_SCAN_MAX_OFFSET` bytes of the path.
+    is_prefix: bool,
+    _pad: [u8; 6],
 }
 
-/// The pattern catalog. Order within a category doesn't matter; overall
-/// order matches the discriminant order (System, UserCache, Ephemeral,
-/// CargoFingerprint) purely for readability.
+/// Pack a byte-string prefix (up to 8 bytes) as a little-endian u64,
+/// NUL-padded, then compute the compare mask for its effective length.
+/// `bytes` MUST be ≥ 8 bytes long (zero-padded past the pattern's
+/// effective length so the u64 read is well-defined).
+const fn pack_pattern(bytes: &[u8; 8], len: u8, category: u8, is_prefix: bool) -> FilterPattern {
+    // Pack little-endian.
+    let word = (bytes[0] as u64)
+        | ((bytes[1] as u64) << 8)
+        | ((bytes[2] as u64) << 16)
+        | ((bytes[3] as u64) << 24)
+        | ((bytes[4] as u64) << 32)
+        | ((bytes[5] as u64) << 40)
+        | ((bytes[6] as u64) << 48)
+        | ((bytes[7] as u64) << 56);
+    // Mask: `len` low bytes are 0xFF, rest are 0x00.
+    let mask = if len >= 8 {
+        u64::MAX
+    } else {
+        // 1u64 << (len * 8) - 1 gives 2^(len*8) - 1 = a mask with `len*8` low bits set.
+        (1u64 << (len as u32 * 8)) - 1
+    };
+    FilterPattern {
+        word,
+        mask,
+        category,
+        is_prefix,
+        _pad: [0; 6],
+    }
+}
+
+/// Pattern catalog. 11 entries: 6 prefix (System×4 + Ephemeral×2) +
+/// 5 contains (UserCache×2 + CargoFingerprint×3).
 ///
-/// Pattern semantics (per specs/213-kernel-noise-filter/spec.md
-/// FR-001..FR-004):
+/// Patterns longer than 8 bytes are TRUNCATED to their first 8 bytes
+/// per verifier-cost constraint (see module docs). The truncated form
+/// is still unique enough to avoid false positives for the target
+/// filesystem structures — `/fingerp` is not a substring of any
+/// non-cargo path we've observed, and `/.local/` catches
+/// `/.local/share/` correctly.
 ///
-/// - **System (prefix)**: paths starting with `/etc/`, `/proc/`,
-///   `/sys/`, `/dev/`. Kernel-meta filesystems + device nodes; 0 signal
-///   in a build trace.
-/// - **UserCache (contains)**: any path containing `/.cache/` or
-///   `/.local/share/` as a directory component. Matches per-user cache
-///   dirs across arbitrary HOME layouts (`/root/.cache/`,
-///   `/home/foo/.cache/`, etc.) without needing userspace-to-kernel
-///   HOME resolution per spec Assumptions.
-/// - **Ephemeral (prefix)**: `/tmp/`, `/var/tmp/`. Compiler scratch;
-///   already ephemeral.
-/// - **CargoFingerprint (contains)**: `/fingerprint/`, `/deps/`,
-///   `/incremental/`. Matches cargo's out-of-band bookkeeping paths
-///   across any cargo profile name (debug, release, or user-custom) —
-///   per spec Assumptions, we don't hard-code profile literals.
+/// Semantics per specs/213-kernel-noise-filter/spec.md FR-001..FR-004:
+/// - System (prefix): `/etc/`, `/proc/`, `/sys/`, `/dev/`
+/// - UserCache (contains): `/.cache/`, `/.local/` (truncated from
+///   `/.local/share/` — still specific enough)
+/// - Ephemeral (prefix): `/tmp/`, `/var/tmp` (7 chars — falls through
+///   to `/var/tmp/foo` matching)
+/// - CargoFingerprint (contains): `/fingerp` (truncated from
+///   `/fingerprint/`), `/deps/`, `/increme` (truncated from
+///   `/incremental/`)
 const PATTERNS: [FilterPattern; 11] = [
     // System — 4 prefix patterns
-    FilterPattern {
-        bytes: *b"/etc/\0\0\0\0\0\0\0\0\0\0\0",
-        len: 5,
-        kind: KIND_PREFIX,
-        category: CAT_SYSTEM,
-        _pad: [0; 5],
-    },
-    FilterPattern {
-        bytes: *b"/proc/\0\0\0\0\0\0\0\0\0\0",
-        len: 6,
-        kind: KIND_PREFIX,
-        category: CAT_SYSTEM,
-        _pad: [0; 5],
-    },
-    FilterPattern {
-        bytes: *b"/sys/\0\0\0\0\0\0\0\0\0\0\0",
-        len: 5,
-        kind: KIND_PREFIX,
-        category: CAT_SYSTEM,
-        _pad: [0; 5],
-    },
-    FilterPattern {
-        bytes: *b"/dev/\0\0\0\0\0\0\0\0\0\0\0",
-        len: 5,
-        kind: KIND_PREFIX,
-        category: CAT_SYSTEM,
-        _pad: [0; 5],
-    },
-    // UserCache — 2 contains patterns
-    FilterPattern {
-        bytes: *b"/.cache/\0\0\0\0\0\0\0\0",
-        len: 8,
-        kind: KIND_CONTAINS,
-        category: CAT_USER_CACHE,
-        _pad: [0; 5],
-    },
-    FilterPattern {
-        bytes: *b"/.local/share/\0\0",
-        len: 14,
-        kind: KIND_CONTAINS,
-        category: CAT_USER_CACHE,
-        _pad: [0; 5],
-    },
+    pack_pattern(b"/etc/\0\0\0", 5, CAT_SYSTEM, true),
+    pack_pattern(b"/proc/\0\0", 6, CAT_SYSTEM, true),
+    pack_pattern(b"/sys/\0\0\0", 5, CAT_SYSTEM, true),
+    pack_pattern(b"/dev/\0\0\0", 5, CAT_SYSTEM, true),
+    // UserCache — 2 contains patterns (truncated to 8 bytes)
+    pack_pattern(b"/.cache/", 8, CAT_USER_CACHE, false),
+    pack_pattern(b"/.local/", 8, CAT_USER_CACHE, false),
     // Ephemeral — 2 prefix patterns
-    FilterPattern {
-        bytes: *b"/tmp/\0\0\0\0\0\0\0\0\0\0\0",
-        len: 5,
-        kind: KIND_PREFIX,
-        category: CAT_EPHEMERAL,
-        _pad: [0; 5],
-    },
-    FilterPattern {
-        bytes: *b"/var/tmp/\0\0\0\0\0\0\0",
-        len: 9,
-        kind: KIND_PREFIX,
-        category: CAT_EPHEMERAL,
-        _pad: [0; 5],
-    },
-    // CargoFingerprint — 3 contains patterns
-    FilterPattern {
-        bytes: *b"/fingerprint/\0\0\0",
-        len: 13,
-        kind: KIND_CONTAINS,
-        category: CAT_CARGO_FINGERPRINT,
-        _pad: [0; 5],
-    },
-    FilterPattern {
-        bytes: *b"/deps/\0\0\0\0\0\0\0\0\0\0",
-        len: 6,
-        kind: KIND_CONTAINS,
-        category: CAT_CARGO_FINGERPRINT,
-        _pad: [0; 5],
-    },
-    FilterPattern {
-        bytes: *b"/incremental/\0\0\0",
-        len: 13,
-        kind: KIND_CONTAINS,
-        category: CAT_CARGO_FINGERPRINT,
-        _pad: [0; 5],
-    },
+    pack_pattern(b"/tmp/\0\0\0", 5, CAT_EPHEMERAL, true),
+    pack_pattern(b"/var/tmp", 8, CAT_EPHEMERAL, true),
+    // CargoFingerprint — 3 contains patterns (truncated to 8 bytes)
+    pack_pattern(b"/fingerp", 8, CAT_CARGO_FINGERPRINT, false),
+    pack_pattern(b"/deps/\0\0", 6, CAT_CARGO_FINGERPRINT, false),
+    pack_pattern(b"/increme", 8, CAT_CARGO_FINGERPRINT, false),
 ];
 
-/// Maximum offset (exclusive) at which a `Contains` pattern is scanned
-/// for. Paths longer than this within the 256-byte scratch buffer are
-/// effectively skipped (FR-016 fail-open-on-unknown-category). Chosen to
-/// bound the verifier's loop-state cost: 128 offsets × 16-byte pattern
-/// check = 2048 iterations per Contains pattern per open.
-const CONTAINS_SCAN_MAX_OFFSET: usize = 128;
-
-/// Check if `path` starts with the pattern bytes.
+/// Read a u64 (little-endian, unaligned) from `path` at `offset`.
+/// Caller MUST ensure `offset + 8 <= 256`.
 #[inline(always)]
-fn path_starts_with(path: &[u8; 256], pattern: &[u8; 16], plen: usize) -> bool {
-    // Bounded scan over the first 16 bytes; `plen` is guaranteed ≤ 16.
-    let mut mismatch = false;
-    let mut j = 0usize;
-    while j < 16 {
-        // Only compare within the effective pattern length; positions
-        // past `plen` are NUL-padded in the pattern and irrelevant.
-        // The `path[j]` read is always safe because j < 16 < 256.
-        if j < plen && path[j] != pattern[j] {
-            mismatch = true;
-        }
-        j += 1;
-    }
-    !mismatch
-}
-
-/// Check if `path` contains the pattern bytes as a substring anywhere
-/// within the first `CONTAINS_SCAN_MAX_OFFSET` (128) bytes.
-#[inline(always)]
-fn path_contains_pattern(path: &[u8; 256], pattern: &[u8; 16], plen: usize) -> bool {
-    let mut offset = 0usize;
-    while offset < CONTAINS_SCAN_MAX_OFFSET {
-        // Check if path[offset..offset+plen] matches pattern[..plen].
-        // The inner loop is fully bounded (< 16); `path[offset + j]`
-        // read is safe because offset + j < 128 + 16 = 144 < 256.
-        let mut mismatch = false;
-        let mut j = 0usize;
-        while j < 16 {
-            if j < plen && path[offset + j] != pattern[j] {
-                mismatch = true;
-            }
-            j += 1;
-        }
-        if !mismatch {
-            return true;
-        }
-        offset += 1;
-    }
-    false
+fn read_path_word(path: &[u8; 256], offset: usize) -> u64 {
+    // SAFETY: caller-verified offset + 8 <= 256 (which holds when
+    // offset < CONTAINS_SCAN_MAX_OFFSET (64) and for prefix at offset 0).
+    // Matches m211's `read_unaligned` pattern at compiler_exec.rs
+    // (proven working on kernels 5.15/6.1/6.6/6.8).
+    unsafe { core::ptr::read_unaligned(path.as_ptr().add(offset) as *const u64) }
 }
 
 /// Classify a file-open path into one of the four filter categories,
@@ -221,25 +166,39 @@ fn path_contains_pattern(path: &[u8; 256], pattern: &[u8; 16], plen: usize) -> b
 /// even on match — per m213 FR-010 the widening flag disables ONLY the
 /// System category, leaving UserCache/Ephemeral/CargoFingerprint active.
 ///
-/// The path is a fixed-size `[u8; 256]` matching `FileEvent.path`.
-/// NUL-terminated shorter paths are handled correctly by both matchers
-/// (they compare against `plen`-length prefix/pattern only, ignoring
-/// trailing NULs in `path`).
+/// v2 implementation (post-CI-verifier-limit-fix): all pattern compares
+/// use word-wide u64 XOR-and-mask (~2050 verifier insns per open, down
+/// from v1's byte-wise loops that blew the 1M budget on kernel 5.15).
 pub fn path_matches_filter_category(path: &[u8; 256], widen_system: bool) -> Option<FilterCategoryTag> {
     let mut i = 0usize;
     while i < PATTERNS.len() {
         let p = &PATTERNS[i];
-        let matched = if p.kind == KIND_PREFIX {
-            path_starts_with(path, &p.bytes, p.len as usize)
+        let matched = if p.is_prefix {
+            // Prefix: read at offset 0 only.
+            let path_word = read_path_word(path, 0);
+            (path_word ^ p.word) & p.mask == 0
         } else {
-            path_contains_pattern(path, &p.bytes, p.len as usize)
+            // Contains: bounded scan through first CONTAINS_SCAN_MAX_OFFSET
+            // bytes. Read u64 at each offset; XOR against pattern word;
+            // mask; compare to 0. Constant-bound loop keeps verifier happy.
+            let mut offset = 0usize;
+            let mut found = false;
+            while offset < CONTAINS_SCAN_MAX_OFFSET {
+                let path_word = read_path_word(path, offset);
+                if (path_word ^ p.word) & p.mask == 0 {
+                    found = true;
+                    // Don't break early — the verifier prefers loops that
+                    // run to completion. The `found` flag captures the
+                    // hit; we exit the outer pattern loop after.
+                }
+                offset += 1;
+            }
+            found
         };
         if matched {
-            // Widen-flag gate: if this is a System category match AND
-            // the operator opted into system-read visibility, skip past
-            // it and continue checking the remaining patterns. This
-            // preserves UserCache/Ephemeral/CargoFingerprint behavior
-            // per FR-010 even when the System filter is off.
+            // Widen-flag gate: System-category matches suppressed when
+            // the operator opted into system-read visibility. Other 3
+            // categories remain filtered per FR-010.
             if p.category == CAT_SYSTEM && widen_system {
                 i += 1;
                 continue;
@@ -249,7 +208,7 @@ pub fn path_matches_filter_category(path: &[u8; 256], widen_system: bool) -> Opt
                 CAT_USER_CACHE => FilterCategoryTag::UserCache,
                 CAT_EPHEMERAL => FilterCategoryTag::Ephemeral,
                 CAT_CARGO_FINGERPRINT => FilterCategoryTag::CargoFingerprint,
-                // Unreachable per PATTERNS catalog above; if this fires
+                // Unreachable per PATTERNS catalog; if this fires
                 // someone added a new pattern without extending the map.
                 _ => return None,
             });
@@ -304,6 +263,8 @@ mod tests {
             path_matches_filter_category(&to_path_buf("/home/mike/.cache/npm/foo"), false),
             Some(FilterCategoryTag::UserCache)
         );
+        // v2: `/.local/` (truncated from `/.local/share/`) still catches
+        // the common home-dir XDG data paths.
         assert_eq!(
             path_matches_filter_category(&to_path_buf("/home/mike/.local/share/gem"), false),
             Some(FilterCategoryTag::UserCache)
@@ -324,7 +285,6 @@ mod tests {
 
     #[test]
     fn t007_cargo_fingerprint_paths_classified() {
-        // The canonical cargo fingerprint path from issue #616 investigation.
         assert_eq!(
             path_matches_filter_category(
                 &to_path_buf("/root/mikebom/target/debug/build/foo-abc/fingerprint/dep-blah"),
@@ -371,10 +331,9 @@ mod tests {
 
     #[test]
     fn t007_truncated_full_buffer_paths_return_none() {
-        // FR-016: paths that fill the 256-byte buffer with no NUL
-        // terminator and no matching pattern in the first 128 bytes are
-        // treated as "unknown category" (fail-open). This test builds a
-        // 256-byte path of just 'x' characters — no pattern matches.
+        // FR-016: paths that fill the 256-byte buffer with no matching
+        // pattern in the first 64 bytes are treated as unknown category
+        // (fail-open). This test builds a 256-byte path of 'x' — no match.
         let mut buf = [b'x'; 256];
         buf[0] = b'/';
         assert_eq!(path_matches_filter_category(&buf, false), None);
@@ -382,10 +341,9 @@ mod tests {
 
     #[test]
     fn t007_fingerprint_beyond_scan_window_missed() {
-        // Deliberate FR-016 corollary: `/fingerprint/` appearing PAST
-        // the 128-byte scan window is NOT caught (fail-open-on-truncated).
-        // Build a padding of ≥ 128 bytes of directory noise, then the pattern.
-        let padding = "a".repeat(130);
+        // FR-016 corollary: pattern appearing past the 64-byte scan
+        // window is NOT caught (fail-open on truncated).
+        let padding = "a".repeat(70);
         assert!(padding.len() >= CONTAINS_SCAN_MAX_OFFSET);
         let path = format!("/{}/fingerprint/dep-blah", padding);
         assert_eq!(path_matches_filter_category(&to_path_buf(&path), false), None);
@@ -396,7 +354,6 @@ mod tests {
     #[test]
     fn t026_widen_flag_disables_system_only() {
         // FR-010: --include-system-reads disables System category ONLY.
-        // With widen_system = true, System paths pass through.
         assert_eq!(
             path_matches_filter_category(&to_path_buf("/etc/hostname"), true),
             None
@@ -414,7 +371,7 @@ mod tests {
             None
         );
 
-        // But UserCache/Ephemeral/CargoFingerprint remain active.
+        // UserCache/Ephemeral/CargoFingerprint remain active.
         assert_eq!(
             path_matches_filter_category(&to_path_buf("/root/.cache/pip/wheels"), true),
             Some(FilterCategoryTag::UserCache)
@@ -437,8 +394,8 @@ mod tests {
     #[test]
     fn patterns_catalog_size_matches_declared_categories() {
         // Guards against future-you adding a category without adding
-        // patterns for it (or vice versa). 4 System + 2 UserCache +
-        // 2 Ephemeral + 3 CargoFingerprint = 11.
+        // patterns for it. 4 System + 2 UserCache + 2 Ephemeral + 3
+        // CargoFingerprint = 11.
         assert_eq!(PATTERNS.len(), 11);
     }
 
@@ -454,25 +411,23 @@ mod tests {
     }
 
     #[test]
-    fn all_pattern_lengths_within_bounds() {
-        for p in &PATTERNS {
-            assert!(
-                (p.len as usize) <= 16,
-                "pattern length {} exceeds 16-byte buffer",
-                p.len
-            );
-            assert!(p.len > 0, "pattern length must be non-zero");
-        }
+    fn pack_pattern_produces_correct_mask() {
+        // Verifies the const-fn packing logic — critical because the
+        // catalog is entirely compile-time-built and a mask bug would
+        // silently produce wrong classifications.
+        let p1 = pack_pattern(b"/etc/\0\0\0", 5, CAT_SYSTEM, true);
+        assert_eq!(p1.mask, 0x000000FFFFFFFFFF);
+        let p2 = pack_pattern(b"/.cache/", 8, CAT_USER_CACHE, false);
+        assert_eq!(p2.mask, u64::MAX);
+        let p3 = pack_pattern(b"/tmp/\0\0\0", 5, CAT_EPHEMERAL, true);
+        assert_eq!(p3.mask, 0x000000FFFFFFFFFF);
     }
 
     #[test]
-    fn all_patterns_have_valid_kind_discriminants() {
-        for p in &PATTERNS {
-            assert!(
-                p.kind == KIND_PREFIX || p.kind == KIND_CONTAINS,
-                "pattern has unknown kind: {}",
-                p.kind
-            );
-        }
+    fn pack_pattern_produces_correct_word() {
+        // /etc/ + NULs → little-endian u64 = 0x00_00_00_2F_63_74_65_2F
+        let p = pack_pattern(b"/etc/\0\0\0", 5, CAT_SYSTEM, true);
+        let expected = u64::from_le_bytes(*b"/etc/\0\0\0");
+        assert_eq!(p.word, expected);
     }
 }

@@ -2974,7 +2974,11 @@ pub async fn execute(
     };
 
     // `trace_integrity` is a clean record: no eBPF ran, so there's nothing
-    // to have overflowed or dropped.
+    // to have overflowed or dropped. Milestone 212 audit (T007a): this
+    // site is SCAN-MODE — no eBPF programs are loaded here, so
+    // `ring_buffer_overflows: 0` is factually correct + FR-004 compliant.
+    // Real-trace attestations flow through `mikebom-cli/src/cli/scan.rs`
+    // where the value comes from `counters::read_ring_buffer_drops`.
     let integrity = TraceIntegrity {
         ring_buffer_overflows: 0,
         events_dropped: 0,

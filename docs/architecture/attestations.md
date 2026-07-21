@@ -116,12 +116,27 @@ walker.
 Kernel-side health counters that tell the consumer how complete the trace
 is:
 
-- **`ring_buffer_overflows`** and **`events_dropped`** — ring-buffer
-  pressure indicators. Non-zero means at least one event didn't make it to
-  userspace, so the SBOM is incomplete by some quantifiable amount.
+- **`ring_buffer_overflows`** (milestone 212 / issue #615 — real counter as
+  of m212; pre-m212 was hardcoded to `0` everywhere and hid a real drop-rate
+  bug per #614 investigation) — sum of `RingBuf::reserve() → None` occurrences
+  across all three ring buffers (`FILE_EVENTS`, `NETWORK_EVENTS`,
+  `COMPILER_EXEC_EVENTS`) × all online CPUs, aggregated at trace end. Non-zero
+  means the kernel-side kprobes fired faster than userspace could drain the
+  ring buffer, and some events were silently discarded before reaching mikebom.
+  Under heavy cargo activity on a busy host, values in the tens of thousands
+  are normal.
+- **`events_dropped`** — still `0` in m212; a separate follow-up milestone
+  (waybill#618) will populate this with events that WERE written to the ring
+  buffer but not drained by userspace before trace end.
 - **`uprobe_attach_failures`** and **`kprobe_attach_failures`** — lists of
   probes that failed to attach at capture start. Usually indicates libssl
-  wasn't where expected or the kernel refused a kprobe attach point.
+  wasn't where expected or the kernel refused a kprobe attach point. Post-m212
+  the `kprobe_attach_failures` array ALSO carries counter-map attach failure
+  names (e.g. `"file_event_drops"`, `"network_event_drops"`,
+  `"compiler_exec_drops"`) when one of the m212 per-CPU counter maps fails to
+  load. Consumers who trust the `ring_buffer_overflows` value MUST check this
+  array for any `*_drops` entry — its presence means the reported overflow
+  count is a partial sum (a floor, not a total).
 - **`partial_captures`** — per-capture notes about known-incomplete paths.
 - **`bloom_filter_capacity`** and **`bloom_filter_false_positive_rate`** —
   parameters of the probe-side event-deduplication bloom filter.

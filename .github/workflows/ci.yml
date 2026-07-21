@@ -621,3 +621,16 @@ jobs:
 
       - name: Tests (--features ebpf-tracing)
         run: cargo +stable test --workspace --features ebpf-tracing
+
+      # Milestone 212 (issue #615) — invoke the container integration
+      # harness on amd64. Verifies the real ring_buffer_overflows
+      # counter populates end-to-end (SC-001 threshold check + the
+      # kprobe_attach_failures[] disambiguation from Clarification Q3).
+      # This is the SC-003 CI gate. --privileged + debugfs mount are
+      # required for eBPF + tracepoint attach per m211 quickstart.
+      - name: Container harness (m212 ring_buffer_overflows verification)
+        run: |
+          docker build -f Dockerfile.ebpf-test -t mikebom-ebpf-test .
+          docker run --rm --privileged \
+            -v /sys/kernel/debug:/sys/kernel/debug \
+            mikebom-ebpf-test

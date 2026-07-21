@@ -518,11 +518,20 @@ async fn execute_scan(args: ScanArgs) -> anyhow::Result<()> {
         agg.apply_file_hashes(&file_hashes);
     }
 
+    // Milestone 212 (issue #615) — read per-CPU drop counters from
+    // the three ring-buffer companion maps + populate
+    // TraceIntegrity.ring_buffer_overflows with the aggregate. Pre-m212
+    // this field was hardcoded to 0, silently hiding the drop-rate
+    // bug that #614 investigation surfaced. The failing-map names (if
+    // any) flow into TraceIntegrity.kprobe_attach_failures[] per Q3.
+    // events_dropped stays 0 per Q2 (deferred to waybill#618).
+    let drops = crate::trace::counters::read_ring_buffer_drops(&mut handle.bpf);
     let trace = agg.finalize(&TraceStats {
         network_events: net_count,
         file_events: file_count,
-        ring_buffer_overflows: 0,
+        ring_buffer_overflows: drops.total(),
         events_dropped: 0,
+        counter_attach_failures: drops.attach_failures,
     });
 
     if trace.network_trace.connections.is_empty()

@@ -25,6 +25,15 @@ pub struct TraceStats {
     pub ring_buffer_overflows: u64,
     /// Events dropped due to channel back-pressure or decode errors.
     pub events_dropped: u64,
+    /// Milestone 212 (issue #615) — short names of any counter maps
+    /// that failed to attach on this kernel (e.g. `"file_event_drops"`).
+    /// Populated by `mikebom-cli/src/trace/counters.rs::read_ring_buffer_drops`.
+    /// Empty on kernels where all three maps loaded cleanly.
+    /// Flows into `TraceIntegrity.kprobe_attach_failures[]` per Q3 —
+    /// consumers of the attestation JSON check this array to
+    /// disambiguate "counter says zero drops" from "counter unavailable
+    /// on this kernel; aggregate is a floor, not a total."
+    pub counter_attach_failures: Vec<String>,
 }
 
 /// Shared, atomically-updated counters for real-time stats access.
@@ -53,6 +62,11 @@ impl LiveStats {
             file_events: self.file_events.load(Ordering::Relaxed),
             ring_buffer_overflows: self.ring_buffer_overflows.load(Ordering::Relaxed),
             events_dropped: self.events_dropped.load(Ordering::Relaxed),
+            // Milestone 212: LiveStats is atomic-only; counter-map
+            // attach failures are string names and live-tracked
+            // separately (via the trace/counters.rs summary passed
+            // directly into finalize). snapshot() returns empty here.
+            counter_attach_failures: Vec::new(),
         }
     }
 }

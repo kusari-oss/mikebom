@@ -35,9 +35,16 @@ echo
 cd /mikebom
 
 set +e
-"$MIKEBOM" trace run \
+# `trace capture` (not `trace run`) emits ONLY the attestation. `trace
+# run` also does SBOM generation which fails on hermetic cargo builds
+# ("resolution produced zero components from attestation") because the
+# generate step needs signed subjects or network downloads to enumerate
+# components — neither of which a vendored offline `cargo build` provides.
+# Using `capture` sidesteps the m211 US2 combined-workflow gap without
+# affecting m212's ring_buffer_overflows verification.
+"$MIKEBOM" trace capture \
     --attestation-format mikebom-v1 \
-    --attestation-output "$OUTPUT" \
+    --output "$OUTPUT" \
     -- cargo build --release \
         --manifest-path "$FIXTURE/Cargo.toml" \
         --target-dir /tmp/m210-fixture-target
@@ -113,6 +120,35 @@ case "$COMPLETENESS" in
         ;;
 esac
 
+# Milestone 212 (issue #615) — assert the real ring_buffer_overflows
+# counter is (a) present as a JSON number type and (b) non-zero on
+# this fixture. Pre-m212 the field was hardcoded to 0 at every emission
+# site, hiding a real drop-rate bug that #614 investigation surfaced.
+# Post-m212 the SC-001 fixture should report >100 drops.
+if ! jq -e '.predicate.trace_integrity.ring_buffer_overflows | type == "number"' "$OUTPUT" > /dev/null 2>&1; then
+    echo "FAIL: predicate.trace_integrity.ring_buffer_overflows is not a JSON number type"
+    exit 1
+fi
+OVERFLOWS=$(jq '.predicate.trace_integrity.ring_buffer_overflows' "$OUTPUT")
+echo "    ring_buffer_overflows: $OVERFLOWS"
+if [[ "$OVERFLOWS" -le 100 ]]; then
+    echo "FAIL: ring_buffer_overflows=$OVERFLOWS is <=100 on the SC-001 fixture (expected >100 per m212 SC-001)"
+    echo "      Either the counter regressed OR the fixture's drop signature changed materially."
+    exit 1
+fi
+
+# Assert the m212 Q3 disambiguation signal: no counter map should
+# appear in kprobe_attach_failures on a supported kernel. If any
+# *_drops entry appears, the reported overflow count is a floor, not
+# a total — flag as WARN but don't fail (kernel version might legitimately
+# not support one of the maps).
+COUNTER_FAILURES=$(jq '[.predicate.trace_integrity.kprobe_attach_failures[] | select(endswith("_drops"))] | length' "$OUTPUT")
+if [[ "$COUNTER_FAILURES" -gt 0 ]]; then
+    echo "WARN: $COUNTER_FAILURES counter map(s) failed to attach — ring_buffer_overflows is a partial sum"
+    jq '.predicate.trace_integrity.kprobe_attach_failures[] | select(endswith("_drops"))' "$OUTPUT"
+fi
+
 echo
-echo ">>> m210 integration test PASSED"
-echo "    compiler_pipeline present with $INVOCATION_COUNT invocations, $RUSTC_COUNT rustc"
+echo ">>> m210 + m212 integration test PASSED"
+echo "    compiler_pipeline: $INVOCATION_COUNT invocations, $RUSTC_COUNT rustc"
+echo "    trace_integrity: ring_buffer_overflows=$OVERFLOWS"

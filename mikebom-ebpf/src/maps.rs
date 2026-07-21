@@ -116,3 +116,39 @@ pub static COMPILER_DIRECT_EXECS: HashMap<u32, u8> =
 #[map]
 pub static PID_TO_PPID: HashMap<u32, u32> =
     HashMap::with_max_entries(32768, 0);
+
+// Milestone 212 (issue #615) — per-CPU drop counters. Each of the
+// three ring buffers below (FILE_EVENTS, NETWORK_EVENTS,
+// COMPILER_EXEC_EVENTS) gets a companion PerCpuArray<u64> that eBPF
+// programs increment in the `else` branch of every
+// `<RINGBUF>.reserve() → None` site. At trace end, userspace sums
+// each map across all online CPUs and populates
+// `TraceIntegrity.ring_buffer_overflows` with the aggregate —
+// replacing the pre-m212 hardcoded `0` that hid a real drop bug
+// (#614 investigation showed 80%+ of events being silently lost).
+//
+// Sizing: single-element per-CPU arrays. 8 bytes per CPU × N CPUs;
+// on a 128-core host that's 1 KB per map. Negligible kernel resource.
+//
+// Per-CPU semantics eliminate cross-CPU atomic contention entirely
+// — each CPU has its own u64 slot, no bpf_atomic_add needed. See
+// research R1 + contracts/ebpf-verifier-notes.md V-2 for the
+// increment pattern.
+
+/// Milestone 212 — per-CPU counter incremented when `FILE_EVENTS.reserve()`
+/// returns `None` (ring buffer full). Read at trace end via aya's
+/// `PerCpuArray::get(&0, 0)` → summed across all online CPUs →
+/// contributes to `TraceIntegrity.ring_buffer_overflows`.
+#[map]
+pub static FILE_EVENT_DROPS: PerCpuArray<u64> =
+    PerCpuArray::with_max_entries(1, 0);
+
+/// Milestone 212 — per-CPU counter for `NETWORK_EVENTS.reserve() → None`.
+#[map]
+pub static NETWORK_EVENT_DROPS: PerCpuArray<u64> =
+    PerCpuArray::with_max_entries(1, 0);
+
+/// Milestone 212 — per-CPU counter for `COMPILER_EXEC_EVENTS.reserve() → None`.
+#[map]
+pub static COMPILER_EXEC_DROPS: PerCpuArray<u64> =
+    PerCpuArray::with_max_entries(1, 0);

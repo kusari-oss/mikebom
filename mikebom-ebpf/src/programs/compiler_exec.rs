@@ -42,8 +42,10 @@ use aya_ebpf::{
 
 use mikebom_common::events::{CompilerExecEvent, CompilerExecEventKind};
 
+use crate::helpers::increment_drop_counter;
 use crate::maps::{
-    COMPILER_DIRECT_EXECS, COMPILER_EXEC_EVENTS, COMPILER_INVOCATIONS, PID_TO_PPID,
+    COMPILER_DIRECT_EXECS, COMPILER_EXEC_DROPS, COMPILER_EXEC_EVENTS, COMPILER_INVOCATIONS,
+    PID_TO_PPID,
 };
 
 /// Compiler whitelist per FR-002. Matched against the 16-byte
@@ -236,6 +238,8 @@ fn try_sched_process_exec(_ctx: &TracePointContext) -> Result<u32, i64> {
             (*ev)._padding = [0u8; 2];
         }
         buf.submit(0);
+    } else {
+        increment_drop_counter(&COMPILER_EXEC_DROPS);
     }
     Ok(0)
 }
@@ -329,6 +333,8 @@ fn try_sched_process_exit(_ctx: &TracePointContext) -> Result<u32, i64> {
             (*ev)._padding = [0u8; 2];
         }
         buf.submit(0);
+    } else {
+        increment_drop_counter(&COMPILER_EXEC_DROPS);
     }
 
     // Only remove ROOT invocation pids on exit. Descendant pids

@@ -10,8 +10,8 @@ use aya_ebpf::{
 
 use mikebom_common::events::{FileEvent, FileEventType};
 
-use crate::helpers::{current_comm, current_pid, current_tid, should_trace};
-use crate::maps::FILE_EVENTS;
+use crate::helpers::{current_comm, current_pid, current_tid, increment_drop_counter, should_trace};
+use crate::maps::{FILE_EVENTS, FILE_EVENT_DROPS};
 
 /// kprobe on vfs_write — captures file write operations.
 ///
@@ -62,6 +62,8 @@ fn try_vfs_write(ctx: &ProbeContext) -> Result<u32, i64> {
             (*event).inode = 0; // populated from file struct
         }
         buf.submit(0);
+    } else {
+        increment_drop_counter(&FILE_EVENT_DROPS);
     }
 
     Ok(0)
@@ -109,6 +111,8 @@ fn try_vfs_read(ctx: &ProbeContext) -> Result<u32, i64> {
             (*event).inode = 0;
         }
         buf.submit(0);
+    } else {
+        increment_drop_counter(&FILE_EVENT_DROPS);
     }
 
     Ok(0)
@@ -164,6 +168,8 @@ fn try_openat2(ctx: &ProbeContext) -> Result<u32, i64> {
             (*event).inode = 0;
         }
         buf.submit(0);
+    } else {
+        increment_drop_counter(&FILE_EVENT_DROPS);
     }
 
     Ok(0)
@@ -247,6 +253,8 @@ fn try_do_filp_open(ctx: &ProbeContext) -> Result<u32, i64> {
             (*event).inode = 0;
         }
         buf.submit(0);
+    } else {
+        increment_drop_counter(&FILE_EVENT_DROPS);
     }
 
     Ok(0)

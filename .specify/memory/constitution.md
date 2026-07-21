@@ -7,7 +7,7 @@
   "file-tier emission MUST NOT introduce duplicate components
   in default mode; the `--file-inventory=full` flag is an
   explicit override; full-mode SBOMs MUST carry a document-
-  level `mikebom:file-inventory-mode` annotation so consumers
+  level `waybill:file-inventory-mode` annotation so consumers
   can detect the override at parse time". Principle VIII
   (Completeness) clarification: "unattributed content — files
   surviving all package-DB, binary-tier, and fingerprint
@@ -31,16 +31,16 @@
   Previous SYNC IMPACT history:
     - 1.3.1 → 1.4.0: MINOR — Principle V (Specification Compliance)
       gains a new normative bullet codifying "standards-native
-      fields take precedence over `mikebom:`-prefixed properties".
-      Every spec proposing a new `mikebom:*` property, annotation,
+      fields take precedence over `waybill:`-prefixed properties".
+      Every spec proposing a new `waybill:*` property, annotation,
       or relationship type MUST first audit the target formats for
       an existing native construct carrying the same semantic, and
       reviewers MUST reject specs that don't. Prompted by milestone
       052 (lifecycle-dep-scope), where the alpha.9
-      `mikebom:dev-dependency` annotation was found to reinvent
+      `waybill:dev-dependency` annotation was found to reinvent
       CDX `scope` + SPDX 2.3 `DEV/BUILD/TEST_DEPENDENCY_OF` + SPDX
       3 `LifecycleScopeType` — all three formats had the native
-      field, mikebom had silently used a custom property.
+      field, waybill had silently used a custom property.
     - 1.3.0 → 1.3.1: PATCH — pre-PR Verification table updated to
       reflect the post-milestone-016 zero-warnings baseline. The
       clippy invocation now carries `-- -D warnings`; the passing
@@ -75,7 +75,7 @@
   ============================================================
 -->
 
-# mikebom Constitution
+# waybill Constitution
 
 ## Core Principles
 
@@ -118,7 +118,7 @@ distinction between "observed" and "enriched" is maintained.
 ### III. Fail Closed
 
 If the eBPF trace fails to attach, loses events, or observes
-zero dependency activity, mikebom MUST report the failure
+zero dependency activity, waybill MUST report the failure
 transparently and exit with a non-zero status. The tool MUST
 NOT fall back to static analysis, lockfile parsing, or any
 heuristic gap-filling.
@@ -148,7 +148,7 @@ eliminating an entire class of serialization bugs.
 Generated SBOMs MUST strictly conform to:
 
 - **CISA 2025 Minimum Elements** — all required fields
-  populated, including "Tool Name" as `mikebom` and
+  populated, including "Tool Name" as `waybill` and
   "Generation Context" reflecting active build-time trace.
 - **CycloneDX 1.6** — valid JSON or XML serialization via
   `cyclonedx-bom` or the `sbom-rs` ecosystem.
@@ -165,28 +165,28 @@ Generated SBOMs MUST strictly conform to:
 - **PURL Specification** — every Package URL emitted MUST
   conform to the PURL spec. Invalid PURLs MUST NOT appear
   in output.
-- **Standards-native fields take precedence over `mikebom:`-
+- **Standards-native fields take precedence over `waybill:`-
   prefixed properties.** Before introducing any new
-  `mikebom:*` property, annotation, or relationship type,
+  `waybill:*` property, annotation, or relationship type,
   every spec MUST audit each target format for an existing
   native construct that carries the same semantic. If one
-  exists, mikebom MUST use the native construct as the
-  primary signal; a `mikebom:*` property is permitted ONLY
+  exists, waybill MUST use the native construct as the
+  primary signal; a `waybill:*` property is permitted ONLY
   to carry finer-grained information the standard does not
   express, or to bridge a parity gap when one format has the
   native field but another doesn't (in which case the
-  parity-bridging `mikebom:*` annotation MUST be documented
+  parity-bridging `waybill:*` annotation MUST be documented
   in `docs/reference/sbom-format-mapping.md` with a
   justification clause naming the missing native field).
   Spec authors MUST cite the audit result in the spec's
   Functional Requirements; reviewers MUST reject specs that
-  introduce a `mikebom:*` field without it.
+  introduce a `waybill:*` field without it.
 
 Conformance applies to the SBOM envelope and to every
 sub-element within it. Non-compliant output at any level is
 a blocking bug.
 
-**Rationale**: mikebom exists to produce legally and
+**Rationale**: waybill exists to produce legally and
 technically defensible SBOMs. A spec-conformant document
 containing malformed PURLs is still non-compliant.
 Sub-element validity is as critical as envelope validity.
@@ -195,16 +195,16 @@ the SBOM consumer ecosystem — federal procurement pipelines,
 sbomqs, syft/grype/trivy interop, and the LF SPDX tools
 validator all expect 2.3 today. SPDX 3.x (currently 3.0.1
 stable, 3.1-rc1 in flight) is the forward path. Permitting
-both lets mikebom serve current adopters without locking
+both lets waybill serve current adopters without locking
 out future ones; the experimental-labeling requirement
 preserves consumer trust during the transition.
 
-The standards-native-precedence requirement keeps mikebom
+The standards-native-precedence requirement keeps waybill
 output interoperable with every SBOM-aware tool, not just
-mikebom-aware ones — and prevents the catalog from
-accumulating `mikebom:*` annotations that reinvent
+waybill-aware ones — and prevents the catalog from
+accumulating `waybill:*` annotations that reinvent
 constructs the format already provides. Milestone 049's
-`mikebom:dev-dependency` annotation (later removed by
+`waybill:dev-dependency` annotation (later removed by
 milestone 052 in favor of CDX `scope`, SPDX 2.3
 `DEV/BUILD/TEST_DEPENDENCY_OF`, and SPDX 3
 `LifecycleScopeType`) is the canonical motivating case.
@@ -213,10 +213,10 @@ milestone 052 in favor of CDX `scope`, SPDX 2.3
 
 The Cargo workspace MUST contain exactly three crates:
 
-- `mikebom-ebpf/` — `no_std` eBPF programs for the kernel.
-- `mikebom-common/` — shared struct definitions (ring buffer
+- `waybill-ebpf/` — `no_std` eBPF programs for the kernel.
+- `waybill-common/` — shared struct definitions (ring buffer
   event payloads) used by both kernel and user space.
-- `mikebom-cli/` — user-space application: eBPF loader,
+- `waybill-cli/` — user-space application: eBPF loader,
   event processor, API client, SBOM serializer.
 
 Additional crates require explicit justification and a
@@ -248,7 +248,7 @@ available.
 
 ### VIII. Completeness
 
-mikebom MUST minimize false negatives — dependencies that
+waybill MUST minimize false negatives — dependencies that
 were actually fetched during a build but are absent from the
 generated SBOM. Every network request and file-read event
 observed by the eBPF trace MUST be processed and represented
@@ -284,7 +284,7 @@ none exists.
 
 ### IX. Accuracy
 
-mikebom MUST minimize false positives — components listed in
+waybill MUST minimize false positives — components listed in
 the SBOM that were not actually used by the traced build.
 PURL resolution against `deps.dev` or `PurlDB` MUST be
 validated before inclusion: ambiguous or low-confidence
@@ -298,7 +298,7 @@ signal-to-noise ratio that makes SBOMs actionable.
 
 ### X. Transparency
 
-When mikebom cannot guarantee completeness (Principle VIII)
+When waybill cannot guarantee completeness (Principle VIII)
 or accuracy (Principle IX), it MUST include structured
 metadata in the SBOM output that informs the consumer of
 the limitation. Examples:
@@ -322,7 +322,7 @@ treating all SBOM entries as equally authoritative.
 
 ### XI. Enrichment
 
-mikebom SHOULD enrich SBOM output with supplementary data
+waybill SHOULD enrich SBOM output with supplementary data
 beyond the minimum dependency graph when the data is
 available from upstream sources and can be attached without
 violating accuracy (Principle IX). Enrichment targets
@@ -388,7 +388,7 @@ each other* and *what we know about them*. Combining both
 produces SBOMs with the dependency trees that downstream
 tools expect, without compromising the trace-first trust
 model. This closes the dependency-tree gap with tools like
-syft and trivy while maintaining mikebom's core advantage
+syft and trivy while maintaining waybill's core advantage
 of build-time observation.
 
 ## Strict Boundaries
@@ -427,7 +427,7 @@ optional modes:
    package or binary reader. The `--file-inventory=full` flag
    is an explicit override that bypasses the dedupe; full-mode
    SBOMs MUST carry a document-level
-   `mikebom:file-inventory-mode = "full"` annotation
+   `waybill:file-inventory-mode = "full"` annotation
    (CycloneDX `metadata.properties[]`, SPDX 2.3 / SPDX 3
    document-scope `Annotation`) so consumers can detect the
    override at parse time and filter the file-tier set when
@@ -445,7 +445,7 @@ optional modes:
 | Lint | `cargo clippy --all-targets --all-features -- -D warnings` |
 | Format check | `cargo fmt -- --check` |
 | Unit tests | `cargo test --workspace` |
-| Run (requires root) | `sudo RUST_LOG=info target/release/mikebom scan --target-pid <PID>` |
+| Run (requires root) | `sudo RUST_LOG=info target/release/waybill scan --target-pid <PID>` |
 
 ### Pre-PR Verification (MANDATORY)
 
@@ -469,11 +469,11 @@ must pass for a PR to merge cleanly; the flag-set difference
 quick-reference together.
 `cargo test -p <crate>` alone is INSUFFICIENT because it skips clippy
 and skips cross-crate targets. Specifically, the `clippy::unwrap_used`
-deny at the `mikebom-cli` crate root (Principle IV) is enforced by
+deny at the `waybill-cli` crate root (Principle IV) is enforced by
 clippy's `--all-targets` inside `#[cfg(test)]` modules too; any test
 module using `.unwrap()` MUST be guarded with
 `#[cfg_attr(test, allow(clippy::unwrap_used))]` on the `mod tests`
-item, matching the convention used throughout `mikebom-cli/src/trace/`.
+item, matching the convention used throughout `waybill-cli/src/trace/`.
 
 A PR that has not passed both commands locally MUST NOT be opened or
 pushed for review. A passing per-crate `cargo test` is not evidence of

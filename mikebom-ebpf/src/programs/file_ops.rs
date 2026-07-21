@@ -9,9 +9,48 @@ use aya_ebpf::{
 // func bpf_d_path#147` on every kernel we tested.
 
 use mikebom_common::events::{FileEvent, FileEventType};
+use mikebom_common::filter::path_matches_filter_category;
 
-use crate::helpers::{current_comm, current_pid, current_tid, increment_drop_counter, should_trace};
-use crate::maps::{FILE_EVENTS, FILE_EVENT_DROPS};
+use crate::helpers::{
+    current_comm, current_pid, current_tid, increment_drop_counter,
+    increment_filter_category_hit, should_trace,
+};
+use crate::maps::{FILE_EVENTS, FILE_EVENT_DROPS, FILTER_WIDEN};
+
+/// Milestone 213 (issue #616) — read the `FILTER_WIDEN[0]` config slot
+/// to decide whether the System category filter should be gated for
+/// this trace. `1` = System filter disabled (operator opted in via
+/// `--include-system-reads`); `0` or absent = System filter active
+/// (default). Non-zero non-1 values MUST be treated as `1` per
+/// contracts/filter-hits-map.md's fail-open-widening rule.
+#[inline(always)]
+fn widen_system() -> bool {
+    match FILTER_WIDEN.get(0) {
+        Some(&v) => v != 0,
+        None => false,
+    }
+}
+
+/// Milestone 213 (issue #616) — apply the kernel-side classifier to
+/// `path`. Returns `true` if the caller should DROP this event (the
+/// classifier matched a category and incremented the category's per-CPU
+/// hit counter). Returns `false` if the caller should proceed to
+/// `FILE_EVENTS.reserve()` (either no category matched, or the widen
+/// flag suppressed the only matching category).
+///
+/// Called from `try_openat2` + `try_do_filp_open` right after the path
+/// bytes are populated into the local `[u8; 256]` buffer and BEFORE
+/// the ring-buffer reserve call. Zero cost when no category matches.
+#[inline(always)]
+fn classify_and_drop_if_noise(path: &[u8; 256]) -> bool {
+    match path_matches_filter_category(path, widen_system()) {
+        Some(cat) => {
+            increment_filter_category_hit(cat as u8);
+            true
+        }
+        None => false,
+    }
+}
 
 /// kprobe on vfs_write — captures file write operations.
 ///
@@ -151,6 +190,17 @@ fn try_openat2(ctx: &ProbeContext) -> Result<u32, i64> {
         );
     }
 
+    // Milestone 213 (issue #616) — kernel-side noise filter. Drop
+    // matched events BEFORE FILE_EVENTS.reserve() so the ring buffer
+    // stays free for the actual rustc + linker events (FR-001..FR-004).
+    // The FILE_EVENT_DROPS counter is NOT incremented on intentional
+    // drops (that would double-count the filter's activity with
+    // ring-buffer overflow noise — see specs/213-kernel-noise-filter/
+    // research.md R6).
+    if classify_and_drop_if_noise(&path) {
+        return Ok(0);
+    }
+
     if let Some(mut buf) = FILE_EVENTS.reserve::<FileEvent>(0) {
         let event = buf.as_mut_ptr();
         unsafe {
@@ -234,6 +284,13 @@ fn try_do_filp_open(ctx: &ProbeContext) -> Result<u32, i64> {
     let mut path = [0u8; 256];
     unsafe {
         let _ = bpf_probe_read_kernel_str_bytes(name_ptr, &mut path);
+    }
+
+    // Milestone 213 (issue #616) — kernel-side noise filter, same
+    // rationale as try_openat2 above. Filter matches drop before
+    // ring-buffer reserve and DON'T count against FILE_EVENT_DROPS.
+    if classify_and_drop_if_noise(&path) {
+        return Ok(0);
     }
 
     if let Some(mut buf) = FILE_EVENTS.reserve::<FileEvent>(0) {

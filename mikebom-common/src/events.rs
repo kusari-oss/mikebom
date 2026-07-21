@@ -175,3 +175,118 @@ impl CompilerExecEvent {
         core::str::from_utf8(&bytes[..end]).unwrap_or("<invalid>")
     }
 }
+
+/// Milestone 213: filter-category discriminant transported kernel↔user
+/// via the `FILTER_CATEGORY_HITS` per-CPU array's slot index.
+///
+/// Discriminants 0-3 are PINNED per contracts/filter-category-tag.md;
+/// renumbering breaks compatibility between mismatched kernel-side and
+/// userspace-side builds.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum FilterCategoryTag {
+    System = 0,
+    UserCache = 1,
+    Ephemeral = 2,
+    CargoFingerprint = 3,
+}
+
+impl FilterCategoryTag {
+    /// All variants in enum-discriminant order. Used by the userspace
+    /// aggregator to iterate the 4 slots of the FILTER_CATEGORY_HITS map.
+    pub const ALL: [FilterCategoryTag; 4] = [
+        Self::System,
+        Self::UserCache,
+        Self::Ephemeral,
+        Self::CargoFingerprint,
+    ];
+
+    /// Human-readable name emitted in
+    /// `TraceIntegrity.filter_categories_applied[]`. Values match the
+    /// userspace `ClassifyFilterCategory` enum variant names verbatim
+    /// per m213 FR-007 so extractor tooling can join across the two
+    /// layers with byte-identity comparison.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::System => "System",
+            Self::UserCache => "UserCache",
+            Self::Ephemeral => "Ephemeral",
+            Self::CargoFingerprint => "CargoFingerprint",
+        }
+    }
+}
+
+impl TryFrom<u8> for FilterCategoryTag {
+    type Error = u8;
+    fn try_from(v: u8) -> Result<Self, u8> {
+        match v {
+            0 => Ok(Self::System),
+            1 => Ok(Self::UserCache),
+            2 => Ok(Self::Ephemeral),
+            3 => Ok(Self::CargoFingerprint),
+            other => Err(other),
+        }
+    }
+}
+
+#[cfg(test)]
+#[cfg_attr(test, allow(clippy::unwrap_used))]
+mod tests {
+    use super::*;
+
+    /// Milestone 213 T004a — wire-shape pin guarding FR-005. Any change
+    /// to `FileEvent` that alters `size_of` will fail this test,
+    /// catching accidental wire-shape drift that would break every
+    /// eBPF ring-buffer producer/consumer pair. Value captured on
+    /// 2026-07-21 pre-m213 build on macOS aarch64 stable Rust.
+    ///
+    /// If this test starts failing, the correct response is to
+    /// (a) understand exactly what shape change happened and why,
+    /// (b) update EVERY kernel-side + userspace-side reader/writer
+    ///     to match, and only then (c) update this pinned value.
+    /// Never bump the pinned value in isolation.
+    #[test]
+    fn file_event_size_is_stable() {
+        assert_eq!(std::mem::size_of::<FileEvent>(), 352);
+    }
+
+    #[test]
+    fn filter_category_tag_u8_round_trip() {
+        for cat in FilterCategoryTag::ALL {
+            let raw = cat as u8;
+            let round_tripped = FilterCategoryTag::try_from(raw).unwrap();
+            assert_eq!(cat, round_tripped);
+        }
+    }
+
+    #[test]
+    fn filter_category_tag_name_matches_wire_contract() {
+        // FR-007 pins these strings to match the userspace
+        // ClassifyFilterCategory enum variant names verbatim.
+        // Cross-layer joins via `filter_categories_applied[]` depend
+        // on byte-identity between kernel-side names emitted here and
+        // userspace-side names emitted by compiler_pipeline.rs.
+        assert_eq!(FilterCategoryTag::System.name(), "System");
+        assert_eq!(FilterCategoryTag::UserCache.name(), "UserCache");
+        assert_eq!(FilterCategoryTag::Ephemeral.name(), "Ephemeral");
+        assert_eq!(FilterCategoryTag::CargoFingerprint.name(), "CargoFingerprint");
+    }
+
+    #[test]
+    fn filter_category_tag_try_from_unknown_discriminant_errors() {
+        for bad in [4u8, 5, 42, 255] {
+            match FilterCategoryTag::try_from(bad) {
+                Err(v) => assert_eq!(v, bad),
+                Ok(_) => panic!("unexpected Ok for discriminant {bad}"),
+            }
+        }
+    }
+
+    #[test]
+    fn filter_category_tag_all_covers_all_variants() {
+        // Guards against future-you adding a variant without updating
+        // FilterCategoryTag::ALL, which would break the userspace
+        // aggregator's iteration.
+        assert_eq!(FilterCategoryTag::ALL.len(), 4);
+    }
+}

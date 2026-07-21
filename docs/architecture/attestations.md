@@ -140,6 +140,23 @@ is:
 - **`partial_captures`** — per-capture notes about known-incomplete paths.
 - **`bloom_filter_capacity`** and **`bloom_filter_false_positive_rate`** —
   parameters of the probe-side event-deduplication bloom filter.
+- **`filter_categories_applied`** (milestone 213 / issue #616) — sorted-
+  deduplicated JSON array of the noise-filter categories that fired
+  during the trace. Values are drawn from the closed set
+  `{"System", "UserCache", "Ephemeral", "CargoFingerprint"}` and match
+  the `mikebom_common::events::FilterCategoryTag::name()` output verbatim
+  so downstream `jq` consumers can join across the two mikebom layers by
+  byte-identity string comparison. **Always present as a JSON array**
+  (empty `[]` when the filter ran but no category fired — the field's
+  presence is the operator-visible signal that the kernel-side filter
+  was active). Consumers who see `"System"` absent from the list on a
+  build that surely opened `/etc/*` paths should check whether the
+  operator passed `--include-system-reads` (which disables the System
+  filter selectively per m213 FR-010). If the field carries
+  `"filter_category_hits"` in `kprobe_attach_failures` alongside an
+  empty `filter_categories_applied`, the kernel-side counter map failed
+  to load — treat as "filter absent, all noise flowed through" (fail-
+  open) rather than "no categories fired."
 
 These counters surface on the CycloneDX output as `metadata.properties`
 (`mikebom:trace-integrity-*`) so an SBOM consumer can decide whether to

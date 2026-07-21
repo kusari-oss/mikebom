@@ -218,6 +218,9 @@ async fn execute_scan(args: ScanArgs) -> anyhow::Result<()> {
         ring_buffer_size: args.ring_buffer_size,
         ebpf_object: None,
         trace_children: args.trace_children,
+        // Milestone 213 (issue #616) — plumbs --include-system-reads
+        // to the kernel-side FILTER_WIDEN[0] slot per FR-010.
+        include_system_reads: args.include_system_reads,
     })?;
     tracing::info!("eBPF probes attached");
 
@@ -526,12 +529,36 @@ async fn execute_scan(args: ScanArgs) -> anyhow::Result<()> {
     // any) flow into TraceIntegrity.kprobe_attach_failures[] per Q3.
     // events_dropped stays 0 per Q2 (deferred to waybill#618).
     let drops = crate::trace::counters::read_ring_buffer_drops(&mut handle.bpf);
+
+    // Milestone 213 (issue #616) — read the FILTER_CATEGORY_HITS map
+    // + emit `filter_categories_applied[]` on TraceIntegrity per FR-006.
+    // This is the transparent-aggregate mitigation for Principle VIII
+    // that makes US1's kernel-side event-drop constitutionally sound:
+    // operators see WHICH noise categories the trace suppressed even
+    // though the specific paths are dropped kernel-side.
+    let filter_hits = crate::trace::counters::read_filter_category_hits(&mut handle.bpf);
+    let filter_categories_applied = filter_hits.applied_categories();
+    tracing::info!(
+        applied = ?filter_categories_applied,
+        "m213 filter-category summary"
+    );
+
+    // Merge counter-map + filter-hits attach failures into a single
+    // stats field. `aggregator.rs::finalize` sorts + dedups before
+    // writing into TraceIntegrity.kprobe_attach_failures[]. Compute
+    // `drops.total()` BEFORE moving `drops.attach_failures` out —
+    // otherwise `drops` is partially moved and can no longer be borrowed.
+    let overflows_total = drops.total();
+    let mut counter_attach_failures = drops.attach_failures;
+    counter_attach_failures.extend(filter_hits.attach_failures);
+
     let trace = agg.finalize(&TraceStats {
         network_events: net_count,
         file_events: file_count,
-        ring_buffer_overflows: drops.total(),
+        ring_buffer_overflows: overflows_total,
         events_dropped: 0,
-        counter_attach_failures: drops.attach_failures,
+        counter_attach_failures,
+        filter_categories_applied,
     });
 
     if trace.network_trace.connections.is_empty()

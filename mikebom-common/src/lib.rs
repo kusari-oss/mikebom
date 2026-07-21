@@ -1,6 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 pub mod events;
+pub mod filter;
 pub mod ip;
 pub mod maps;
 

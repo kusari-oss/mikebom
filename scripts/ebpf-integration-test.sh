@@ -148,7 +148,37 @@ if [[ "$COUNTER_FAILURES" -gt 0 ]]; then
     jq '.predicate.trace_integrity.kprobe_attach_failures[] | select(endswith("_drops"))' "$OUTPUT"
 fi
 
+# Milestone 213 (issue #616) — SC-001 signal recovery. With the
+# kernel-side noise filter active, cargo's fingerprint spam is dropped
+# before the ring buffer, freeing capacity for the actual rustc + linker
+# events. Assert:
+#   (a) at least 1 rustc file-access event appears (baseline: 0)
+#   (b) at least 1 linker file-access event appears — ld / ld.lld / mold
+#   (c) NO file-access events reference /fingerprint/, /deps/, or
+#       /incremental/ paths (proves the filter fired for those categories)
+if jq -e '.predicate.file_access.operations' "$OUTPUT" > /dev/null 2>&1; then
+    RUSTC_FILE_COUNT=$(jq '[.predicate.file_access.operations[] | select(.comm == "rustc")] | length' "$OUTPUT")
+    LINKER_FILE_COUNT=$(jq '[.predicate.file_access.operations[] | select(.comm == "ld" or .comm == "ld.lld" or .comm == "mold")] | length' "$OUTPUT")
+    FP_LEAK_COUNT=$(jq '[.predicate.file_access.operations[] | select(.path | contains("/fingerprint/") or contains("/deps/") or contains("/incremental/"))] | length' "$OUTPUT")
+    echo "    m213 signal-recovery: rustc=$RUSTC_FILE_COUNT linker=$LINKER_FILE_COUNT fingerprint-leaks=$FP_LEAK_COUNT"
+    if [[ "$RUSTC_FILE_COUNT" -lt 1 ]]; then
+        echo "FAIL: 0 rustc file-access events — m213 SC-001 signal-recovery regression (was baseline pre-fix)"
+        exit 1
+    fi
+    if [[ "$LINKER_FILE_COUNT" -lt 1 ]]; then
+        echo "FAIL: 0 linker file-access events (ld / ld.lld / mold) — m213 SC-001 signal-recovery regression"
+        exit 1
+    fi
+    if [[ "$FP_LEAK_COUNT" -gt 0 ]]; then
+        echo "FAIL: $FP_LEAK_COUNT file-access events reference cargo fingerprint paths — m213 filter leak"
+        jq '[.predicate.file_access.operations[] | select(.path | contains("/fingerprint/") or contains("/deps/") or contains("/incremental/")) | .path] | .[:5]' "$OUTPUT"
+        exit 1
+    fi
+else
+    echo "WARN: no file_access.operations in attestation — cannot assert m213 SC-001"
+fi
+
 echo
-echo ">>> m210 + m212 integration test PASSED"
+echo ">>> m210 + m212 + m213 integration test PASSED"
 echo "    compiler_pipeline: $INVOCATION_COUNT invocations, $RUSTC_COUNT rustc"
 echo "    trace_integrity: ring_buffer_overflows=$OVERFLOWS"

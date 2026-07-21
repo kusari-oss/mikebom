@@ -1410,7 +1410,7 @@ mod wiremock_integration {
     use wiremock::matchers::{any, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    // Milestone 090: fixture moved to `mikebom-test-fixtures` repo;
+    // Milestone 090: fixture moved to `waybill-test-fixtures` repo;
     // resolved via build.rs's WAYBILL_FIXTURES_DIR env var.
     const ARGO_FIXTURE_SUBPATH: &str = "go/argo-style-no-cache/argo-workflows";
 
@@ -1700,7 +1700,7 @@ mod wiremock_integration {
         }
 
         // Run `go mod graph` against the simple-module fixture.
-        // Milestone 090: fixture moved to `mikebom-test-fixtures` repo.
+        // Milestone 090: fixture moved to `waybill-test-fixtures` repo.
         let fixture = PathBuf::from(env!("WAYBILL_FIXTURES_DIR")).join("go/simple-module");
         let output = std::process::Command::new("go")
             .args(["mod", "graph"])

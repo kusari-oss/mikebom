@@ -56,7 +56,7 @@
   "documentDescribes": [
     "SPDXRef-DocumentRoot-Y7NAKCM2QBYIR4CR"
   ],
-  "documentNamespace": "https://mikebom.kusari.dev/spdx/SSCGE7YIQYLHWEDZDQK7JEBTTLJ3IFDG",
+  "documentNamespace": "https://waybill.kusari.dev/spdx/SSCGE7YIQYLHWEDZDQK7JEBTTLJ3IFDG",
   "name": "simple-venv",
   "packages": [
     {

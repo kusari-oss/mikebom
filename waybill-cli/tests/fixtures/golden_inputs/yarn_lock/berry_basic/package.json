@@ -4,6 +4,6 @@
   "packageManager": "yarn@4.0.0",
   "dependencies": {
     "mikebom-fixture-lib": "^1.0.0",
-    "@mikebom-fixture/types-pkg": "^4.0.0"
+    "@waybill-fixture/types-pkg": "^4.0.0"
   }
 }

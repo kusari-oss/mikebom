@@ -86,7 +86,7 @@
   "documentDescribes": [
     "SPDXRef-Package-4BC3TYO5L6QI7GXM"
   ],
-  "documentNamespace": "https://mikebom.kusari.dev/spdx/T3DMTISOULB5GFLND4WEF4JW4JHPKQ4K",
+  "documentNamespace": "https://waybill.kusari.dev/spdx/T3DMTISOULB5GFLND4WEF4JW4JHPKQ4K",
   "name": "simple-module",
   "packages": [
     {

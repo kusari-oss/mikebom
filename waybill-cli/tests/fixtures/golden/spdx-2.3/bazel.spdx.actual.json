@@ -50,7 +50,7 @@
   "documentDescribes": [
     "SPDXRef-DocumentRoot-PSPB6QGS5NVS3K3H"
   ],
-  "documentNamespace": "https://mikebom.kusari.dev/spdx/NXBK25VTEI3WHWHDBMOUDXPATQ45EA7P",
+  "documentNamespace": "https://waybill.kusari.dev/spdx/NXBK25VTEI3WHWHDBMOUDXPATQ45EA7P",
   "name": "bazel",
   "packages": [
     {

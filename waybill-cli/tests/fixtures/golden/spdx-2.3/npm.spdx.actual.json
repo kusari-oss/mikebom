@@ -74,7 +74,7 @@
   "documentDescribes": [
     "SPDXRef-Package-IZGDOM2QHWPWWLEX"
   ],
-  "documentNamespace": "https://mikebom.kusari.dev/spdx/FNIX3XAR7SPQHDXJAG53L7VRUJ73ONBQ",
+  "documentNamespace": "https://waybill.kusari.dev/spdx/FNIX3XAR7SPQHDXJAG53L7VRUJ73ONBQ",
   "name": "node-modules-walk",
   "packages": [
     {

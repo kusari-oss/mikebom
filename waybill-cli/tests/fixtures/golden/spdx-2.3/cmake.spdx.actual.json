@@ -62,7 +62,7 @@
   "documentDescribes": [
     "SPDXRef-DocumentRoot-B4Y3DGALLJXRKGAP"
   ],
-  "documentNamespace": "https://mikebom.kusari.dev/spdx/XTGRQZDY7OGQBLPWWASQCPIDRGTHIFHZ",
+  "documentNamespace": "https://waybill.kusari.dev/spdx/XTGRQZDY7OGQBLPWWASQCPIDRGTHIFHZ",
   "name": "cmake",
   "packages": [
     {

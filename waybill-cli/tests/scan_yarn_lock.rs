@@ -75,7 +75,7 @@ fn yarn_v1_basic_fixture_emits_npm_components() {
         "expected waybill-fixture-lib@1.2.3 in output; got: {purls:?}",
     );
     assert!(
-        purls.contains(&"pkg:npm/%40mikebom-fixture/types-pkg@4.5.6".to_string()),
+        purls.contains(&"pkg:npm/%40waybill-fixture/types-pkg@4.5.6".to_string()),
         "expected URL-encoded @waybill-fixture/types-pkg@4.5.6 in output; got: {purls:?}",
     );
 }
@@ -90,7 +90,7 @@ fn yarn_berry_basic_fixture_emits_npm_components() {
         "expected waybill-fixture-lib@1.2.3 in output; got: {purls:?}",
     );
     assert!(
-        purls.contains(&"pkg:npm/%40mikebom-fixture/types-pkg@4.5.6".to_string()),
+        purls.contains(&"pkg:npm/%40waybill-fixture/types-pkg@4.5.6".to_string()),
         "expected URL-encoded @waybill-fixture/types-pkg@4.5.6 in output; got: {purls:?}",
     );
 }

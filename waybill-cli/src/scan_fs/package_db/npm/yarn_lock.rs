@@ -594,7 +594,7 @@ mod tests {
         assert_eq!(entries[0].version, "4.5.6");
         assert_eq!(
             entries[0].purl.as_str(),
-            "pkg:npm/%40mikebom-fixture/types-pkg@4.5.6"
+            "pkg:npm/%40waybill-fixture/types-pkg@4.5.6"
         );
     }
 
@@ -663,7 +663,7 @@ __metadata:
         assert_eq!(entries.len(), 2);
         let purls: Vec<&str> = entries.iter().map(|e| e.purl.as_str()).collect();
         assert!(purls.contains(&"pkg:npm/waybill-fixture-lib@1.2.3"));
-        assert!(purls.contains(&"pkg:npm/%40mikebom-fixture/types-pkg@4.5.6"));
+        assert!(purls.contains(&"pkg:npm/%40waybill-fixture/types-pkg@4.5.6"));
     }
 
     #[test]

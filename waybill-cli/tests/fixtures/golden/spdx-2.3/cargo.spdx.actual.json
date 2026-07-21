@@ -56,7 +56,7 @@
   "documentDescribes": [
     "SPDXRef-DocumentRoot-WEMHSOHTWM3OLG5R"
   ],
-  "documentNamespace": "https://mikebom.kusari.dev/spdx/ZGCU3UJCOKDF6I2T62YI7JLQZTET3ZNF",
+  "documentNamespace": "https://waybill.kusari.dev/spdx/ZGCU3UJCOKDF6I2T62YI7JLQZTET3ZNF",
   "name": "lockfile-v3",
   "packages": [
     {

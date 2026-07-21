@@ -82,7 +82,7 @@ fn bun_lock_basic_fixture_emits_npm_components() {
         "expected waybill-fixture-lib in output; got: {npm_purls:?}",
     );
     assert!(
-        npm_purls.contains(&"pkg:npm/%40mikebom-fixture/types-pkg@4.5.6"),
+        npm_purls.contains(&"pkg:npm/%40waybill-fixture/types-pkg@4.5.6"),
         "expected URL-encoded @waybill-fixture/types-pkg in output; got: {npm_purls:?}",
     );
 }
@@ -177,7 +177,7 @@ fn bun_lock_with_trailing_commas_parses_and_emits_components() {
         "expected waybill-fixture-lib from bun.lock in output; got: {npm_purls:?}"
     );
     assert!(
-        npm_purls.contains(&"pkg:npm/%40mikebom-fixture/types-pkg@4.5.6"),
+        npm_purls.contains(&"pkg:npm/%40waybill-fixture/types-pkg@4.5.6"),
         "expected scoped fixture package from bun.lock in output; got: {npm_purls:?}"
     );
 }

@@ -56,7 +56,7 @@
   "documentDescribes": [
     "SPDXRef-Package-Q7X32JLRPGCHW46Q"
   ],
-  "documentNamespace": "https://mikebom.kusari.dev/spdx/HH4BCPEC5HL2OR63IVP25DKS5EQMMYN5",
+  "documentNamespace": "https://waybill.kusari.dev/spdx/HH4BCPEC5HL2OR63IVP25DKS5EQMMYN5",
   "name": "pom-three-deps",
   "packages": [
     {

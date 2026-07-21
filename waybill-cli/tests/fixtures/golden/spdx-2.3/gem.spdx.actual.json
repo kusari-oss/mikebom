@@ -56,7 +56,7 @@
   "documentDescribes": [
     "SPDXRef-DocumentRoot-VITUDZBA4KFSHBZM"
   ],
-  "documentNamespace": "https://mikebom.kusari.dev/spdx/BDMSXZG3CXCZQET5IGDKMDEOKL2XMDHE",
+  "documentNamespace": "https://waybill.kusari.dev/spdx/BDMSXZG3CXCZQET5IGDKMDEOKL2XMDHE",
   "name": "simple-bundle",
   "packages": [
     {

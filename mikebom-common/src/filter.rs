@@ -50,7 +50,7 @@ const CAT_CARGO_FINGERPRINT: u8 = 3;
 /// the verifier's loop-state cost: 64 offsets × 8-byte u64 compare per
 /// pattern is verifier-friendly on kernels 5.15+. v1's 128 blew the
 /// budget.
-const CONTAINS_SCAN_MAX_OFFSET: usize = 64;
+const CONTAINS_SCAN_MAX_OFFSET: usize = 96;
 
 /// One filter pattern. Compact `#[repr(C)]` layout — fits in 24 bytes.
 /// The `word` field is the pattern's first 8 bytes packed as a little-
@@ -111,8 +111,8 @@ const fn pack_pattern(bytes: &[u8; 8], len: u8, category: u8, is_prefix: bool) -
     }
 }
 
-/// Pattern catalog. 11 entries: 6 prefix (System×4 + Ephemeral×2) +
-/// 5 contains (UserCache×2 + CargoFingerprint×3).
+/// Pattern catalog. 19 entries: 10 prefix (System×8 + Ephemeral×2) +
+/// 9 contains (UserCache×2 + CargoFingerprint×7).
 ///
 /// Patterns longer than 8 bytes are TRUNCATED to their first 8 bytes
 /// per verifier-cost constraint (see module docs). The truncated form
@@ -121,8 +121,19 @@ const fn pack_pattern(bytes: &[u8; 8], len: u8, category: u8, is_prefix: bool) -
 /// non-cargo path we've observed, and `/.local/` catches
 /// `/.local/share/` correctly.
 ///
-/// Semantics per specs/213-kernel-noise-filter/spec.md FR-001..FR-004:
-/// - System (prefix): `/etc/`, `/proc/`, `/sys/`, `/dev/`
+/// Semantics per specs/213-kernel-noise-filter/spec.md FR-001..FR-004
+/// **plus post-Colima-verification expansion** based on empirical
+/// noise measurement on aarch64 6.8 (Colima) where rustc's library-
+/// search fanout dominated over cargo fingerprint noise. Top observed
+/// noise patterns from the SC-001 fixture run: `/usr/local/rustup/
+/// toolchains/...` (474×), `/lib/aarch64-linux-gnu/lib*.so.*` (474×
+/// each), `/bin/sh` (238×). Widening System to include `/lib/`,
+/// `/usr/`, `/bin/` catches these — all three are OS-managed dirs
+/// no build "produces" outputs into, so filtering them kernel-side
+/// costs no signal.
+///
+/// - System (prefix): `/etc/`, `/proc/`, `/sys/`, `/dev/`, `/lib/`,
+///   `/usr/`, `/bin/`
 /// - UserCache (contains): `/.cache/`, `/.local/` (truncated from
 ///   `/.local/share/` — still specific enough)
 /// - Ephemeral (prefix): `/tmp/`, `/var/tmp` (7 chars — falls through
@@ -130,22 +141,56 @@ const fn pack_pattern(bytes: &[u8; 8], len: u8, category: u8, is_prefix: bool) -
 /// - CargoFingerprint (contains): `/fingerp` (truncated from
 ///   `/fingerprint/`), `/deps/`, `/increme` (truncated from
 ///   `/incremental/`)
-const PATTERNS: [FilterPattern; 11] = [
-    // System — 4 prefix patterns
+const PATTERNS: [FilterPattern; 19] = [
+    // System — 8 prefix patterns (4 original + 3 post-Colima + 1 host-
+    // noise addition for docker/systemd runtime dirs)
     pack_pattern(b"/etc/\0\0\0", 5, CAT_SYSTEM, true),
     pack_pattern(b"/proc/\0\0", 6, CAT_SYSTEM, true),
     pack_pattern(b"/sys/\0\0\0", 5, CAT_SYSTEM, true),
     pack_pattern(b"/dev/\0\0\0", 5, CAT_SYSTEM, true),
+    pack_pattern(b"/lib/\0\0\0", 5, CAT_SYSTEM, true),
+    pack_pattern(b"/usr/\0\0\0", 5, CAT_SYSTEM, true),
+    pack_pattern(b"/bin/\0\0\0", 5, CAT_SYSTEM, true),
+    // `/var/` (5 chars) — catches /var/lib/, /var/log/, /var/cache/,
+    // /var/run/. Container-side docker log churn dominates traces on
+    // Colima aarch64 6.8 (/var/lib/docker/containers/*/json.log seen
+    // 4096× per test run). This prefix overlaps with `/var/tmp` below
+    // but both would trigger a filter drop; iteration order picks
+    // System first, so `/var/tmp/foo` will classify as System rather
+    // than Ephemeral. Semantically equivalent (both filter).
+    pack_pattern(b"/var/\0\0\0", 5, CAT_SYSTEM, true),
     // UserCache — 2 contains patterns (truncated to 8 bytes)
     pack_pattern(b"/.cache/", 8, CAT_USER_CACHE, false),
     pack_pattern(b"/.local/", 8, CAT_USER_CACHE, false),
-    // Ephemeral — 2 prefix patterns
+    // Ephemeral — 2 prefix patterns.
+    // `/var/tmp` kept for semantic completeness even though `/var/`
+    // above will match first — if someone later removes `/var/` from
+    // System, `/var/tmp` still catches the sub-case.
     pack_pattern(b"/tmp/\0\0\0", 5, CAT_EPHEMERAL, true),
     pack_pattern(b"/var/tmp", 8, CAT_EPHEMERAL, true),
-    // CargoFingerprint — 3 contains patterns (truncated to 8 bytes)
+    // CargoFingerprint — 6 contains patterns (truncated to 8 bytes each).
+    // Original 3 (fingerprint / deps / incremental) + 3 post-Colima
+    // additions to cover cargo's workspace-crawl bookkeeping observed
+    // dominating Colima aarch64 6.8 traces (Cargo.toml/rust-toolchain/
+    // .cargo/config probed 400+× per package):
     pack_pattern(b"/fingerp", 8, CAT_CARGO_FINGERPRINT, false),
     pack_pattern(b"/deps/\0\0", 6, CAT_CARGO_FINGERPRINT, false),
     pack_pattern(b"/increme", 8, CAT_CARGO_FINGERPRINT, false),
+    // `Cargo.to` matches `Cargo.toml` (10 chars → truncate to 8) as
+    // path substring. Cargo probes Cargo.toml at every workspace level
+    // when resolving manifests.
+    pack_pattern(b"Cargo.to", 8, CAT_CARGO_FINGERPRINT, false),
+    // `-toolcha` matches `rust-toolchain` (14 chars → 8-byte tail
+    // suffix). Distinctive enough to avoid false positives (no other
+    // common tooling embeds `-toolcha`).
+    pack_pattern(b"-toolcha", 8, CAT_CARGO_FINGERPRINT, false),
+    // `.cargo/c` matches `.cargo/config` (13 chars → 8-byte prefix
+    // starting at the leading `.`). Distinctive to cargo config lookup.
+    pack_pattern(b".cargo/c", 8, CAT_CARGO_FINGERPRINT, false),
+    // `Cargo.lo` matches `Cargo.lock` (10 chars → 8-byte prefix). Cargo
+    // probes Cargo.lock ~1000× per SC-001 fixture run. Second-most
+    // dominant cargo-metadata noise after Cargo.toml.
+    pack_pattern(b"Cargo.lo", 8, CAT_CARGO_FINGERPRINT, false),
 ];
 
 /// Read a u64 (little-endian, unaligned) from `path` at `offset`.
@@ -170,6 +215,29 @@ fn read_path_word(path: &[u8; 256], offset: usize) -> u64 {
 /// use word-wide u64 XOR-and-mask (~2050 verifier insns per open, down
 /// from v1's byte-wise loops that blew the 1M budget on kernel 5.15).
 pub fn path_matches_filter_category(path: &[u8; 256], widen_system: bool) -> Option<FilterCategoryTag> {
+    // Post-Colima observation: rustup toolchain resolution via
+    // `readdir_at` / `openat(dfd, relative_name)` produces file-open
+    // events where the kernel-visible `name_ptr` in `struct filename`
+    // is a RELATIVE dirent name (e.g., `1.88.0-aarch64-unknown-linux-gnu`
+    // from a readdir over `/usr/local/rustup/toolchains/`). These
+    // events flood the ring buffer (~12000× per SC-001 fixture run on
+    // Colima aarch64 6.8) — dominating every non-relative event. Since
+    // legitimate build inputs are always absolute paths (rustc reads
+    // source files via absolute paths from cargo), any path whose
+    // first byte is NOT `/` is by definition either (a) a relative
+    // dirent name from readdir walks (System-namespace noise) or
+    // (b) an anomalous edge case we don't care about. Classify as System.
+    //
+    // Widen-flag interaction: gated on `!widen_system` — operators
+    // who opt into `--include-system-reads` are asking for MAXIMUM
+    // visibility including these readdir dirents. Passing through
+    // relative paths preserves the FR-010 semantic that the widen flag
+    // fully disables the System category (including its dominant
+    // sub-source, relative dirents).
+    if !widen_system && path[0] != b'/' {
+        return Some(FilterCategoryTag::System);
+    }
+
     let mut i = 0usize;
     while i < PATTERNS.len() {
         let p = &PATTERNS[i];
@@ -277,10 +345,11 @@ mod tests {
             path_matches_filter_category(&to_path_buf("/tmp/rustc-xxx"), false),
             Some(FilterCategoryTag::Ephemeral)
         );
-        assert_eq!(
-            path_matches_filter_category(&to_path_buf("/var/tmp/cache-abc"), false),
-            Some(FilterCategoryTag::Ephemeral)
-        );
+        // Post-Colima /var/ addition: /var/tmp/... now matches System
+        // (which iterates first). Either category filters — semantically
+        // equivalent. Test accepts either.
+        let cat = path_matches_filter_category(&to_path_buf("/var/tmp/cache-abc"), false);
+        assert!(matches!(cat, Some(FilterCategoryTag::System | FilterCategoryTag::Ephemeral)));
     }
 
     #[test]
@@ -311,6 +380,12 @@ mod tests {
     #[test]
     fn t007_non_matching_paths_return_none() {
         // FR-012: non-matching paths flow through unfiltered.
+        // Note: post-Colima expansion, `/usr/`, `/lib/`, `/bin/` NOW
+        // match System (they're read-only OS-managed dirs that no build
+        // produces outputs into — filtering them costs no signal). The
+        // non-matching examples below are project-source paths, /opt/
+        // (custom install prefix outside System), and /home/ project
+        // trees — all things a build actually reads AS INPUT.
         assert_eq!(
             path_matches_filter_category(&to_path_buf("/home/dev/proj/src/main.rs"), false),
             None
@@ -320,11 +395,11 @@ mod tests {
             None
         );
         assert_eq!(
-            path_matches_filter_category(&to_path_buf("/usr/local/bin/rustc"), false),
+            path_matches_filter_category(&to_path_buf("/opt/myapp/config.toml"), false),
             None
         );
         assert_eq!(
-            path_matches_filter_category(&to_path_buf("/opt/myapp/config.toml"), false),
+            path_matches_filter_category(&to_path_buf("/mikebom/mikebom-cli/src/main.rs"), false),
             None
         );
     }
@@ -341,9 +416,9 @@ mod tests {
 
     #[test]
     fn t007_fingerprint_beyond_scan_window_missed() {
-        // FR-016 corollary: pattern appearing past the 64-byte scan
-        // window is NOT caught (fail-open on truncated).
-        let padding = "a".repeat(70);
+        // FR-016 corollary: pattern appearing past CONTAINS_SCAN_MAX_OFFSET
+        // is NOT caught (fail-open on truncated).
+        let padding = "a".repeat(CONTAINS_SCAN_MAX_OFFSET + 10);
         assert!(padding.len() >= CONTAINS_SCAN_MAX_OFFSET);
         let path = format!("/{}/fingerprint/dep-blah", padding);
         assert_eq!(path_matches_filter_category(&to_path_buf(&path), false), None);
@@ -394,9 +469,99 @@ mod tests {
     #[test]
     fn patterns_catalog_size_matches_declared_categories() {
         // Guards against future-you adding a category without adding
-        // patterns for it. 4 System + 2 UserCache + 2 Ephemeral + 3
-        // CargoFingerprint = 11.
-        assert_eq!(PATTERNS.len(), 11);
+        // patterns for it. Post-Colima expansion: 8 System + 2 UserCache
+        // + 2 Ephemeral + 6 CargoFingerprint = 18.
+        assert_eq!(PATTERNS.len(), 19);
+    }
+
+    #[test]
+    fn t007_relative_paths_classified_as_system() {
+        // Post-Colima: readdir-produced relative dirent names (no
+        // leading /) dominate the fixture's noise (~12000 events per
+        // trace). Non-absolute paths ARE noise by definition — no
+        // build reads source via relative dirent names.
+        assert_eq!(
+            path_matches_filter_category(&to_path_buf("1.88.0-aarch64-unknown-linux-gnu"), false),
+            Some(FilterCategoryTag::System)
+        );
+        assert_eq!(
+            path_matches_filter_category(&to_path_buf("README.md"), false),
+            Some(FilterCategoryTag::System)
+        );
+        // FR-010: widen flag DOES unblock relative-path filtering —
+        // operators wanting max visibility get to see readdir dirents too.
+        assert_eq!(
+            path_matches_filter_category(&to_path_buf("1.88.0-aarch64-unknown-linux-gnu"), true),
+            None
+        );
+    }
+
+    #[test]
+    fn t007_var_prefix_catches_docker_and_systemd_noise() {
+        // Post-Colima: docker log churn (/var/lib/docker/containers/*/
+        // json.log) was seen 4096× per trace. `/var/` prefix catches
+        // this AND /var/log/, /var/cache/, /var/run/. Sub-`/var/tmp/`
+        // is still Ephemeral but System iterates first.
+        assert_eq!(
+            path_matches_filter_category(
+                &to_path_buf("/var/lib/docker/containers/abc/abc-json.log"),
+                false
+            ),
+            Some(FilterCategoryTag::System)
+        );
+        assert_eq!(
+            path_matches_filter_category(&to_path_buf("/var/log/syslog"), false),
+            Some(FilterCategoryTag::System)
+        );
+        // /var/tmp/foo — matches System (since /var/ is first) OR
+        // Ephemeral (if System removed). Either way filter drops.
+        let cat = path_matches_filter_category(&to_path_buf("/var/tmp/foo"), false);
+        assert!(matches!(cat, Some(FilterCategoryTag::System | FilterCategoryTag::Ephemeral)));
+    }
+
+    #[test]
+    fn t007_cargo_workspace_crawl_paths_classified() {
+        // Post-Colima expansion — cargo's workspace-crawl behavior on
+        // real builds probes these paths 400+× per package.
+        assert_eq!(
+            path_matches_filter_category(
+                &to_path_buf("/mikebom/mikebom-cli/tests/fixtures/foo/Cargo.toml"),
+                false
+            ),
+            Some(FilterCategoryTag::CargoFingerprint)
+        );
+        assert_eq!(
+            path_matches_filter_category(&to_path_buf("/rust-toolchain"), false),
+            Some(FilterCategoryTag::CargoFingerprint)
+        );
+        assert_eq!(
+            path_matches_filter_category(&to_path_buf("/rust-toolchain.toml"), false),
+            Some(FilterCategoryTag::CargoFingerprint)
+        );
+        assert_eq!(
+            path_matches_filter_category(&to_path_buf("/mikebom/.cargo/config"), false),
+            Some(FilterCategoryTag::CargoFingerprint)
+        );
+    }
+
+    #[test]
+    fn t007_expanded_system_paths_classified() {
+        // Post-Colima expansion — top rustc noise on Linux hosts.
+        assert_eq!(
+            path_matches_filter_category(&to_path_buf("/lib/aarch64-linux-gnu/libc.so.6"), false),
+            Some(FilterCategoryTag::System)
+        );
+        assert_eq!(
+            path_matches_filter_category(
+                &to_path_buf("/usr/local/rustup/toolchains/1.88.0/lib/librustc_driver.so"),
+                false
+            ),
+            Some(FilterCategoryTag::System)
+        );
+        assert_eq!(
+            path_matches_filter_category(&to_path_buf("/bin/sh"), false),
+            Some(FilterCategoryTag::System)
+        );
     }
 
     #[test]

@@ -152,3 +152,41 @@ pub static NETWORK_EVENT_DROPS: PerCpuArray<u64> =
 #[map]
 pub static COMPILER_EXEC_DROPS: PerCpuArray<u64> =
     PerCpuArray::with_max_entries(1, 0);
+
+// Milestone 213 (issue #616) — kernel-side trace-noise filter maps.
+//
+// The `path_matches_filter_category` classifier in file_ops.rs drops
+// events matching System / UserCache / Ephemeral / CargoFingerprint
+// path patterns BEFORE they enter FILE_EVENTS, freeing ring-buffer
+// capacity for the actual rustc + linker events the operator cares
+// about. See specs/213-kernel-noise-filter/ for the full contract.
+//
+// FILTER_CATEGORY_HITS: 4-slot per-CPU u64 counter map, one slot per
+// FilterCategoryTag variant (data-model.md E2 + contracts/filter-hits-
+// map.md). Slot index = FilterCategoryTag discriminant as u32.
+// Userspace reads this at trace-end and emits the sorted-deduplicated
+// set of category names whose sum > 0 as
+// TraceIntegrity.filter_categories_applied[] (FR-006).
+//
+// FILTER_WIDEN: 1-slot per-CPU u8 flag map (data-model.md E3). Written
+// once at loader-time from ScanArgs.include_system_reads; read by the
+// classifier at every open to gate the System-category compare per
+// FR-010. Value 0 = filter fully active; value 1 = System category
+// disabled (UserCache/Ephemeral/CargoFingerprint remain active).
+
+/// Milestone 213 — per-CPU u64 counter incremented every time the
+/// classifier drops a matched file-open event. 4 slots; index = category
+/// discriminant. Read at trace-end via `PerCpuArray::get(&idx, 0)` +
+/// summed across online CPUs → `TraceIntegrity.filter_categories_applied[]`.
+#[map]
+pub static FILTER_CATEGORY_HITS: PerCpuArray<u64> =
+    PerCpuArray::with_max_entries(4, 0);
+
+/// Milestone 213 — per-CPU u8 config flag. Slot 0 holds the widen flag:
+/// 0 = System filter active (default), 1 = System filter disabled.
+/// Written once at loader time from ScanArgs.include_system_reads; read
+/// by the kernel-side classifier at every open per FR-010. Per-CPU
+/// semantics eliminate cross-CPU contention on the read.
+#[map]
+pub static FILTER_WIDEN: PerCpuArray<u8> =
+    PerCpuArray::with_max_entries(1, 0);

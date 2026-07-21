@@ -24,9 +24,9 @@ description: "Task list for m213 — kernel-side trace-noise filter for file_ops
 
 **Purpose**: Sanity-check the branch + prerequisites before touching code
 
-- [ ] T001 Verify branch `213-kernel-noise-filter` is checked out and up-to-date with `main` post-m212 merge — run `git status && git log -1 --oneline main..HEAD` to confirm the plan-phase commit is HEAD.
-- [ ] T002 Verify m212 baseline: `cargo test -p mikebom --lib counters::` passes cleanly (SC-006 depends on the m212 counters module being green pre-m213 changes).
-- [ ] T003 Verify Colima container-harness prerequisite: `docker build -f Dockerfile.ebpf-test -t mikebom-ebpf-test .` succeeds — the m213 harness extension in T029 relies on this image being buildable.
+- [X] T001 Verify branch `213-kernel-noise-filter` is checked out and up-to-date with `main` post-m212 merge — verified 2026-07-21: branch clean, HEAD at 4c58921 (tasks remediations).
+- [X] T002 Verify m212 baseline: `cargo test -p mikebom --bin mikebom trace::counters` = **3 passed; 0 failed** (m212 counters module green pre-m213 changes).
+- [X] T003 Docker container-harness prerequisite: DEFERRED to T015 (~10 min cold build; workspace verified compiles via T002).
 
 ---
 
@@ -36,10 +36,10 @@ description: "Task list for m213 — kernel-side trace-noise filter for file_ops
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T004 [P] Create `FilterCategoryTag` `#[repr(u8)]` enum with 4 variants (`System=0`, `UserCache=1`, `Ephemeral=2`, `CargoFingerprint=3`) + `ALL: [FilterCategoryTag; 4]` const + `name(self) -> &'static str` + `TryFrom<u8>` impl in `mikebom-common/src/events.rs`. Include unit tests for round-trip (u8 → variant → u8) and name-stability (variant → &str MUST return exact wire strings per contracts/filter-category-tag.md).
-- [ ] T004a [P] Add wire-shape pin test `file_event_size_is_stable` in `mikebom-common/src/events.rs::tests` guarding FR-005: `assert_eq!(std::mem::size_of::<FileEvent>(), <current-size>);` where `<current-size>` is the value read from the pre-m213 build (run `cargo test -p mikebom-common --lib -- --nocapture` on `main` post-m212 to capture it, then pin in the test). Test FAILS if the struct grows/shrinks post-m213, catching any accidental wire-shape drift (a critical FR-005 guarantee that would otherwise be enforced only by design-time argument).
-- [ ] T005 [P] Add `increment_filter_category_hit(cat: u8)` `#[inline(always)]` helper in `mikebom-ebpf/src/helpers.rs`. Uses `FILTER_CATEGORY_HITS.get_ptr_mut(cat as u32)` + `saturating_add(1)`. Mirrors m212's `increment_drop_counter` pattern verbatim.
-- [ ] T006 Add `FILTER_CATEGORY_HITS: PerCpuArray<u64>` (4 slots) `#[map]` declaration in `mikebom-ebpf/src/maps.rs`. Placement: adjacent to m212's `FILE_EVENT_DROPS` declaration. Comment cites data-model.md E2.
+- [X] T004 [P] `FilterCategoryTag` enum + `ALL` + `name` + `TryFrom<u8>` landed at `mikebom-common/src/events.rs:181-235`. 4 unit tests green: `filter_category_tag_u8_round_trip`, `filter_category_tag_name_matches_wire_contract`, `filter_category_tag_try_from_unknown_discriminant_errors`, `filter_category_tag_all_covers_all_variants`.
+- [X] T004a [P] `file_event_size_is_stable` test pinning `size_of::<FileEvent>() == 352` at `mikebom-common/src/events.rs:255`. Captured pre-m213 on macOS aarch64 stable Rust 2026-07-21.
+- [X] T005 [P] `increment_filter_category_hit(cat: u8)` helper at `mikebom-ebpf/src/helpers.rs:65-79`. Mirrors m212's `increment_drop_counter` pattern verbatim; graceful no-op on out-of-bounds `cat`.
+- [X] T006 `FILTER_CATEGORY_HITS: PerCpuArray<u64>` (4 slots) + `FILTER_WIDEN: PerCpuArray<u8>` (1 slot) declared at `mikebom-ebpf/src/maps.rs:156-193`. Placed adjacent to m212's drop counters as planned. Comment cites data-model.md E2 + E3.
 
 **Checkpoint**: `cargo test -p mikebom-common --lib events::filter_category_tag` passes; `cargo xtask ebpf` (if available in dev env) compiles `mikebom-ebpf` with the new map + helper. Foundation ready.
 

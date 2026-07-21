@@ -60,3 +60,26 @@ pub fn increment_drop_counter(map: &PerCpuArray<u64>) {
         }
     }
 }
+
+/// Milestone 213 (issue #616) — increment the `FILTER_CATEGORY_HITS`
+/// counter for a specific category slot. `cat` is the
+/// `FilterCategoryTag` discriminant (0=System, 1=UserCache,
+/// 2=Ephemeral, 3=CargoFingerprint) per contracts/filter-hits-map.md.
+///
+/// Called only on the drop path — after the kernel-side classifier
+/// matched an open-syscall path to one of the four filter categories,
+/// BEFORE returning early from the kprobe (before `FILE_EVENTS.reserve`).
+/// Zero cost when the classifier returns `None`.
+///
+/// `get_ptr_mut(cat as u32)` returns `None` if the slot index is
+/// out-of-bounds, which the `if let` gracefully skips — protects against
+/// a future variant addition that forgets to bump `FILTER_CATEGORY_HITS`'s
+/// `max_entries` from 4 to 5.
+#[inline(always)]
+pub fn increment_filter_category_hit(cat: u8) {
+    if let Some(counter) = crate::maps::FILTER_CATEGORY_HITS.get_ptr_mut(cat as u32) {
+        unsafe {
+            *counter = (*counter).saturating_add(1);
+        }
+    }
+}

@@ -466,11 +466,20 @@ impl EventAggregator {
             },
         };
 
+        // Milestone 212 (issue #615) — kprobe_attach_failures[] now
+        // ALSO carries counter-map attach failure names per FR-005 Q3.
+        // Sort + dedup so the wire ordering is deterministic (FR-003
+        // byte-identity, spec.md research R6). Pre-m212 the field was
+        // always empty, so the sort is a no-op regression guarantee.
+        let mut kprobe_attach_failures = stats.counter_attach_failures.clone();
+        kprobe_attach_failures.sort();
+        kprobe_attach_failures.dedup();
+
         let trace_integrity = TraceIntegrity {
             ring_buffer_overflows: stats.ring_buffer_overflows,
             events_dropped: stats.events_dropped,
             uprobe_attach_failures: Vec::new(),
-            kprobe_attach_failures: Vec::new(),
+            kprobe_attach_failures,
             partial_captures: Vec::new(),
             bloom_filter_capacity: 65536,
             bloom_filter_false_positive_rate: 0.01,

@@ -18,7 +18,7 @@ mod inner {
     use std::path::{Path, PathBuf};
 
     use anyhow::{Context, Result};
-    use aya::programs::{KProbe, UProbe};
+    use aya::programs::{KProbe, TracePoint, UProbe};
     use aya::Ebpf;
     use tracing::{debug, info, warn};
 
@@ -121,17 +121,54 @@ mod inner {
         if let Err(e) = attach_kprobe(&mut bpf, "do_filp_open_entry", "do_filp_open") {
             warn!("could not attach do_filp_open kprobe: {e}");
         }
-        // vfs_open fires after successful open with the fully-resolved
-        // `struct path *`. Hooking here and calling `bpf_d_path` yields a
-        // canonical pathname even for opens that the other two probes
-        // miss (observed with curl's -O output file and cargo's .crate
-        // writes — root cause of the "Rust SBOM has zero components" bug).
-        if let Err(e) = attach_kprobe(&mut bpf, "vfs_open_entry", "vfs_open") {
-            warn!("could not attach vfs_open kprobe: {e}");
+        // Milestone 211 (issue #611): the vfs_open kprobe was retired
+        // — see mikebom-ebpf/src/programs/file_ops.rs for the full
+        // explanation. Its intended fallback role for paths that
+        // do_filp_open + openat2 miss was never realized because
+        // bpf_d_path (which vfs_open used to resolve paths) is
+        // restricted to LSM/fentry/fexit programs at the kernel API
+        // level. do_filp_open in practice covers every relevant open.
+
+        // Milestone 210 — compiler-pipeline tracepoints. Best-effort:
+        // if any of the three fail to attach (missing symbol, kernel
+        // config nostops), warn + continue. The compiler-pipeline
+        // observation gracefully degrades to "no data" — the rest of
+        // the trace pipeline (network, file-ops for non-compiler
+        // pids) keeps working.
+        if let Err(e) =
+            attach_tracepoint(&mut bpf, "sched_process_exec", "sched", "sched_process_exec")
+        {
+            warn!("could not attach sched_process_exec tracepoint: {e}");
+        }
+        if let Err(e) =
+            attach_tracepoint(&mut bpf, "sched_process_fork", "sched", "sched_process_fork")
+        {
+            warn!("could not attach sched_process_fork tracepoint: {e}");
+        }
+        if let Err(e) =
+            attach_tracepoint(&mut bpf, "sched_process_exit", "sched", "sched_process_exit")
+        {
+            warn!("could not attach sched_process_exit tracepoint: {e}");
         }
 
         info!("All probes attached");
         Ok(EbpfHandle { bpf })
+    }
+
+    fn attach_tracepoint(
+        bpf: &mut Ebpf,
+        prog: &str,
+        category: &str,
+        event: &str,
+    ) -> Result<()> {
+        let p: &mut TracePoint = bpf
+            .program_mut(prog)
+            .and_then(|p| p.try_into().ok())
+            .with_context(|| format!("program '{prog}' not found"))?;
+        p.load()?;
+        p.attach(category, event)?;
+        debug!(prog, category, event, "tracepoint attached");
+        Ok(())
     }
 
     fn attach_uprobe(bpf: &mut Ebpf, prog: &str, lib: &Path, fn_name: &str) -> Result<()> {

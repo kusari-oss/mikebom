@@ -7,8 +7,8 @@ use aya_ebpf::{
 use mikebom_common::events::{NetworkEvent, NetworkEventType};
 use mikebom_common::ip::IpAddr;
 
-use crate::helpers::{current_comm, current_pid, current_tid, should_trace};
-use crate::maps::{CONN_INFO, NETWORK_EVENTS};
+use crate::helpers::{current_comm, current_pid, current_tid, increment_drop_counter, should_trace};
+use crate::maps::{CONN_INFO, NETWORK_EVENTS, NETWORK_EVENT_DROPS};
 
 /// kprobe on tcp_v4_connect — captures destination address and port
 /// before the connection is established.
@@ -83,6 +83,8 @@ fn try_tcp_connect(ctx: &ProbeContext) -> Result<u32, i64> {
             (*event)._padding = [0; 3];
         }
         buf.submit(0);
+    } else {
+        increment_drop_counter(&NETWORK_EVENT_DROPS);
     }
 
     Ok(0)

@@ -1,0 +1,56 @@
+# Container-based eBPF integration test harness for m210.
+#
+# Runs mikebom trace against the two_binaries_diverge fixture INSIDE
+# the container and asserts the emitted attestation carries the
+# expected compiler-pipeline metadata. The container needs CAP_BPF
+# + CAP_PERFMON when run, so invocation is:
+#
+#   docker run --rm --privileged mikebom-ebpf-test
+#
+# `--privileged` is required for eBPF; `--rm` cleans up after.
+#
+# The image bakes in the full m210 build + fixture; the entrypoint
+# script runs the trace + assertion. Exits 0 on success, non-zero
+# on any failure.
+
+FROM rust:1.88-bookworm
+
+# eBPF build deps + runtime tools the trace-run needs (gcc for the
+# fixture's compiler-invocation traffic; jq for the assertion script).
+RUN apt-get update && apt-get install -y \
+    clang \
+    llvm \
+    libelf-dev \
+    linux-headers-generic \
+    pkg-config \
+    libssl-dev \
+    gcc \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN rustup toolchain install nightly --profile minimal \
+    && rustup component add rust-src --toolchain nightly \
+    && cargo +nightly install bpf-linker
+
+WORKDIR /mikebom
+
+# COPY the mikebom source tree WITHOUT the harness script, so iterating
+# on the assertion script doesn't invalidate the ~10-minute cargo-build
+# layer. `.dockerignore` (see below) excludes scripts/ from this COPY;
+# we bring the script in as a separate final layer.
+COPY . .
+
+# Build eBPF kernel bytecode + userspace binary with ebpf-tracing on.
+# The two-stage build lets Docker cache the eBPF layer independently
+# of the userspace changes.
+RUN cargo run --package xtask -- ebpf
+RUN cargo build --release --features ebpf-tracing --bin mikebom
+
+# Layer the harness script LAST so edits to it don't invalidate the
+# preceding cargo-build layer. The COPY at line ~36 above pulls in
+# scripts/ once, but a subsequent edit to the harness overwrites the
+# specific file that ENTRYPOINT invokes without a full rebuild.
+COPY scripts/ebpf-integration-test.sh /usr/local/bin/ebpf-integration-test.sh
+RUN chmod +x /usr/local/bin/ebpf-integration-test.sh
+
+ENTRYPOINT ["/usr/local/bin/ebpf-integration-test.sh"]

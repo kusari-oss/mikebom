@@ -8,8 +8,8 @@ use mikebom_common::events::{NetworkEvent, NetworkEventType};
 use mikebom_common::ip::IpAddr;
 use mikebom_common::maps::SslBufferInfo;
 
-use crate::helpers::{current_comm, current_pid, current_tid, should_trace};
-use crate::maps::{NETWORK_EVENTS, SCRATCH_BUF, SSL_BUFFERS};
+use crate::helpers::{current_comm, current_pid, current_tid, increment_drop_counter, should_trace};
+use crate::maps::{NETWORK_EVENTS, NETWORK_EVENT_DROPS, SCRATCH_BUF, SSL_BUFFERS};
 
 /// uprobe on SSL_read entry — captures the buffer pointer and SSL context.
 #[uprobe]
@@ -122,6 +122,8 @@ fn try_ssl_read_return(ctx: &RetProbeContext) -> Result<u32, i64> {
             (*event)._padding = [0; 3];
         }
         entry.submit(0);
+    } else {
+        increment_drop_counter(&NETWORK_EVENT_DROPS);
     }
 
     SSL_BUFFERS.remove(&tid).map_err(|e| e as i64)?;
@@ -199,6 +201,8 @@ fn try_ssl_write_entry(ctx: &ProbeContext) -> Result<u32, i64> {
             (*event)._padding = [0; 3];
         }
         entry.submit(0);
+    } else {
+        increment_drop_counter(&NETWORK_EVENT_DROPS);
     }
 
     Ok(0)

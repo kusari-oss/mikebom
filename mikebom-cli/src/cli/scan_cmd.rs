@@ -1191,6 +1191,25 @@ pub struct ScanArgs {
     /// warming defeats the ergonomics purpose.
     #[arg(long, default_value_t = 4, value_name = "N")]
     pub warm_go_cache_concurrency: u32,
+
+    /// Milestone 210: bypass the FR-016 trace-noise denylist that
+    /// normally filters system paths (`/etc`, `/proc`), user caches
+    /// (`~/.cache`), ephemeral paths (`/tmp`), and secret-adjacent
+    /// paths (`/var/run/secrets`, `~/.ssh`, `~/.aws`, `*.key`,
+    /// `*_rsa` etc.) from the emitted `mikebom:source-read-set`
+    /// annotation.
+    ///
+    /// When set, EVERY observed read on a compiler-invocation
+    /// descendant lands in the read-set — including any secret
+    /// paths the compiler touched. Intended for auditing use cases
+    /// where the operator explicitly wants full visibility. NOT
+    /// recommended for SBOMs shared beyond the operator's own
+    /// audit trail.
+    ///
+    /// No-op when the compiler-pipeline trace didn't run (default
+    /// features / non-Linux host / no `--features ebpf-tracing`).
+    #[arg(long)]
+    pub include_system_reads: bool,
 }
 
 /// Milestone 173: CLI-side cache-warming mode. Two variants;
@@ -2955,7 +2974,11 @@ pub async fn execute(
     };
 
     // `trace_integrity` is a clean record: no eBPF ran, so there's nothing
-    // to have overflowed or dropped.
+    // to have overflowed or dropped. Milestone 212 audit (T007a): this
+    // site is SCAN-MODE — no eBPF programs are loaded here, so
+    // `ring_buffer_overflows: 0` is factually correct + FR-004 compliant.
+    // Real-trace attestations flow through `mikebom-cli/src/cli/scan.rs`
+    // where the value comes from `counters::read_ring_buffer_drops`.
     let integrity = TraceIntegrity {
         ring_buffer_overflows: 0,
         events_dropped: 0,
@@ -3371,6 +3394,12 @@ pub async fn execute(
         // from `divergence_records`. `None` when no divergence
         // detected (FR-009: no annotation emitted on clean scans).
         collisions_summary: collisions_summary.as_ref(),
+        // Milestone 210 — scan-mode never populates the compiler-
+        // pipeline field; that data comes from `mikebom trace`
+        // (eBPF-observed) and reaches the SBOM emitter via the
+        // `sbom generate --attestation` code path. Preserving `None`
+        // here per m208 defensive-default pattern.
+        compiler_pipeline: None,
     };
     let output_cfg = OutputConfig {
         mikebom_version: env!("CARGO_PKG_VERSION"),
@@ -4428,6 +4457,10 @@ mod tests {
             // Milestone 173 — test helper defaults match CLI defaults.
             warm_go_cache: WarmGoCacheMode::Off,
             warm_go_cache_concurrency: 4,
+            // Milestone 210 — trace-noise filter escape hatch off
+            // by default. Individual tests flip on when auditing
+            // secret paths in fixtures.
+            include_system_reads: false,
         }
     }
 

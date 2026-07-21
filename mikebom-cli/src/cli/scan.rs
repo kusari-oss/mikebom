@@ -92,6 +92,17 @@ pub struct ScanArgs {
     #[arg(long = "attestation-format", value_name = "FORMAT", default_value = "witness-v0.1")]
     pub attestation_format: String,
 
+    /// Milestone 210 (FR-016) — bypass the compiler-pipeline aggregator's
+    /// default denylist for `/etc/`, `/proc/`, `/sys/`, `/dev/`, user
+    /// cache directories, `/tmp/`, and secret-adjacent paths. Off by
+    /// default so per-component `mikebom:source-read-set` annotations
+    /// stay signal-heavy (system reads dominate a build's read syscalls
+    /// but almost never disambiguate which SOURCE input produced a
+    /// binary). Turn on for kernel/toolchain SBOM audits where reads
+    /// under `/usr/include`, `/usr/lib`, or `/dev/urandom` are relevant.
+    #[arg(long)]
+    pub include_system_reads: bool,
+
     #[arg(last = true)]
     pub command: Vec<String>,
 }
@@ -176,9 +187,12 @@ async fn execute_scan(args: ScanArgs) -> anyhow::Result<()> {
     use crate::attestation::serializer;
     use crate::error::MikebomError;
     use crate::trace::aggregator::EventAggregator;
+    use crate::trace::compiler_pipeline::{
+        CompilerPipelineAggregator, FilterConfig as CompilerFilterConfig,
+    };
     use crate::trace::loader::{self, LoaderConfig};
     use crate::trace::processor::TraceStats;
-    use mikebom_common::events::{FileEvent, NetworkEvent};
+    use mikebom_common::events::{CompilerExecEvent, FileEvent, NetworkEvent};
     use mikebom_common::types::timestamp::Timestamp;
 
     let trace_start = Timestamp::now();
@@ -225,6 +239,17 @@ async fn execute_scan(args: ScanArgs) -> anyhow::Result<()> {
 
     // Poll ring buffers while child runs
     let mut agg = EventAggregator::with_boot_offset(boot_offset_ns);
+    // Milestone 210 — compiler-pipeline aggregator. Populated by the
+    // sched_process_exec + sched_process_fork + sched_process_exit
+    // tracepoints via the COMPILER_EXEC_EVENTS ring buffer + the
+    // existing FILE_EVENTS ring buffer (stamped in userspace against
+    // pid_to_invocation_id). `home_dir` seeds the FR-016 secrets
+    // denylist glob expansion for `~/.ssh/*`, `~/.aws/*`, etc.
+    let mut compiler_agg = CompilerPipelineAggregator::new(CompilerFilterConfig {
+        include_system_reads: args.include_system_reads,
+        home_dir: std::env::var("HOME").ok().map(std::path::PathBuf::from),
+    });
+    let mut compiler_count: u64 = 0;
     let mut net_count: u64 = 0;
     let mut file_count: u64 = 0;
     let start = Instant::now();
@@ -254,7 +279,19 @@ async fn execute_scan(args: ScanArgs) -> anyhow::Result<()> {
     //                       wget, a single binary that links libssl).
     let mut target_pids: std::collections::HashSet<u32> = std::collections::HashSet::new();
     target_pids.insert(child_pid);
-    let filter_by_pid = !args.trace_children;
+    // Milestone 211 (issue #611) — pid-filter now applies ONLY when the
+    // operator explicitly attached to an existing pid via `--target-pid`.
+    // The "run a command and trace it" path (`mikebom trace run -- ...`)
+    // ALWAYS wants to see events from the entire process subtree —
+    // cargo builds fan out to rustc / cc / ld / etc., all of which are
+    // legitimate build activity the SBOM depends on. Pre-m211, the
+    // default filter dropped every child-process event silently,
+    // producing empty `file_access.operations[]` on every build trace
+    // even when the kprobes were firing. `--trace-children` is now
+    // implicitly always-true for command-execute mode; the flag stays
+    // for backwards compat + as an explicit opt-in for --target-pid
+    // scenarios where descendant tracking is desired.
+    let filter_by_pid = args.target_pid.is_some() && !args.trace_children;
 
     fn drain_network(
         bpf: &mut aya::Ebpf,
@@ -290,9 +327,49 @@ async fn execute_scan(args: ScanArgs) -> anyhow::Result<()> {
         n
     }
 
+    /// Milestone 210 — drain the compiler-pipeline ring buffer. Feeds
+    /// events into the CompilerPipelineAggregator + the file-op
+    /// events into the file-aggregator via the existing pid map.
+    /// When the COMPILER_EXEC_EVENTS map is unavailable (older eBPF
+    /// object, tracepoint attach failed), returns 0 no-op.
+    fn drain_compiler(
+        bpf: &mut aya::Ebpf,
+        compiler_agg: &mut CompilerPipelineAggregator,
+        count: &mut u64,
+        max: usize,
+    ) -> usize {
+        let Some(map) = bpf.map_mut("COMPILER_EXEC_EVENTS") else {
+            return 0;
+        };
+        let Ok(mut rb) = RingBuf::try_from(map) else {
+            return 0;
+        };
+        let mut n = 0;
+        while n < max {
+            match rb.next() {
+                Some(item) => {
+                    let data: &[u8] = item.as_ref();
+                    if data.len() >= core::mem::size_of::<CompilerExecEvent>() {
+                        let ev = unsafe {
+                            core::ptr::read_unaligned(
+                                data.as_ptr() as *const CompilerExecEvent,
+                            )
+                        };
+                        compiler_agg.handle_compiler_event(&ev);
+                        *count += 1;
+                        n += 1;
+                    }
+                }
+                None => break,
+            }
+        }
+        n
+    }
+
     fn drain_file(
         bpf: &mut aya::Ebpf,
         agg: &mut EventAggregator,
+        compiler_agg: &mut CompilerPipelineAggregator,
         count: &mut u64,
         max: usize,
         target_pids: &std::collections::HashSet<u32>,
@@ -313,6 +390,17 @@ async fn execute_scan(args: ScanArgs) -> anyhow::Result<()> {
                         };
                         if target_pids.is_empty() || target_pids.contains(&ev.pid) {
                             agg.handle_file_event(&ev);
+                            // Milestone 211 (post-#611 follow-up): also route
+                            // to the m210 compiler-pipeline aggregator so
+                            // per-invocation read_set/write_set populates.
+                            // The compiler_agg keys on pid_to_invocation_id,
+                            // so events from non-compiler pids no-op harmlessly.
+                            // Without this dual-dispatch the compiler-pipeline
+                            // invocation buckets stayed empty even with file
+                            // events flowing through the doc-level file_access
+                            // — which in turn kept m210's C130 always emitting
+                            // empty payloads.
+                            compiler_agg.handle_file_event(&ev);
                             *count += 1;
                         }
                         n += 1;
@@ -338,7 +426,21 @@ async fn execute_scan(args: ScanArgs) -> anyhow::Result<()> {
         let active_filter = if filter_by_pid { &target_pids } else { &empty };
 
         drain_network(&mut handle.bpf, &mut agg, &mut net_count, MAX_PER_ITER, active_filter);
-        drain_file(&mut handle.bpf, &mut agg, &mut file_count, MAX_PER_ITER, active_filter);
+        // Milestone 211 post-#611 follow-up: drain compiler exec events
+        // BEFORE file events on each iteration. compiler exec/exit
+        // events populate `compiler_agg.pid_to_invocation_id` which the
+        // per-invocation read_set/write_set routing in
+        // `compiler_agg.handle_file_event` reads. If file events drain
+        // first, they arrive for pids not yet in the map → the
+        // compiler_agg drops them silently → invocation buckets stay
+        // empty even when both event streams are healthy.
+        drain_compiler(
+            &mut handle.bpf,
+            &mut compiler_agg,
+            &mut compiler_count,
+            MAX_PER_ITER,
+        );
+        drain_file(&mut handle.bpf, &mut agg, &mut compiler_agg, &mut file_count, MAX_PER_ITER, active_filter);
 
         if done {
             // Settling drain: pull remaining events with a hard deadline so
@@ -346,7 +448,13 @@ async fn execute_scan(args: ScanArgs) -> anyhow::Result<()> {
             let deadline = Instant::now() + Duration::from_millis(250);
             while Instant::now() < deadline {
                 let n = drain_network(&mut handle.bpf, &mut agg, &mut net_count, MAX_PER_ITER, active_filter)
-                    + drain_file(&mut handle.bpf, &mut agg, &mut file_count, MAX_PER_ITER, active_filter);
+                    + drain_compiler(
+                        &mut handle.bpf,
+                        &mut compiler_agg,
+                        &mut compiler_count,
+                        MAX_PER_ITER,
+                    )
+                    + drain_file(&mut handle.bpf, &mut agg, &mut compiler_agg, &mut file_count, MAX_PER_ITER, active_filter);
                 if n == 0 {
                     break;
                 }
@@ -410,17 +518,41 @@ async fn execute_scan(args: ScanArgs) -> anyhow::Result<()> {
         agg.apply_file_hashes(&file_hashes);
     }
 
+    // Milestone 212 (issue #615) — read per-CPU drop counters from
+    // the three ring-buffer companion maps + populate
+    // TraceIntegrity.ring_buffer_overflows with the aggregate. Pre-m212
+    // this field was hardcoded to 0, silently hiding the drop-rate
+    // bug that #614 investigation surfaced. The failing-map names (if
+    // any) flow into TraceIntegrity.kprobe_attach_failures[] per Q3.
+    // events_dropped stays 0 per Q2 (deferred to waybill#618).
+    let drops = crate::trace::counters::read_ring_buffer_drops(&mut handle.bpf);
     let trace = agg.finalize(&TraceStats {
         network_events: net_count,
         file_events: file_count,
-        ring_buffer_overflows: 0,
+        ring_buffer_overflows: drops.total(),
         events_dropped: 0,
+        counter_attach_failures: drops.attach_failures,
     });
 
     if trace.network_trace.connections.is_empty()
         && trace.file_access.operations.is_empty()
+        && compiler_count == 0
     {
-        tracing::error!(net = net_count, file = file_count, "Zero aggregated");
+        // Milestone 210 — the "no dependency activity" bail-out is
+        // now a three-way OR: bail only when the network trace, the
+        // file-op trace, AND the compiler-pipeline observation ALL
+        // captured zero events. A hermetic offline build (cargo build
+        // against a vendored fixture) legitimately has zero network
+        // activity + zero file-op activity if the `vfs_open` kprobe
+        // failed to attach; when the compiler pipeline still recorded
+        // rustc/cc invocations we have real source→binary attribution
+        // and should proceed to emit the attestation.
+        tracing::error!(
+            net = net_count,
+            file = file_count,
+            compiler = compiler_count,
+            "Zero aggregated"
+        );
         return Err(MikebomError::NoDependencyActivity.into());
     }
 
@@ -500,6 +632,25 @@ async fn execute_scan(args: ScanArgs) -> anyhow::Result<()> {
         return Ok(());
     }
 
+    // Milestone 210 — finalize the compiler-pipeline aggregator.
+    // Returns `None` for cases where the trace captured zero compiler
+    // invocations (older kernels without sched_process_exec,
+    // tracepoint attach failed, operator's command didn't invoke a
+    // whitelisted compiler). None-elision preserves pre-m210
+    // attestation byte-identity per research R6.
+    let compiler_pipeline_data = if compiler_count > 0 {
+        Some(compiler_agg.finalize())
+    } else {
+        None
+    };
+    if let Some(ref data) = compiler_pipeline_data {
+        tracing::info!(
+            invocations = data.invocations.len(),
+            secrets_filtered = data.secrets_read_filtered,
+            "compiler-pipeline data captured"
+        );
+    }
+
     let stmt = builder::build_attestation(
         trace,
         &AttestationConfig {
@@ -512,6 +663,7 @@ async fn execute_scan(args: ScanArgs) -> anyhow::Result<()> {
         },
         trace_start,
         trace_end,
+        compiler_pipeline_data,
     )?;
 
     // Feature 006 — write signed DSSE envelope when a signing identity

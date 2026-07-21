@@ -22,7 +22,7 @@ fn scan_to_spdx_raw(fixture: &std::path::Path) -> String {
     let tmp = tempfile::tempdir().expect("tempdir");
     let fake_home = tempfile::tempdir().expect("fake-home tempdir");
     let out = tmp.path().join("waybill.spdx.json");
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let mut cmd = Command::new(bin);
     apply_fake_home_env(&mut cmd, fake_home.path());
     let status = cmd

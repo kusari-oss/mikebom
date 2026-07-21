@@ -149,7 +149,7 @@ async fn mount_oci_endpoints(server: &MockServer, repo: &str, tag: &str, image: 
 }
 
 fn mikebom_bin() -> &'static str {
-    env!("CARGO_BIN_EXE_mikebom")
+    env!("CARGO_BIN_EXE_waybill")
 }
 
 // ── Tests ────────────────────────────────────────────────────────────

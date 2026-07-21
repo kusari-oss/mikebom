@@ -164,7 +164,7 @@ pub fn update_goldens_gate() -> bool {
 // -----------------------------------------------------------------------
 
 /// Ensures the pinned artifact is hydrated (clone or pull), invokes
-/// the released `waybill` binary via `env!("CARGO_BIN_EXE_mikebom")`
+/// the released `waybill` binary via `env!("CARGO_BIN_EXE_waybill")`
 /// (matches milestone-101 windows-smoke pattern), reads back the
 /// emitted CDX + SPDX 2.3 + SPDX 3 files, and returns them parsed.
 pub fn scan_target(target: &CorpusTarget) -> Result<EmittedSboms, CorpusInfraError> {
@@ -179,7 +179,7 @@ pub fn scan_target(target: &CorpusTarget) -> Result<EmittedSboms, CorpusInfraErr
     let spdx23_path = out.path().join(format!("{}.spdx.json", target.name));
     let spdx3_path = out.path().join(format!("{}.spdx3.json", target.name));
 
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let mut cmd = std::process::Command::new(bin);
     cmd.arg("--offline"); // Corpus scans MUST NOT hit the network
                           // from the waybill side — network activity

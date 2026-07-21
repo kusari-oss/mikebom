@@ -55,7 +55,7 @@ fn triple_scan_at_path(
     let cdx_path = tmp.path().join("out.cdx.json");
     let spdx23_path = tmp.path().join("out.spdx.json");
     let spdx3_path = tmp.path().join("out.spdx3.json");
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let mut cmd = Command::new(bin);
     let input_flag = match input {
         InputKind::Path => "--path",

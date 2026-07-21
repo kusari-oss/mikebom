@@ -131,7 +131,7 @@ fn build_legacy_gzip_tar_ipk(control_body: &str) -> Vec<u8> {
 }
 
 fn mikebom_bin() -> &'static str {
-    env!("CARGO_BIN_EXE_mikebom")
+    env!("CARGO_BIN_EXE_waybill")
 }
 
 /// Scan a directory and return the emitted CycloneDX 1.6 JSON as a

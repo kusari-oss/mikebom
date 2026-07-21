@@ -28,7 +28,7 @@ fn should_run() -> Option<PathBuf> {
 }
 
 fn scan(path: &std::path::Path) -> serde_json::Value {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let out = tempfile::NamedTempFile::new()
         .expect("tempfile")
         .path()

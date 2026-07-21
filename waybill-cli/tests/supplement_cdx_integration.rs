@@ -26,7 +26,7 @@
 //!
 //! Tests synthesize a minimal Cargo project fixture + a hand-rolled
 //! supplement file in a per-test `tempfile::tempdir()` and invoke the
-//! `waybill` binary via cargo's `CARGO_BIN_EXE_mikebom` env. The Cargo
+//! `waybill` binary via cargo's `CARGO_BIN_EXE_waybill` env. The Cargo
 //! fixture is the smallest path to exercise waybill's component
 //! emission without pulling in real-world workspace fixtures.
 
@@ -36,7 +36,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 fn binary_path() -> &'static str {
-    env!("CARGO_BIN_EXE_mikebom")
+    env!("CARGO_BIN_EXE_waybill")
 }
 
 /// Write a minimal Cargo project fixture so waybill's scanner has

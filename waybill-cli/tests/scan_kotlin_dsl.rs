@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 fn binary_path() -> &'static str {
-    env!("CARGO_BIN_EXE_mikebom")
+    env!("CARGO_BIN_EXE_waybill")
 }
 
 fn workspace_fixture(name: &str) -> PathBuf {

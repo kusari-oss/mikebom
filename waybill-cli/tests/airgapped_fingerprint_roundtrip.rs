@@ -29,7 +29,7 @@ use std::path::Path;
 use std::process::Command;
 
 fn binary_path() -> &'static str {
-    env!("CARGO_BIN_EXE_mikebom")
+    env!("CARGO_BIN_EXE_waybill")
 }
 
 fn embedded_sha() -> &'static str {

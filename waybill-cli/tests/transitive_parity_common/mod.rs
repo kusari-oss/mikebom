@@ -170,7 +170,7 @@ pub fn skip_on_macos_for_os_package(ecosystem: &str) -> Option<String> {
 /// tuples. Uses SPDX 2.3 emission as the lingua franca with the
 /// other two tools.
 pub fn run_mikebom(fixture_path: &Path) -> Vec<Edge> {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let tmp = tempfile::tempdir().expect("tempdir");
     let out = tmp.path().join("waybill.spdx.json");
     let fake_home = tempfile::tempdir().expect("fake-home");

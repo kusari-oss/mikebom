@@ -11,7 +11,7 @@ fn fixture(sub: &str) -> PathBuf {
 }
 
 fn scan_path(path: &Path) -> (String, serde_json::Value) {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let tmp = tempfile::tempdir().expect("tempdir");
     let out_path = tmp.path().join("sbom.cdx.json");
     let output = Command::new(bin)

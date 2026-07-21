@@ -51,7 +51,7 @@ fn scan_subpath(sub: &str) -> serde_json::Value {
 }
 
 fn scan_path(path: &Path) -> serde_json::Value {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let tmp = tempfile::tempdir().expect("tempdir");
     let out_path = tmp.path().join("sbom.cdx.json");
     let output = Command::new(bin)
@@ -724,7 +724,7 @@ fn scan_maven_placeholder_version_becomes_design_tier() {
 // ---------------------------------------------------------------------------
 
 fn scan_path_args(path: &Path, extra: &[&str]) -> serde_json::Value {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let tmp = tempfile::tempdir().expect("tempdir");
     let out_path = tmp.path().join("sbom.cdx.json");
     let mut cmd = Command::new(bin);
@@ -833,7 +833,7 @@ fn cli_local_fixture(sub: &str) -> PathBuf {
 }
 
 fn scan_path_format(path: &Path, format: &str) -> serde_json::Value {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let out_path = tempfile::NamedTempFile::new()
         .expect("tempfile")
         .path()

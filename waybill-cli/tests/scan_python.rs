@@ -9,7 +9,7 @@
 //! only (matches how users invoke it in practice).
 //!
 //! The binary path is the debug build produced by `cargo test`; the
-//! `env!("CARGO_BIN_EXE_mikebom")` env var points at it automatically.
+//! `env!("CARGO_BIN_EXE_waybill")` env var points at it automatically.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -27,7 +27,7 @@ fn fixture(sub: &str) -> PathBuf {
 /// "runtime-only" subset. The default (`false`) emits all lifecycle
 /// scopes per FR-002.
 fn scan(fixture_sub: &str, exclude_dev_test: bool) -> serde_json::Value {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let out_path = tempfile::NamedTempFile::new()
         .expect("tempfile")
         .path()

@@ -25,7 +25,7 @@ fn fixture_root() -> PathBuf {
 }
 
 fn time_scan(fixture: &Path, exclude_paths: &[&str]) -> Duration {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let mut cmd = Command::new(bin);
     cmd.arg("--offline")
         .arg("sbom")

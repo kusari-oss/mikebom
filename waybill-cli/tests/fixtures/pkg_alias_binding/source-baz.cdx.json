@@ -27,7 +27,7 @@
       "purl": "pkg:cargo/baz@1.0.0",
       "properties": [
         {
-          "name": "mikebom:source-document-binding",
+          "name": "waybill:source-document-binding",
           "value": "{\"source_doc_id\":{\"sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\"},\"hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"strength\":\"verified\",\"algo\":\"v1\"}"
         }
       ]

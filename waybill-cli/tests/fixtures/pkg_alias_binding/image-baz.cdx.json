@@ -26,39 +26,39 @@
       "name": "baz",
       "properties": [
         {
-          "name": "mikebom:source-files",
+          "name": "waybill:source-files",
           "value": "[\"usr/local/bin/baz\"]"
         },
         {
-          "name": "mikebom:sbom-tier",
+          "name": "waybill:sbom-tier",
           "value": "analyzed"
         },
         {
-          "name": "mikebom:binary-class",
+          "name": "waybill:binary-class",
           "value": "elf"
         },
         {
-          "name": "mikebom:binary-stripped",
+          "name": "waybill:binary-stripped",
           "value": "true"
         },
         {
-          "name": "mikebom:linkage-kind",
+          "name": "waybill:linkage-kind",
           "value": "static"
         },
         {
-          "name": "mikebom:binary-packed",
+          "name": "waybill:binary-packed",
           "value": "none"
         },
         {
-          "name": "mikebom:layer-digest",
+          "name": "waybill:layer-digest",
           "value": "sha256:c175c9e34aca692d431c1460b2875bfe0e014a1c7614c7ac5023f549c8de87f9"
         },
         {
-          "name": "mikebom:source-document-binding",
-          "value": "{\"algo\":\"v1\",\"reason\":\"source-not-found-in-bind-target\",\"source_doc_id\":{\"iri\":\"<WORKSPACE>/mikebom-cli/tests/fixtures/pkg_alias_binding/source-baz.cdx.json\",\"sha256\":\"77f8f8a7c3cdfb462d1db32380dda41236e0064872d15120992e9166081dd1b6\"},\"strength\":\"unknown\"}"
+          "name": "waybill:source-document-binding",
+          "value": "{\"algo\":\"v1\",\"reason\":\"source-not-found-in-bind-target\",\"source_doc_id\":{\"iri\":\"<WORKSPACE>/waybill-cli/tests/fixtures/pkg_alias_binding/source-baz.cdx.json\",\"sha256\":\"b96cb3840829e5d70f814d9de5d730f5b2c72cab08c09ed4a73deeb3ad4250fb\"},\"strength\":\"unknown\"}"
         },
         {
-          "name": "mikebom:workspace-member",
+          "name": "waybill:workspace-member",
           "value": "[\"usr/local/bin\"]"
         }
       ],
@@ -70,57 +70,57 @@
     {
       "aggregate": "incomplete_first_party_only",
       "assemblies": [
-        "mikebom-test:latest@0.0.0"
+        "waybill-test:latest@0.0.0"
       ]
     },
     {
       "aggregate": "complete",
       "dependencies": [
-        "mikebom-test:latest@0.0.0"
+        "waybill-test:latest@0.0.0"
       ]
     }
   ],
   "dependencies": [
     {
+      "dependsOn": [],
+      "ref": "pkg:generic/baz?file-sha256=446db4a0be0f85cb27407792fd4ff3de0a60a92b1055dc14ee810483df82b5c9"
+    },
+    {
       "dependsOn": [
         "pkg:generic/baz?file-sha256=446db4a0be0f85cb27407792fd4ff3de0a60a92b1055dc14ee810483df82b5c9"
       ],
-      "ref": "mikebom-test:latest@0.0.0"
-    },
-    {
-      "dependsOn": [],
-      "ref": "pkg:generic/baz?file-sha256=446db4a0be0f85cb27407792fd4ff3de0a60a92b1055dc14ee810483df82b5c9"
+      "ref": "waybill-test:latest@0.0.0"
     }
   ],
   "metadata": {
     "authors": [
       {
-        "name": "mikebom"
+        "name": "waybill"
       }
     ],
     "component": {
-      "bom-ref": "mikebom-test:latest@0.0.0",
-      "cpe": "cpe:2.3:a:mikebom:mikebom-test_latest:0.0.0:*:*:*:*:*:*:*",
+      "bom-ref": "waybill-test:latest@0.0.0",
+      "cpe": "cpe:2.3:a:waybill:waybill-test_latest:0.0.0:*:*:*:*:*:*:*",
       "externalReferences": [
         {
           "comment": "auto-detected from resolved image reference",
           "type": "distribution",
-          "url": "mikebom-test:latest@sha256:f4cbbc5b46bac66f6f95159af6c5c8adf6f89dc7c4a847e3ff464d44cff0a592"
+          "url": "waybill-test:latest@sha256:13883c6ca07b46d00f98f78f721e62c66bc9a4e8304e19d5a58cde73067bbcf0"
         },
         {
           "comment": "source-tier SBOM that produced this build/deployment",
           "hashes": [
             {
               "alg": "SHA-256",
-              "content": "77f8f8a7c3cdfb462d1db32380dda41236e0064872d15120992e9166081dd1b6"
+              "content": "b96cb3840829e5d70f814d9de5d730f5b2c72cab08c09ed4a73deeb3ad4250fb"
             }
           ],
           "type": "bom",
-          "url": "<WORKSPACE>/mikebom-cli/tests/fixtures/pkg_alias_binding/source-baz.cdx.json"
+          "url": "<WORKSPACE>/waybill-cli/tests/fixtures/pkg_alias_binding/source-baz.cdx.json"
         }
       ],
-      "name": "mikebom-test:latest",
-      "purl": "pkg:generic/mikebom-test:latest@0.0.0",
+      "name": "waybill-test:latest",
+      "purl": "pkg:generic/waybill-test:latest@0.0.0",
       "type": "application",
       "version": "0.0.0"
     },
@@ -138,51 +138,51 @@
     ],
     "properties": [
       {
-        "name": "mikebom:generation-context",
+        "name": "waybill:generation-context",
         "value": "container-image-scan"
       },
       {
-        "name": "mikebom:os-release-missing-fields",
+        "name": "waybill:os-release-missing-fields",
         "value": "ID,VERSION_ID"
       },
       {
-        "name": "mikebom:trace-integrity-ring-buffer-overflows",
+        "name": "waybill:trace-integrity-ring-buffer-overflows",
         "value": "0"
       },
       {
-        "name": "mikebom:trace-integrity-events-dropped",
+        "name": "waybill:trace-integrity-events-dropped",
         "value": "0"
       },
       {
-        "name": "mikebom:trace-integrity-uprobe-attach-failures",
+        "name": "waybill:trace-integrity-uprobe-attach-failures",
         "value": "0"
       },
       {
-        "name": "mikebom:trace-integrity-kprobe-attach-failures",
+        "name": "waybill:trace-integrity-kprobe-attach-failures",
         "value": "0"
       },
       {
-        "name": "mikebom:graph-completeness",
+        "name": "waybill:graph-completeness",
         "value": "partial"
       },
       {
-        "name": "mikebom:graph-completeness-reason",
+        "name": "waybill:graph-completeness-reason",
         "value": "transitive-edges-unresolvable: generic"
       },
       {
-        "name": "mikebom:workspaces-detected",
+        "name": "waybill:workspaces-detected",
         "value": "[\"usr/local/bin\"]"
       }
     ],
     "supplier": {
-      "name": "mikebom contributors"
+      "name": "waybill contributors"
     },
     "timestamp": "1970-01-01T00:00:00Z",
     "tools": {
       "components": [
         {
-          "name": "mikebom",
-          "publisher": "mikebom contributors",
+          "name": "waybill",
+          "publisher": "waybill contributors",
           "type": "application",
           "version": "0.1.0-alpha.65"
         }

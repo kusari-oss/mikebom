@@ -203,7 +203,7 @@ fn scenario_4_npm_fixture_has_purl_parity_between_cdx_and_spdx3() {
     let fake_home = tempfile::tempdir().expect("fake-home tempdir");
     let cdx_path = tmp.path().join("out.cdx.json");
     let spdx3_path = tmp.path().join("out.spdx3.json");
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_mikebom"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_waybill"));
     apply_fake_home_env(&mut cmd, fake_home.path());
     let out = cmd
         .arg("--offline")
@@ -293,7 +293,7 @@ fn scenario_5_opt_in_not_selected_produces_no_spdx3_artifact() {
     let fx = fixture_path("cargo/lockfile-v3");
     let tmp = tempfile::tempdir().expect("tempdir");
     let fake_home = tempfile::tempdir().expect("fake-home tempdir");
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_mikebom"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_waybill"));
     cmd.current_dir(tmp.path());
     apply_fake_home_env(&mut cmd, fake_home.path());
     let out = cmd
@@ -339,7 +339,7 @@ fn run_scan_with_format(
     let tmp = tempfile::tempdir().expect("tempdir");
     let fake_home = tempfile::tempdir().expect("fake-home tempdir");
     let out_path = tmp.path().join("out.spdx3.json");
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_mikebom"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_waybill"));
     apply_fake_home_env(&mut cmd, fake_home.path());
     // Pin `OutputConfig.created` so two sequential subprocess
     // invocations of this helper produce byte-identical SPDX 3

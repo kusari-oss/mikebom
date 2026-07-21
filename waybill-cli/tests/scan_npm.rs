@@ -46,7 +46,7 @@ thread_local! {
 }
 
 fn scan_raw(fixture_sub: &str, exclude_dev_test: bool) -> std::process::Output {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let out_path = tempfile::NamedTempFile::new()
         .expect("tempfile")
         .path()
@@ -385,7 +385,7 @@ fn cli_local_fixture(sub: &str) -> PathBuf {
 /// `npm/` prefix that `fixture()` adds) and return the parsed CDX
 /// JSON.
 fn scan_path(path: &Path) -> serde_json::Value {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let out_path = tempfile::NamedTempFile::new()
         .expect("tempfile")
         .path()

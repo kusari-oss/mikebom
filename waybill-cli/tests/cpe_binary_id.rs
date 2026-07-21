@@ -37,10 +37,10 @@ use tempfile::TempDir;
 fn mikebom_self_scan_emits_no_spurious_openssl_cpe() {
     let dir = TempDir::new().unwrap();
     let dest = dir.path().join("waybill-under-test");
-    std::fs::copy(env!("CARGO_BIN_EXE_mikebom"), &dest).unwrap();
+    std::fs::copy(env!("CARGO_BIN_EXE_waybill"), &dest).unwrap();
 
     let out_file = dir.path().join("out.cdx.json");
-    let output = Command::new(env!("CARGO_BIN_EXE_mikebom"))
+    let output = Command::new(env!("CARGO_BIN_EXE_waybill"))
         .args(["sbom", "scan", "--path"])
         .arg(dir.path())
         .arg("--output")

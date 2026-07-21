@@ -46,7 +46,7 @@ fn mapping_doc_path() -> PathBuf {
     let tmp = tempfile::tempdir().expect("tempdir");
     let fake_home = tempfile::tempdir().expect("fake-home");
     let cdx_path = tmp.path().join("out.cdx.json");
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let mut cmd = Command::new(bin);
     apply_fake_home_env(&mut cmd, fake_home.path());
     cmd

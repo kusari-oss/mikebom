@@ -34,7 +34,7 @@ fn dual_scan(case: &EcosystemCase) -> Scan {
     let fake_home = tempfile::tempdir().expect("fake-home");
     let cdx_path = tmp.path().join("out.cdx.json");
     let spdx23_path = tmp.path().join("out.spdx.json");
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let mut cmd = Command::new(bin);
     apply_fake_home_env(&mut cmd, fake_home.path());
     cmd

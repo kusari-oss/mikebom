@@ -21,19 +21,19 @@
       "name": "busybox",
       "properties": [
         {
-          "name": "mikebom:cpe-candidates",
+          "name": "waybill:cpe-candidates",
           "value": "cpe:2.3:a:alpinelinux:busybox:1.36.1-r15:*:*:*:*:*:*:* | cpe:2.3:a:busybox:busybox:1.36.1-r15:*:*:*:*:*:*:*"
         },
         {
-          "name": "mikebom:source-files",
+          "name": "waybill:source-files",
           "value": "[\"lib/apk/db/installed\"]"
         },
         {
-          "name": "mikebom:sbom-tier",
+          "name": "waybill:sbom-tier",
           "value": "deployed"
         },
         {
-          "name": "mikebom:workspace-member",
+          "name": "waybill:workspace-member",
           "value": "[\"lib/apk/db\"]"
         }
       ],
@@ -64,19 +64,19 @@
       "name": "musl",
       "properties": [
         {
-          "name": "mikebom:cpe-candidates",
+          "name": "waybill:cpe-candidates",
           "value": "cpe:2.3:a:alpinelinux:musl:1.2.4_git20230717-r4:*:*:*:*:*:*:* | cpe:2.3:a:musl:musl:1.2.4_git20230717-r4:*:*:*:*:*:*:*"
         },
         {
-          "name": "mikebom:source-files",
+          "name": "waybill:source-files",
           "value": "[\"lib/apk/db/installed\"]"
         },
         {
-          "name": "mikebom:sbom-tier",
+          "name": "waybill:sbom-tier",
           "value": "deployed"
         },
         {
-          "name": "mikebom:workspace-member",
+          "name": "waybill:workspace-member",
           "value": "[\"lib/apk/db\"]"
         }
       ],
@@ -133,12 +133,12 @@
   "metadata": {
     "authors": [
       {
-        "name": "mikebom"
+        "name": "waybill"
       }
     ],
     "component": {
       "bom-ref": "synthetic@0.0.0",
-      "cpe": "cpe:2.3:a:mikebom:synthetic:0.0.0:*:*:*:*:*:*:*",
+      "cpe": "cpe:2.3:a:waybill:synthetic:0.0.0:*:*:*:*:*:*:*",
       "name": "synthetic",
       "purl": "pkg:generic/synthetic@0.0.0",
       "type": "application",
@@ -158,43 +158,43 @@
     ],
     "properties": [
       {
-        "name": "mikebom:generation-context",
+        "name": "waybill:generation-context",
         "value": "filesystem-scan"
       },
       {
-        "name": "mikebom:trace-integrity-ring-buffer-overflows",
+        "name": "waybill:trace-integrity-ring-buffer-overflows",
         "value": "0"
       },
       {
-        "name": "mikebom:trace-integrity-events-dropped",
+        "name": "waybill:trace-integrity-events-dropped",
         "value": "0"
       },
       {
-        "name": "mikebom:trace-integrity-uprobe-attach-failures",
+        "name": "waybill:trace-integrity-uprobe-attach-failures",
         "value": "0"
       },
       {
-        "name": "mikebom:trace-integrity-kprobe-attach-failures",
+        "name": "waybill:trace-integrity-kprobe-attach-failures",
         "value": "0"
       },
       {
-        "name": "mikebom:graph-completeness",
+        "name": "waybill:graph-completeness",
         "value": "complete"
       },
       {
-        "name": "mikebom:workspaces-detected",
+        "name": "waybill:workspaces-detected",
         "value": "[\"lib/apk/db\"]"
       }
     ],
     "supplier": {
-      "name": "mikebom contributors"
+      "name": "waybill contributors"
     },
     "timestamp": "1970-01-01T00:00:00Z",
     "tools": {
       "components": [
         {
-          "name": "mikebom",
-          "publisher": "mikebom contributors",
+          "name": "waybill",
+          "publisher": "waybill contributors",
           "type": "application",
           "version": "0.1.0-alpha.65"
         }

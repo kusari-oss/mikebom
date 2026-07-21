@@ -259,7 +259,7 @@ async fn mount_referrers_404(server: &MockServer, repo: &str, manifest_digest: &
 }
 
 fn mikebom_bin() -> &'static str {
-    env!("CARGO_BIN_EXE_mikebom")
+    env!("CARGO_BIN_EXE_waybill")
 }
 
 // ── Tests ────────────────────────────────────────────────────────────

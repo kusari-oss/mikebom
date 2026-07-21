@@ -4,7 +4,7 @@
 //! Three scenarios cover the documented exit-code semantics
 //! (0 / 1 / 2) and the two output formats (table / json).
 //!
-//! Each scenario shells out via `Command::new(CARGO_BIN_EXE_mikebom)`
+//! Each scenario shells out via `Command::new(CARGO_BIN_EXE_waybill)`
 //! against a fresh tempdir; HOME / package-cache env vars are
 //! isolated per the cross-host-goldens convention.
 

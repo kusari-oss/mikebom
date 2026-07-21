@@ -37,7 +37,7 @@ fn network_tests_enabled() -> bool {
 }
 
 fn binary_path() -> &'static str {
-    env!("CARGO_BIN_EXE_mikebom")
+    env!("CARGO_BIN_EXE_waybill")
 }
 
 /// Read the build-time-embedded corpus SHA from the same env var

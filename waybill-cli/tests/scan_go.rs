@@ -27,7 +27,7 @@ fn scan_path(path: &std::path::Path) -> serde_json::Value {
 }
 
 fn scan_path_args(path: &std::path::Path, extra: &[&str]) -> serde_json::Value {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let tmp = tempfile::NamedTempFile::new().expect("tempfile");
     let out_path = tmp.path().to_path_buf();
     let mut cmd = Command::new(bin);
@@ -810,7 +810,7 @@ fn scan_go_cache_zip_alone_is_retained_when_no_binary() {
 /// SBOM. Needed for the milestone-050 hint test, which asserts on
 /// the `tracing::info` line rather than SBOM content.
 fn scan_path_with_stderr(path: &std::path::Path) -> (serde_json::Value, String) {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let tmp = tempfile::NamedTempFile::new().expect("tempfile");
     let out_path = tmp.path().to_path_buf();
     let output = Command::new(bin)
@@ -902,7 +902,7 @@ fn scan_isolated_two_format(
     fixture_sub: &str,
     extra: &[&str],
 ) -> (serde_json::Value, serde_json::Value) {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let tmp = tempfile::tempdir().expect("tempdir");
     let spdx_path = tmp.path().join("out.spdx.json");
     let cdx_path = tmp.path().join("out.cdx.json");
@@ -1230,7 +1230,7 @@ fn scan_go_zero_requires_emits_main_module_no_edges() {
     )
     .expect("write go.mod");
 
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let out_path = tmp.path().join("out.spdx.json");
     let fake_home = tempfile::tempdir().expect("fake-home tempdir");
     let empty_cache = tempfile::tempdir().expect("empty-cache tempdir");

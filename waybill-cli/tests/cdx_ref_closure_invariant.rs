@@ -75,7 +75,7 @@ fn run_mikebom_cdx_with_override(
         "fixture path missing: {}",
         fixture.display()
     );
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let tmp = tempfile::tempdir().expect("tempdir");
     let out_path = tmp.path().join("waybill.cdx.json");
     let fake_home = tempfile::tempdir().expect("fake-home tempdir");

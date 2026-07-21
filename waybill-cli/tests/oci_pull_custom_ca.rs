@@ -20,7 +20,7 @@ use std::io::Write;
 use std::process::Command;
 
 fn mikebom_bin() -> &'static str {
-    env!("CARGO_BIN_EXE_mikebom")
+    env!("CARGO_BIN_EXE_waybill")
 }
 
 #[test]

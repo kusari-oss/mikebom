@@ -139,7 +139,7 @@ fn strip_version(purl: &str) -> &str {
 fn build_inclusion_marker_cross_format_consistency() {
     use std::process::Command;
 
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let tmp = tempfile::tempdir().expect("tempdir");
     let cdx_path = tmp.path().join("out.cdx.json");
     let spdx23_path = tmp.path().join("out.spdx.json");
@@ -373,7 +373,7 @@ exit 1
         let fake_home = tempfile::tempdir().expect("fake-home");
         let real_path = std::env::var("PATH").expect("PATH set");
 
-        let bin = env!("CARGO_BIN_EXE_mikebom");
+        let bin = env!("CARGO_BIN_EXE_waybill");
         let mut cmd = Command::new(bin);
         apply_fake_home_env(&mut cmd, fake_home.path());
         let output = cmd

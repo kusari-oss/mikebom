@@ -12,7 +12,7 @@ fn fixture(sub: &str) -> PathBuf {
 }
 
 fn run_scan(path: &Path) -> Output {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let tmp = tempfile::NamedTempFile::new().expect("tempfile");
     Command::new(bin)
         .arg("--offline")
@@ -28,7 +28,7 @@ fn run_scan(path: &Path) -> Output {
 }
 
 fn run_scan_with_output(path: &Path) -> (Output, tempfile::TempDir, PathBuf) {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let tmp = tempfile::tempdir().expect("tempdir");
     let out_path = tmp.path().join("sbom.cdx.json");
     let output = Command::new(bin)
@@ -172,7 +172,7 @@ fn scan_cargo_v2_lockfile_refuses_with_actionable_error() {
 /// Run waybill against `path` with optional extra args (e.g.
 /// `--exclude-scope dev,build,test`). Returns the parsed SBOM JSON.
 fn run_scan_args(path: &Path, extra_args: &[&str]) -> serde_json::Value {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let tmp = tempfile::tempdir().expect("tempdir");
     let out_path = tmp.path().join("sbom.cdx.json");
     let mut cmd = Command::new(bin);

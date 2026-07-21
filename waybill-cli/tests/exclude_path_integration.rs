@@ -28,7 +28,7 @@
 //!   / SC-005): supplying `--exclude-path '['` (unmatched bracket)
 //!   causes waybill to exit non-zero before any walker begins.
 //!
-//! Tests use the `waybill` binary via `env!("CARGO_BIN_EXE_mikebom")`,
+//! Tests use the `waybill` binary via `env!("CARGO_BIN_EXE_waybill")`,
 //! the standard cargo-supported way to invoke the integration-test
 //! target without rebuilding. Each test creates its fixture tree
 //! under `tempfile::tempdir()` for isolation.
@@ -38,7 +38,7 @@
 use std::process::Command;
 
 fn binary_path() -> &'static str {
-    env!("CARGO_BIN_EXE_mikebom")
+    env!("CARGO_BIN_EXE_waybill")
 }
 
 /// Write a minimal real Cargo project (no deps, no lockfile required

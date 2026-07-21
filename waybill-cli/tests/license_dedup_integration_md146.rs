@@ -40,7 +40,7 @@ fn license_dedup_end_to_end_via_synthetic_rpm_md146() {
     let spdx23_path = dir.path().join("out.spdx.json");
     let spdx3_path = dir.path().join("out.spdx3.json");
 
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let out = Command::new(bin)
         .arg("--offline")
         .arg("sbom")

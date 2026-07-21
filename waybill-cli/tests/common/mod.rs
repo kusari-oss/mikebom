@@ -22,7 +22,7 @@
 //!
 //! * [`bin`] — the path to the `waybill` binary built by cargo's
 //!   integration-test machinery. Before this module, ~10 files
-//!   had a private `fn bin() -> &'static str { env!("CARGO_BIN_EXE_mikebom") }`.
+//!   had a private `fn bin() -> &'static str { env!("CARGO_BIN_EXE_waybill") }`.
 //!
 //! * [`workspace_root`] — the absolute path to the workspace root
 //!   (the parent of `waybill-cli/`). Used by tests that need to
@@ -88,7 +88,7 @@ pub const CASES: &[EcosystemCase] = &[
 /// machinery. Tests use this to spawn the CLI as a subprocess —
 /// `Command::new(common::bin())`.
 pub fn bin() -> &'static str {
-    env!("CARGO_BIN_EXE_mikebom")
+    env!("CARGO_BIN_EXE_waybill")
 }
 
 /// Absolute path to the workspace root — the parent of

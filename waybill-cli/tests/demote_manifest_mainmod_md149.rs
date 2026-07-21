@@ -27,7 +27,7 @@ const ROOT_VERSION: &str = "1.2.3";
 /// preserve flag set and milestone-077 root-override flags; return the
 /// emitted document as a parsed serde_json::Value.
 fn scan_with_demote(fixture: &Path, format: &str, output_file: &str) -> Value {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let tmp = tempfile::tempdir().expect("tempdir");
     let out_path = tmp.path().join(output_file);
     let fake_home = tempfile::tempdir().expect("fake-home tempdir");

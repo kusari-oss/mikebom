@@ -5,7 +5,7 @@ use std::process::Command;
 
 #[test]
 fn help_text_documents_exclude_path() {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let output = Command::new(bin)
         .arg("sbom")
         .arg("scan")

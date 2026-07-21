@@ -10,7 +10,7 @@ use std::path::Path;
 use std::process::Command;
 
 fn run_scan_cdx(path: &Path, extra_args: &[&str]) -> serde_json::Value {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let tmp = tempfile::tempdir().expect("tempdir");
     let out_path = tmp.path().join("sbom.cdx.json");
     let mut cmd = Command::new(bin);
@@ -33,7 +33,7 @@ fn run_scan_cdx(path: &Path, extra_args: &[&str]) -> serde_json::Value {
 }
 
 fn run_scan_spdx23(path: &Path, extra_args: &[&str]) -> serde_json::Value {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let tmp = tempfile::tempdir().expect("tempdir");
     let out_path = tmp.path().join("sbom.spdx.json");
     let mut cmd = Command::new(bin);
@@ -58,7 +58,7 @@ fn run_scan_spdx23(path: &Path, extra_args: &[&str]) -> serde_json::Value {
 }
 
 fn run_scan_spdx3(path: &Path, extra_args: &[&str]) -> serde_json::Value {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let tmp = tempfile::tempdir().expect("tempdir");
     let out_path = tmp.path().join("sbom.spdx3.json");
     let mut cmd = Command::new(bin);
@@ -161,7 +161,7 @@ fn root_purl_flag_emits_verbatim_purl_across_all_three_formats() {
 #[cfg_attr(test, allow(clippy::unwrap_used))]
 fn root_purl_invalid_value_exits_nonzero_at_clap_parse() {
     let tmp = tempfile::tempdir().unwrap();
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let out_path = tmp.path().join("out.cdx.json");
     let status = Command::new(bin)
         .arg("--offline")
@@ -185,7 +185,7 @@ fn root_purl_invalid_value_exits_nonzero_at_clap_parse() {
 #[cfg_attr(test, allow(clippy::unwrap_used))]
 fn root_purl_conflicts_with_root_name() {
     let tmp = tempfile::tempdir().unwrap();
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let out_path = tmp.path().join("out.cdx.json");
     let status = Command::new(bin)
         .arg("--offline")
@@ -211,7 +211,7 @@ fn root_purl_conflicts_with_root_name() {
 #[cfg_attr(test, allow(clippy::unwrap_used))]
 fn root_purl_conflicts_with_no_root_purl() {
     let tmp = tempfile::tempdir().unwrap();
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let out_path = tmp.path().join("out.cdx.json");
     let status = Command::new(bin)
         .arg("--offline")

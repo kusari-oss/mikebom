@@ -31,10 +31,10 @@ fn fixture_root() -> PathBuf {
 }
 
 /// Mirrors the `scan_path` helper at `scan_npm.rs:387`: shells out to
-/// the built waybill binary via `env!("CARGO_BIN_EXE_mikebom")` and
+/// the built waybill binary via `env!("CARGO_BIN_EXE_waybill")` and
 /// returns the parsed CDX JSON.
 fn scan_path(path: &Path) -> serde_json::Value {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let out_path = tempfile::NamedTempFile::new()
         .expect("tempfile")
         .path()

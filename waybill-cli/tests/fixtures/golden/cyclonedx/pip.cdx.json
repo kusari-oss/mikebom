@@ -35,19 +35,19 @@
       "name": "certifi",
       "properties": [
         {
-          "name": "mikebom:cpe-candidates",
+          "name": "waybill:cpe-candidates",
           "value": "cpe:2.3:a:certifi:certifi:2023.7.22:*:*:*:*:*:*:* | cpe:2.3:a:python-certifi:certifi:2023.7.22:*:*:*:*:*:*:*"
         },
         {
-          "name": "mikebom:source-files",
+          "name": "waybill:source-files",
           "value": "[\".venv/lib/python3.12/site-packages/certifi-2023.7.22.dist-info/METADATA\"]"
         },
         {
-          "name": "mikebom:sbom-tier",
+          "name": "waybill:sbom-tier",
           "value": "deployed"
         },
         {
-          "name": "mikebom:workspace-member",
+          "name": "waybill:workspace-member",
           "value": "[\".venv/lib/python3.12/site-packages/certifi-2023.7.22.dist-info\"]"
         }
       ],
@@ -92,19 +92,19 @@
       "name": "charset-normalizer",
       "properties": [
         {
-          "name": "mikebom:cpe-candidates",
+          "name": "waybill:cpe-candidates",
           "value": "cpe:2.3:a:charset-normalizer:charset-normalizer:3.3.2:*:*:*:*:*:*:* | cpe:2.3:a:python-charset-normalizer:charset-normalizer:3.3.2:*:*:*:*:*:*:*"
         },
         {
-          "name": "mikebom:source-files",
+          "name": "waybill:source-files",
           "value": "[\".venv/lib/python3.12/site-packages/charset_normalizer-3.3.2.dist-info/METADATA\"]"
         },
         {
-          "name": "mikebom:sbom-tier",
+          "name": "waybill:sbom-tier",
           "value": "deployed"
         },
         {
-          "name": "mikebom:workspace-member",
+          "name": "waybill:workspace-member",
           "value": "[\".venv/lib/python3.12/site-packages/charset_normalizer-3.3.2.dist-info\"]"
         }
       ],
@@ -149,19 +149,19 @@
       "name": "flask",
       "properties": [
         {
-          "name": "mikebom:cpe-candidates",
+          "name": "waybill:cpe-candidates",
           "value": "cpe:2.3:a:flask:flask:3.0.0:*:*:*:*:*:*:* | cpe:2.3:a:python-flask:flask:3.0.0:*:*:*:*:*:*:*"
         },
         {
-          "name": "mikebom:source-files",
+          "name": "waybill:source-files",
           "value": "[\".venv/lib/python3.12/site-packages/flask-3.0.0.dist-info/METADATA\"]"
         },
         {
-          "name": "mikebom:sbom-tier",
+          "name": "waybill:sbom-tier",
           "value": "deployed"
         },
         {
-          "name": "mikebom:workspace-member",
+          "name": "waybill:workspace-member",
           "value": "[\".venv/lib/python3.12/site-packages/flask-3.0.0.dist-info\"]"
         }
       ],
@@ -206,19 +206,19 @@
       "name": "idna",
       "properties": [
         {
-          "name": "mikebom:cpe-candidates",
+          "name": "waybill:cpe-candidates",
           "value": "cpe:2.3:a:idna:idna:3.6:*:*:*:*:*:*:* | cpe:2.3:a:python-idna:idna:3.6:*:*:*:*:*:*:*"
         },
         {
-          "name": "mikebom:source-files",
+          "name": "waybill:source-files",
           "value": "[\".venv/lib/python3.12/site-packages/idna-3.6.dist-info/METADATA\"]"
         },
         {
-          "name": "mikebom:sbom-tier",
+          "name": "waybill:sbom-tier",
           "value": "deployed"
         },
         {
-          "name": "mikebom:workspace-member",
+          "name": "waybill:workspace-member",
           "value": "[\".venv/lib/python3.12/site-packages/idna-3.6.dist-info\"]"
         }
       ],
@@ -263,19 +263,19 @@
       "name": "jinja2",
       "properties": [
         {
-          "name": "mikebom:cpe-candidates",
+          "name": "waybill:cpe-candidates",
           "value": "cpe:2.3:a:jinja2:jinja2:3.1.2:*:*:*:*:*:*:* | cpe:2.3:a:python-jinja2:jinja2:3.1.2:*:*:*:*:*:*:*"
         },
         {
-          "name": "mikebom:source-files",
+          "name": "waybill:source-files",
           "value": "[\".venv/lib/python3.12/site-packages/jinja2-3.1.2.dist-info/METADATA\"]"
         },
         {
-          "name": "mikebom:sbom-tier",
+          "name": "waybill:sbom-tier",
           "value": "deployed"
         },
         {
-          "name": "mikebom:workspace-member",
+          "name": "waybill:workspace-member",
           "value": "[\".venv/lib/python3.12/site-packages/jinja2-3.1.2.dist-info\"]"
         }
       ],
@@ -320,19 +320,19 @@
       "name": "requests",
       "properties": [
         {
-          "name": "mikebom:cpe-candidates",
+          "name": "waybill:cpe-candidates",
           "value": "cpe:2.3:a:requests:requests:2.31.0:*:*:*:*:*:*:* | cpe:2.3:a:python-requests:requests:2.31.0:*:*:*:*:*:*:*"
         },
         {
-          "name": "mikebom:source-files",
+          "name": "waybill:source-files",
           "value": "[\".venv/lib/python3.12/site-packages/requests-2.31.0.dist-info/METADATA\"]"
         },
         {
-          "name": "mikebom:sbom-tier",
+          "name": "waybill:sbom-tier",
           "value": "deployed"
         },
         {
-          "name": "mikebom:workspace-member",
+          "name": "waybill:workspace-member",
           "value": "[\".venv/lib/python3.12/site-packages/requests-2.31.0.dist-info\"]"
         }
       ],
@@ -377,19 +377,19 @@
       "name": "urllib3",
       "properties": [
         {
-          "name": "mikebom:cpe-candidates",
+          "name": "waybill:cpe-candidates",
           "value": "cpe:2.3:a:urllib3:urllib3:2.0.7:*:*:*:*:*:*:* | cpe:2.3:a:python-urllib3:urllib3:2.0.7:*:*:*:*:*:*:*"
         },
         {
-          "name": "mikebom:source-files",
+          "name": "waybill:source-files",
           "value": "[\".venv/lib/python3.12/site-packages/urllib3-2.0.7.dist-info/METADATA\"]"
         },
         {
-          "name": "mikebom:sbom-tier",
+          "name": "waybill:sbom-tier",
           "value": "deployed"
         },
         {
-          "name": "mikebom:workspace-member",
+          "name": "waybill:workspace-member",
           "value": "[\".venv/lib/python3.12/site-packages/urllib3-2.0.7.dist-info\"]"
         }
       ],
@@ -482,12 +482,12 @@
   "metadata": {
     "authors": [
       {
-        "name": "mikebom"
+        "name": "waybill"
       }
     ],
     "component": {
       "bom-ref": "simple-venv@0.0.0",
-      "cpe": "cpe:2.3:a:mikebom:simple-venv:0.0.0:*:*:*:*:*:*:*",
+      "cpe": "cpe:2.3:a:waybill:simple-venv:0.0.0:*:*:*:*:*:*:*",
       "name": "simple-venv",
       "purl": "pkg:generic/simple-venv@0.0.0",
       "type": "application",
@@ -507,47 +507,47 @@
     ],
     "properties": [
       {
-        "name": "mikebom:generation-context",
+        "name": "waybill:generation-context",
         "value": "filesystem-scan"
       },
       {
-        "name": "mikebom:os-release-missing-fields",
+        "name": "waybill:os-release-missing-fields",
         "value": "ID,VERSION_ID"
       },
       {
-        "name": "mikebom:trace-integrity-ring-buffer-overflows",
+        "name": "waybill:trace-integrity-ring-buffer-overflows",
         "value": "0"
       },
       {
-        "name": "mikebom:trace-integrity-events-dropped",
+        "name": "waybill:trace-integrity-events-dropped",
         "value": "0"
       },
       {
-        "name": "mikebom:trace-integrity-uprobe-attach-failures",
+        "name": "waybill:trace-integrity-uprobe-attach-failures",
         "value": "0"
       },
       {
-        "name": "mikebom:trace-integrity-kprobe-attach-failures",
+        "name": "waybill:trace-integrity-kprobe-attach-failures",
         "value": "0"
       },
       {
-        "name": "mikebom:graph-completeness",
+        "name": "waybill:graph-completeness",
         "value": "complete"
       },
       {
-        "name": "mikebom:workspaces-detected",
+        "name": "waybill:workspaces-detected",
         "value": "[\".venv/lib/python3.12/site-packages/certifi-2023.7.22.dist-info\",\".venv/lib/python3.12/site-packages/charset_normalizer-3.3.2.dist-info\",\".venv/lib/python3.12/site-packages/flask-3.0.0.dist-info\",\".venv/lib/python3.12/site-packages/idna-3.6.dist-info\",\".venv/lib/python3.12/site-packages/jinja2-3.1.2.dist-info\",\".venv/lib/python3.12/site-packages/requests-2.31.0.dist-info\",\".venv/lib/python3.12/site-packages/urllib3-2.0.7.dist-info\"]"
       }
     ],
     "supplier": {
-      "name": "mikebom contributors"
+      "name": "waybill contributors"
     },
     "timestamp": "1970-01-01T00:00:00Z",
     "tools": {
       "components": [
         {
-          "name": "mikebom",
-          "publisher": "mikebom contributors",
+          "name": "waybill",
+          "publisher": "waybill contributors",
           "type": "application",
           "version": "0.1.0-alpha.65"
         }

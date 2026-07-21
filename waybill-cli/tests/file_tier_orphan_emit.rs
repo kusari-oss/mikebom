@@ -18,7 +18,7 @@ fn write_file(dir: &Path, rel: &str, bytes: &[u8]) -> PathBuf {
 }
 
 fn run_scan(path: &Path, extra_args: &[&str]) -> serde_json::Value {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let tmp = tempfile::tempdir().expect("tempdir");
     let out_path = tmp.path().join("sbom.cdx.json");
     let mut cmd = Command::new(bin);
@@ -219,7 +219,7 @@ fn full_mode_bypasses_dedupe_and_emits_more_than_orphan() {
 fn invalid_file_inventory_flag_value_exits_nonzero() {
     let tmp = tempfile::tempdir().unwrap();
     write_file(tmp.path(), "noop", b"");
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let out_path = tmp.path().join("sbom.cdx.json");
     let status = Command::new(bin)
         .arg("--offline")

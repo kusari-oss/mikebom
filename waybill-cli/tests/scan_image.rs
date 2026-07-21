@@ -71,7 +71,7 @@ fn build_synthetic_image(files: &[ImageFile]) -> PathBuf {
 }
 
 fn scan_image(tarball: &Path) -> serde_json::Value {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let out_path = tempfile::NamedTempFile::new()
         .unwrap()
         .path()

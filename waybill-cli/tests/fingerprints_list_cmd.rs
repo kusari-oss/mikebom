@@ -9,7 +9,7 @@
 use std::process::Command;
 
 fn binary_path() -> &'static str {
-    env!("CARGO_BIN_EXE_mikebom")
+    env!("CARGO_BIN_EXE_waybill")
 }
 
 const SHA_A: &str = "fff39c6ad22ce8420b506323ce1d5cce4b628d5c";

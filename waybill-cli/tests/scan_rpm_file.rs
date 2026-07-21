@@ -19,7 +19,7 @@ mod common;
 use common::fixture_path;
 
 fn binary_path() -> &'static str {
-    env!("CARGO_BIN_EXE_mikebom")
+    env!("CARGO_BIN_EXE_waybill")
 }
 
 /// Build a minimal real `.rpm` file at `dest` with the given fields.

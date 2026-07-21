@@ -24,7 +24,7 @@ fn run_scan(fixture_rel: &str) -> serde_json::Value {
     let tmp = tempfile::tempdir().expect("tempdir");
     let fake_home = tempfile::tempdir().expect("fake-home");
     let out_path = tmp.path().join("out.spdx3.json");
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let mut cmd = Command::new(bin);
     apply_fake_home_env(&mut cmd, fake_home.path());
     let out = cmd
@@ -101,7 +101,7 @@ fn two_runs_against_deb_fixture_are_byte_identical() {
     let fake_home = tempfile::tempdir().expect("fake-home");
     let out_a = tmp.path().join("a.spdx3.json");
     let out_b = tmp.path().join("b.spdx3.json");
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     for out_path in [&out_a, &out_b] {
         let mut cmd = Command::new(bin);
         apply_fake_home_env(&mut cmd, fake_home.path());

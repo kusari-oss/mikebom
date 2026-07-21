@@ -57,7 +57,7 @@ fn pulls_alpine_3_19_and_emits_apk_components() {
 
     let tmp = tempfile::tempdir().expect("tempdir");
     let out_path = tmp.path().join("alpine.cdx.json");
-    let output = Command::new(env!("CARGO_BIN_EXE_mikebom"))
+    let output = Command::new(env!("CARGO_BIN_EXE_waybill"))
         .arg("--offline") // VEX/CD enrichment off; pure registry pull
         .arg("sbom")
         .arg("scan")
@@ -169,7 +169,7 @@ fn pulls_distroless_static_and_emits_dpkg_status_d_components() {
     // netbase, tzdata.
     let tmp = tempfile::tempdir().expect("tempdir");
     let out_path = tmp.path().join("distroless.cdx.json");
-    let output = Command::new(env!("CARGO_BIN_EXE_mikebom"))
+    let output = Command::new(env!("CARGO_BIN_EXE_waybill"))
         .arg("--offline")
         .arg("sbom")
         .arg("scan")
@@ -286,7 +286,7 @@ fn repeat_pull_uses_cache_for_warm_layers() {
     let out_path_2 = tmp.path().join("alpine2.cdx.json");
 
     let invoke = |out: &std::path::Path| -> std::process::Output {
-        Command::new(env!("CARGO_BIN_EXE_mikebom"))
+        Command::new(env!("CARGO_BIN_EXE_waybill"))
             .arg("--offline")
             .arg("sbom")
             .arg("scan")
@@ -382,7 +382,7 @@ fn pulls_alpine_with_image_platform_override() {
 
     let tmp = tempfile::tempdir().expect("tempdir");
     let out_path = tmp.path().join("alpine-cross-arch.cdx.json");
-    let output = Command::new(env!("CARGO_BIN_EXE_mikebom"))
+    let output = Command::new(env!("CARGO_BIN_EXE_waybill"))
         .arg("--offline")
         .arg("sbom")
         .arg("scan")
@@ -463,7 +463,7 @@ fn pulls_private_image_via_docker_keychain() {
 
     let tmp = tempfile::tempdir().expect("tempdir");
     let out_path = tmp.path().join("private.cdx.json");
-    let output = Command::new(env!("CARGO_BIN_EXE_mikebom"))
+    let output = Command::new(env!("CARGO_BIN_EXE_waybill"))
         .arg("--offline")
         .arg("sbom")
         .arg("scan")

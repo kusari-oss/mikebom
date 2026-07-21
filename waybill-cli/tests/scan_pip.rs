@@ -11,7 +11,7 @@ fn cli_local_fixture(sub: &str) -> PathBuf {
 }
 
 fn scan_path(path: &Path, format: &str) -> serde_json::Value {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let out_path = tempfile::NamedTempFile::new()
         .expect("tempfile")
         .path()

@@ -8,7 +8,7 @@
 //!
 //! Tests build synthetic Cargo workspaces via `tempfile::tempdir()` +
 //! shell out to `cargo generate-lockfile` to produce Cargo.lock, then
-//! invoke the waybill binary via `env!("CARGO_BIN_EXE_mikebom")`.
+//! invoke the waybill binary via `env!("CARGO_BIN_EXE_waybill")`.
 //! `cargo` binary is a hard dev prereq (matches m087 / m173 / m203
 //! precedent).
 
@@ -16,7 +16,7 @@ use std::path::Path;
 use std::process::Command;
 
 fn mikebom_bin() -> &'static str {
-    env!("CARGO_BIN_EXE_mikebom")
+    env!("CARGO_BIN_EXE_waybill")
 }
 
 /// Skip cleanly if `cargo` is not on PATH.

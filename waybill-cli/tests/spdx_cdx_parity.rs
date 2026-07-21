@@ -49,7 +49,7 @@ fn dual_scan(case: &EcosystemCase) -> Scan {
     let tmp = tempfile::tempdir().expect("tempdir");
     let cdx_path = tmp.path().join("out.cdx.json");
     let spdx_path = tmp.path().join("out.spdx.json");
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let mut cmd = Command::new(bin);
     cmd.env("WAYBILL_NO_GO_MOD_WHY", "1");
     cmd.arg("--offline")

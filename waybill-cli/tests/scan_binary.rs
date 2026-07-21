@@ -16,7 +16,7 @@ use serde_json::Value;
 use tempfile::TempDir;
 
 fn binary_path() -> &'static str {
-    env!("CARGO_BIN_EXE_mikebom")
+    env!("CARGO_BIN_EXE_waybill")
 }
 
 fn scan(dir: &Path) -> Value {

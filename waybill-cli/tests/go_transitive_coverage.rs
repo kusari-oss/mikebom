@@ -26,7 +26,7 @@ fn fixture(sub: &str) -> PathBuf {
 }
 
 fn scan_offline(path: &std::path::Path) -> serde_json::Value {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let tmp = tempfile::NamedTempFile::new().expect("tempfile");
     let out_path = tmp.path().to_path_buf();
     let mut cmd = Command::new(bin);

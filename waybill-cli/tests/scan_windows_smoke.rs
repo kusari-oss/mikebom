@@ -45,7 +45,7 @@ fn run_scan_with_timeout(
     input_path: &Path,
     output_path: &Path,
 ) -> (std::process::ExitStatus, Duration) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mikebom"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_waybill"))
         .args([
             "sbom",
             "scan",

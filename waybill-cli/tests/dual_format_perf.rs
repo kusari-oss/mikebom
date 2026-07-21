@@ -39,7 +39,7 @@ use std::time::{Duration, Instant};
 // only option that compiles in both contexts; FR-008 documents
 // this file as a deliberate exception.
 fn bin() -> &'static str {
-    env!("CARGO_BIN_EXE_mikebom")
+    env!("CARGO_BIN_EXE_waybill")
 }
 
 fn apply_fake_home_env(cmd: &mut std::process::Command, fake_home: &std::path::Path) {

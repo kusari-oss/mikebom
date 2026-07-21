@@ -75,7 +75,7 @@ fn scan_three_formats() -> (serde_json::Value, serde_json::Value, serde_json::Va
     let spdx3_path = out.path().join("out.spdx3.json");
     let fake_home = tempfile::tempdir().expect("fake-home tempdir");
 
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let output = Command::new(bin)
         .env("HOME", fake_home.path())
         .env("GOMODCACHE", fixture.path().join("gomodcache"))
@@ -341,7 +341,7 @@ mod stub_toolchain {
         let empty_cache = tempfile::tempdir().expect("empty-cache tempdir");
         let real_path = std::env::var("PATH").expect("PATH set");
 
-        let bin = env!("CARGO_BIN_EXE_mikebom");
+        let bin = env!("CARGO_BIN_EXE_waybill");
         let output = Command::new(bin)
             .env("PATH", format!("{}:{real_path}", stub_dir.to_string_lossy()))
             .env("HOME", fake_home.path())
@@ -600,7 +600,7 @@ mod degrade_matrix {
         let fake_home = tempfile::tempdir().expect("fake-home tempdir");
         let empty_cache = tempfile::tempdir().expect("empty-cache tempdir");
 
-        let bin = env!("CARGO_BIN_EXE_mikebom");
+        let bin = env!("CARGO_BIN_EXE_waybill");
         let mut cmd = Command::new(bin);
         cmd.env("PATH", path_value)
             .env("HOME", fake_home.path())
@@ -985,7 +985,7 @@ mod byte_identity {
         let fake_home = tempfile::tempdir().expect("fake-home tempdir");
         let real_path = std::env::var("PATH").expect("PATH set");
 
-        let bin = env!("CARGO_BIN_EXE_mikebom");
+        let bin = env!("CARGO_BIN_EXE_waybill");
         let mut cmd = Command::new(bin);
         cmd.env("PATH", format!("{}:{real_path}", stub_dir.to_string_lossy()))
             .env("HOME", fake_home.path())
@@ -1117,7 +1117,7 @@ mod real_toolchain_e2e {
         let out = tempfile::tempdir().expect("output tempdir");
         let cdx_path = out.path().join("out.cdx.json");
         let fake_home = tempfile::tempdir().expect("fake-home tempdir");
-        let bin = env!("CARGO_BIN_EXE_mikebom");
+        let bin = env!("CARGO_BIN_EXE_waybill");
         let output = Command::new(bin)
             .env("HOME", fake_home.path())
             .env("GOMODCACHE", fake_home.path().join("no-gomodcache"))

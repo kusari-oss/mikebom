@@ -13,7 +13,7 @@ fn fixture(sub: &str) -> PathBuf {
 }
 
 fn run_scan(path: &Path, out_path: &Path) -> Output {
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     Command::new(bin)
         .arg("--offline")
         .arg("sbom")

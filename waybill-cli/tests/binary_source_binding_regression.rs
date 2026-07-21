@@ -23,7 +23,7 @@ use std::process::Command;
 use serde_json::Value;
 
 fn binary_path() -> &'static str {
-    env!("CARGO_BIN_EXE_mikebom")
+    env!("CARGO_BIN_EXE_waybill")
 }
 
 fn find_zlib_exporting_binary() -> Option<PathBuf> {

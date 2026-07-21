@@ -59,7 +59,7 @@ fn scan_handles_knative_func_style_symlink_loops_without_hanging() {
     let tmp = tempfile::tempdir().expect("tempdir");
     build_knative_style_fixture(tmp.path());
 
-    let bin = env!("CARGO_BIN_EXE_mikebom");
+    let bin = env!("CARGO_BIN_EXE_waybill");
     let out = tempfile::NamedTempFile::new().expect("tempfile");
     let fake_home = tempfile::tempdir().expect("fake-home");
     let empty_cache = tempfile::tempdir().expect("empty-cache");

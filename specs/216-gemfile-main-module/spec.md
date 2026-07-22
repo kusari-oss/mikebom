@@ -45,7 +45,7 @@ An operator running `waybill sbom scan --path <ruby-app>` (no `--split`) on a si
 
 ### Edge Cases
 
-- **Nested Gemfiles under a top-level Gemfile**: sub-application inside another Ruby app. Should each level be its own main-module? (Assumption: yes — every Gemfile-carrying directory that has a `Gemfile.lock` sibling is treated as an application root, matching how the cargo reader treats nested workspace members.)
+- **Nested Gemfiles under a top-level Gemfile**: sub-application inside another Ruby app. Should each level be its own main-module? (Assumption: yes — every Gemfile-carrying directory is treated as an application root regardless of whether a `Gemfile.lock` sibling exists per FR-006, matching how the cargo reader treats nested workspace members. The `Gemfile.lock` presence only affects the transitive-dep graph completeness, not the main-module emission decision.)
 - **Gemfile without Gemfile.lock**: the app's transitive graph is undetermined. What happens? (Assumption: emit the main-module component anyway, but with the graph-completeness signal downgraded to reflect the missing lock — consistent with how the pip reader handles pyproject-without-lock.)
 - **Application name derivation** when the Gemfile doesn't declare one: the current directory name is the only signal. Special-character handling matches the m215 slug rules for filename safety.
 - **Gemfile shipped INSIDE a `.gemspec`-carrying directory**: unusual but possible. Precedence: `.gemspec` wins (matches the pre-existing gem reader path); no new main-module is emitted for the Gemfile.

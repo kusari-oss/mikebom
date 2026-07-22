@@ -3440,6 +3440,48 @@ pub async fn execute(
         overrides: plan.overrides.clone(),
     };
 
+    // Milestone 215 — `--split` fan-out. When set and at least one
+    // workspace boundary is detected, emit one SBOM per subproject +
+    // a `split-manifest.json` into `--output-dir`, then early-return.
+    // Zero-boundary fallback (FR-009): `emit_split` returns
+    // `Ok(false)` and we fall through to the pre-feature single-SBOM
+    // emit below (WARN log already emitted).
+    if args.split {
+        let output_dir = args.output_dir.as_ref().expect(
+            "--output-dir required when --split; validated at CLI parse",
+        );
+        let split_handled = crate::generate::split::emit_split(
+            &artifacts,
+            &plan.formats,
+            &registry,
+            output_dir,
+            output_cfg.created,
+            output_cfg.mikebom_version,
+            &root_path,
+        )?;
+        if split_handled {
+            if args.json {
+                let ctx_str = match generation_context {
+                    GenerationContext::FilesystemScan => "filesystem-scan",
+                    GenerationContext::ContainerImageScan => "container-image-scan",
+                    GenerationContext::BuildTimeTrace => "build-time-trace",
+                };
+                let summary = serde_json::json!({
+                    "split_output_dir": output_dir.to_string_lossy(),
+                    "split_manifest": output_dir.join("split-manifest.json").to_string_lossy(),
+                    "components": components.len(),
+                    "relationships": relationships.len(),
+                    "scanned_root": root_path.to_string_lossy(),
+                    "target_name": target_name,
+                    "generation_context": ctx_str,
+                });
+                println!("{}", serde_json::to_string_pretty(&summary)?);
+            }
+            return Ok(());
+        }
+        // else: zero-boundary fallback — fall through to normal emit.
+    }
+
     // Dispatch: serialize to every requested format and write each
     // emitted artifact to the chosen path. The first format's first
     // artifact path drives the backwards-compatible `--json` summary

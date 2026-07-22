@@ -281,6 +281,55 @@ pub struct ScanArtifacts<'a> {
         Option<&'a waybill_common::attestation::compiler_pipeline::CompilerPipelineData>,
 }
 
+impl<'a> ScanArtifacts<'a> {
+    /// Milestone 215 — return a new `ScanArtifacts` whose `components`
+    /// and `relationships` are the caller-supplied narrowed slices;
+    /// every other field is preserved verbatim (borrowed fields share
+    /// the same lifetime; owned fields are cloned).
+    ///
+    /// Used by the `--split` emit-dispatch fan-out to build one
+    /// per-subproject artifacts bundle without re-plumbing every field
+    /// through the CLI layer.
+    pub(crate) fn narrow(
+        &self,
+        components: &'a [ResolvedComponent],
+        relationships: &'a [Relationship],
+    ) -> ScanArtifacts<'a> {
+        ScanArtifacts {
+            target_name: self.target_name,
+            components,
+            relationships,
+            integrity: self.integrity,
+            complete_ecosystems: self.complete_ecosystems,
+            os_release_missing_fields: self.os_release_missing_fields,
+            scan_target_coord: self.scan_target_coord,
+            generation_context: self.generation_context.clone(),
+            include_dev: self.include_dev,
+            include_hashes: self.include_hashes,
+            include_source_files: self.include_source_files,
+            scope_mode: self.scope_mode,
+            go_transitive_coverage: self.go_transitive_coverage,
+            go_transitive_fallback_count: self.go_transitive_fallback_count,
+            go_cache_warming: self.go_cache_warming,
+            go_workspace_mode: self.go_workspace_mode,
+            helm_extraction_mode: self.helm_extraction_mode,
+            image_source: self.image_source,
+            source_document_binding: self.source_document_binding,
+            identifiers: self.identifiers,
+            component_identifiers: self.component_identifiers,
+            file_inventory_stats: self.file_inventory_stats,
+            file_inventory_mode: self.file_inventory_mode,
+            root_override: self.root_override.clone(),
+            preserve_manifest_main_module: self.preserve_manifest_main_module,
+            user_metadata: self.user_metadata.clone(),
+            sbom_type_override: self.sbom_type_override,
+            spdx2_relationship_compat: self.spdx2_relationship_compat,
+            collisions_summary: self.collisions_summary,
+            compiler_pipeline: self.compiler_pipeline,
+        }
+    }
+}
+
 /// Milestone 077 — operator-supplied overrides for the root component
 /// identity. See `ScanArtifacts::root_override`.
 ///

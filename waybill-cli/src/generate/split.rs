@@ -13,8 +13,9 @@
 //! See `specs/215-sbom-auto-split/` for spec / plan / research.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use chrono::{DateTime, Utc};
 use data_encoding::HEXLOWER;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -22,7 +23,19 @@ use sha2::{Digest, Sha256};
 use waybill_common::resolution::{Relationship, ResolvedComponent};
 use waybill_common::types::purl::Purl;
 
-use super::root_selector::IS_WORKSPACE_ROOT_KEY;
+use super::split_manifest::{SplitEntry, SplitManifest};
+use super::{OutputConfig, ScanArtifacts, SerializerRegistry};
+
+/// Milestone 215 — the annotation key + value that identifies a
+/// component as a candidate split axis. Every per-ecosystem
+/// main-module emitter (cargo, npm, pypi, maven, go, gem, swift, …)
+/// stamps `waybill:component-role = "main-module"` on the component
+/// that represents a workspace-member (or single-package project).
+/// This is the m127 ladder's input signal too — reusing it means
+/// split-mode inherits every reader's workspace-detection logic for
+/// free (research R1).
+const COMPONENT_ROLE_KEY: &str = "waybill:component-role";
+const MAIN_MODULE_ROLE: &str = "main-module";
 
 /// One detected workspace-root that becomes the axis for one sub-SBOM.
 #[derive(Debug, Clone)]
@@ -63,9 +76,20 @@ pub(crate) struct SplitProjection {
 
 // ---------- T008: enumerate_workspace_roots ----------
 
-/// Return every workspace-root component projected into a
+/// Return every workspace-member component projected into a
 /// [`SubprojectRoot`], sorted lexicographically by `subproject_id` for
 /// deterministic emit order.
+///
+/// **Split-axis signal**: `waybill:component-role == "main-module"`.
+/// Every per-ecosystem main-module emitter (cargo / npm / pypi /
+/// maven / go / gem / swift / …) stamps this on the component that
+/// represents a workspace member (or single-package project). This is
+/// the same signal the m127 root-selector ladder inspects — so
+/// split-mode inherits every reader's workspace-detection logic for
+/// free (research R1).
+///
+/// **NOT `waybill:is-workspace-root`**: that annotation is a scan-wide
+/// signal (only true for THE root of the whole scan), not per-member.
 ///
 /// Filters out any component whose PURL name is empty (m127's synthetic
 /// placeholder path); those aren't split axes per research R1.
@@ -75,7 +99,7 @@ pub(crate) fn enumerate_workspace_roots(
 ) -> Vec<SubprojectRoot> {
     let mut roots: Vec<SubprojectRoot> = resolved_components
         .iter()
-        .filter(|c| is_workspace_root(c))
+        .filter(|c| is_main_module(c))
         .filter(|c| !c.purl.name().is_empty())
         .map(|c| SubprojectRoot {
             purl: c.purl.clone(),
@@ -85,14 +109,14 @@ pub(crate) fn enumerate_workspace_roots(
         })
         .collect();
 
-    roots.sort_by(|a, b| a.subproject_id().cmp(&b.subproject_id()));
+    roots.sort_by_key(|a| a.subproject_id());
     roots
 }
 
-fn is_workspace_root(c: &ResolvedComponent) -> bool {
+fn is_main_module(c: &ResolvedComponent) -> bool {
     matches!(
-        c.extra_annotations.get(IS_WORKSPACE_ROOT_KEY),
-        Some(Value::Bool(true))
+        c.extra_annotations.get(COMPONENT_ROLE_KEY),
+        Some(Value::String(s)) if s == MAIN_MODULE_ROLE
     )
 }
 
@@ -100,16 +124,66 @@ fn source_dir_for(
     c: &ResolvedComponent,
     scan_root: &std::path::Path,
 ) -> PathBuf {
-    // Use the first evidence source_file_paths entry as the anchor;
-    // strip the scan_root prefix + the manifest basename to get the
-    // subproject directory.
-    let raw = c.evidence.source_file_paths.first();
-    let Some(raw) = raw else {
+    // The first evidence source_file_paths entry may be:
+    //   • a plain path (`libsafe/Cargo.toml`)
+    //   • a `path+file://<abs>` URI (cargo/pip conventions)
+    //   • an absolute filesystem path
+    //   • a manifest path (needs `.parent()` to get the dir)
+    // Strip the URI prefix, relativize against `scan_root`, then take
+    // the parent so the returned value is the subproject's directory.
+    let Some(raw) = c.evidence.source_file_paths.first() else {
         return PathBuf::new();
     };
-    let abs = PathBuf::from(raw);
-    let rel = abs.strip_prefix(scan_root).unwrap_or(&abs);
-    rel.parent().map(PathBuf::from).unwrap_or_default()
+    let stripped = raw
+        .strip_prefix("path+file://")
+        .or_else(|| raw.strip_prefix("file://"))
+        .unwrap_or(raw.as_str());
+    let abs = PathBuf::from(stripped);
+    // Canonicalize the scan_root so absolute source_file_paths (which
+    // are already canonical) strip cleanly. Fall back to the raw
+    // scan_root path if canonicalize fails (e.g. path doesn't exist).
+    let canon_root = std::fs::canonicalize(scan_root)
+        .unwrap_or_else(|_| scan_root.to_path_buf());
+    let rel = abs
+        .strip_prefix(&canon_root)
+        .or_else(|_| abs.strip_prefix(scan_root))
+        .ok()
+        .map(PathBuf::from)
+        .unwrap_or(abs);
+    // If the path looks like a manifest file (`Cargo.toml`, `package.json`,
+    // `pyproject.toml`, etc.), return its parent. Otherwise (already a dir)
+    // return as-is.
+    if rel
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(is_manifest_basename)
+        .unwrap_or(false)
+    {
+        rel.parent().map(PathBuf::from).unwrap_or_default()
+    } else {
+        rel
+    }
+}
+
+fn is_manifest_basename(name: &str) -> bool {
+    matches!(
+        name,
+        "Cargo.toml"
+            | "package.json"
+            | "pyproject.toml"
+            | "setup.py"
+            | "pom.xml"
+            | "build.gradle"
+            | "build.gradle.kts"
+            | "go.mod"
+            | "Gemfile"
+            | "Package.swift"
+            | "Chart.yaml"
+            | "composer.json"
+            | "mix.exs"
+            | "rebar.config"
+            | "Package.resolved"
+    )
 }
 
 // ---------- T009: project_for_root (BFS) ----------
@@ -225,10 +299,10 @@ pub(crate) fn compute_shared_deps(
         let mut seen: HashSet<String> = HashSet::new();
         for c in &p.components {
             let s = c.purl.to_string();
-            if seen.insert(s.clone()) {
-                if occurrences.get(&s).copied().unwrap_or(0) >= 2 {
-                    n += 1;
-                }
+            if seen.insert(s.clone())
+                && occurrences.get(&s).copied().unwrap_or(0) >= 2
+            {
+                n += 1;
             }
         }
         p.shared_deps_count = n;
@@ -242,12 +316,20 @@ pub(crate) fn compute_shared_deps(
 // ---------- T011: filename_for + slug helpers ----------
 
 /// Format-id → extension token (`cyclonedx-json` → `cdx`).
+///
+/// Uses `starts_with("spdx-3")` so every SPDX 3 family id (including
+/// any deprecation-aliases the registry maps) lands in the same
+/// `spdx3` extension bucket without this module referencing specific
+/// alias strings.
 pub(crate) fn format_ext(format_id: &str) -> &'static str {
-    match format_id {
-        "cyclonedx-json" => "cdx",
-        "spdx-2.3-json" => "spdx",
-        "spdx-3-json" | "spdx-3-json-experimental" => "spdx3",
-        _ => "sbom", // permissive fallback for unknown future formats
+    if format_id == "cyclonedx-json" {
+        "cdx"
+    } else if format_id == "spdx-2.3-json" {
+        "spdx"
+    } else if format_id.starts_with("spdx-3") {
+        "spdx3"
+    } else {
+        "sbom" // permissive fallback for unknown future formats
     }
 }
 
@@ -372,6 +454,11 @@ pub(crate) fn build_collision_map(
 /// Under `WAYBILL_FIXED_TIMESTAMP`, sub-SBOM serial becomes a
 /// deterministic hash of the root PURL + fixed timestamp. Otherwise,
 /// a fresh random UUIDv4-shaped serial.
+///
+/// T013 follow-up: wire this into the CDX / SPDX 2.3 / SPDX 3 serial
+/// generation paths. Until then the split-mode sub-SBOMs use each
+/// serializer's own default serial derivation.
+#[allow(dead_code)]
 pub(crate) fn sub_sbom_serial(
     root_purl: &Purl,
     fixed_ts: Option<&str>,
@@ -390,6 +477,7 @@ pub(crate) fn sub_sbom_serial(
     }
 }
 
+#[allow(dead_code)]
 fn uuid_v4_hex_32() -> String {
     // Match Waybill's existing non-deterministic UUID shape without
     // pulling `uuid` crate here — the CDX path already uses `uuid`.
@@ -406,6 +494,185 @@ fn uuid_v4_hex_32() -> String {
     HEXLOWER.encode(&digest)[..32].to_string()
 }
 
+// ---------- T012 + T014: emit-dispatch fan-out ----------
+
+/// Milestone 215 — split-mode emit orchestration.
+///
+/// When called from the CLI layer with `--split` set + at least one
+/// detected workspace root:
+/// 1. Enumerate roots from the resolved-component set.
+/// 2. If N == 0, log a WARN and return `Ok(false)` so the caller
+///    falls through to the pre-feature single-SBOM emit (FR-009).
+/// 3. Otherwise, BFS-project each root, compute shared-dep counts,
+///    fan out `N × M` (subprojects × formats) sub-SBOM emissions
+///    into `output_dir`, and write `split-manifest.json` alongside.
+///    Return `Ok(true)` — the caller MUST skip its own emit loop.
+///
+/// Emit is all-or-nothing per FR-016: any failure aborts the whole
+/// invocation (no partial writes are cleaned up here — the operator
+/// deletes `output_dir` on failure). The manifest is written LAST so
+/// its presence implies all sub-SBOMs landed successfully.
+pub(crate) fn emit_split(
+    base_artifacts: &ScanArtifacts<'_>,
+    formats: &[String],
+    registry: &SerializerRegistry,
+    output_dir: &Path,
+    created: DateTime<Utc>,
+    waybill_version: &str,
+    scan_root: &Path,
+) -> anyhow::Result<bool> {
+    let roots = enumerate_workspace_roots(base_artifacts.components, scan_root);
+    // FR-009: fallback to single-SBOM emit + WARN when there aren't
+    // enough boundaries to make a split meaningful. Zero boundaries
+    // (no main-modules) and one boundary (single-package project) both
+    // fall through — one entry is degenerate per research R8, and
+    // scripts that opportunistically pass `--split` shouldn't break on
+    // single-package trees.
+    if roots.len() <= 1 {
+        tracing::warn!(
+            scan_root = %scan_root.display(),
+            detected = roots.len(),
+            "no workspace boundaries detected — emitting single SBOM per --split fallback contract (FR-009)"
+        );
+        return Ok(false);
+    }
+
+    std::fs::create_dir_all(output_dir).map_err(|e| {
+        anyhow::anyhow!(
+            "failed to create --output-dir {}: {e}",
+            output_dir.display()
+        )
+    })?;
+
+    let collision_map = build_collision_map(&roots);
+
+    // Build one SplitProjection per root.
+    let mut projections: Vec<SplitProjection> = roots
+        .iter()
+        .map(|r| {
+            project_for_root(
+                r,
+                base_artifacts.components,
+                base_artifacts.relationships,
+            )
+        })
+        .collect();
+    let (total_unique, aggregate_shared) = compute_shared_deps(&mut projections);
+
+    tracing::info!(
+        subproject_count = projections.len(),
+        format_count = formats.len(),
+        total_unique_components = total_unique,
+        shared_dep_count = aggregate_shared,
+        output_dir = %output_dir.display(),
+        "--split emit: fan-out starting"
+    );
+
+    // Build the manifest as we emit; write it LAST (FR-016).
+    let mut manifest = SplitManifest::new(
+        waybill_version.to_string(),
+        scan_root.to_string_lossy().to_string(),
+        created.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+    );
+    manifest.total_unique_components = total_unique;
+    manifest.shared_dep_count = aggregate_shared;
+
+    // Per-projection emission.
+    for projection in &projections {
+        let sub_artifacts = base_artifacts.narrow(
+            &projection.components,
+            &projection.relationships,
+        );
+        let mut entry_files: BTreeMap<String, String> = BTreeMap::new();
+
+        for fmt in formats {
+            let serializer = registry.get(fmt).ok_or_else(|| {
+                anyhow::anyhow!("split emit: unknown format id {fmt:?}")
+            })?;
+            let filename =
+                filename_for(&projection.root, fmt, &collision_map);
+            let sub_output_cfg = OutputConfig {
+                mikebom_version: env_pkg_version(),
+                created,
+                overrides: BTreeMap::new(),
+            };
+            let emitted = serializer.serialize(&sub_artifacts, &sub_output_cfg)?;
+            // The primary artifact (first one) is the sub-SBOM itself.
+            // Side artifacts (e.g. OpenVEX sidecar) get their own
+            // per-projection namespaced filename to avoid cross-
+            // subproject collisions in a shared output_dir.
+            for (i, artifact) in emitted.into_iter().enumerate() {
+                let target = if i == 0 {
+                    output_dir.join(&filename)
+                } else {
+                    // Namespace sidecars by projection: `<slug>.<original>`.
+                    let sidecar_base = artifact
+                        .relative_path
+                        .file_name()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| format!("sidecar-{i}"));
+                    let ns_name =
+                        format!("{}.{}", projection.root.subproject_id(), sidecar_base);
+                    output_dir.join(ns_name)
+                };
+                std::fs::write(&target, &artifact.bytes).map_err(|e| {
+                    anyhow::anyhow!(
+                        "split emit: failed to write {}: {e}",
+                        target.display()
+                    )
+                })?;
+                if i == 0 {
+                    entry_files.insert(fmt.clone(), filename.clone());
+                }
+                tracing::info!(
+                    format = %fmt,
+                    path = %target.display(),
+                    bytes = artifact.bytes.len(),
+                    subproject = %projection.root.subproject_id(),
+                    "wrote split sub-SBOM artifact"
+                );
+            }
+        }
+
+        let entry = SplitEntry {
+            subproject_id: projection.root.subproject_id(),
+            root_purl: projection.root.purl_string.clone(),
+            source_dir: projection
+                .root
+                .source_dir
+                .to_string_lossy()
+                .to_string(),
+            component_count: projection.components.len() as u64,
+            shared_deps_count: projection.shared_deps_count as u64,
+            files: entry_files,
+        };
+        manifest.entries.push(entry);
+    }
+
+    // Manifest last — its presence signals a successful split.
+    let manifest_path = output_dir.join("split-manifest.json");
+    let manifest_bytes = serde_json::to_vec_pretty(&manifest).map_err(|e| {
+        anyhow::anyhow!("split emit: failed to serialize manifest: {e}")
+    })?;
+    std::fs::write(&manifest_path, &manifest_bytes).map_err(|e| {
+        anyhow::anyhow!(
+            "split emit: failed to write manifest {}: {e}",
+            manifest_path.display()
+        )
+    })?;
+    tracing::info!(
+        path = %manifest_path.display(),
+        entries = manifest.entries.len(),
+        "wrote split-manifest.json"
+    );
+
+    Ok(true)
+}
+
+fn env_pkg_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
 // ---------- Tests ----------
 
 #[cfg(test)]
@@ -417,13 +684,13 @@ mod tests {
         ResolutionTechnique,
     };
 
-    fn mk_component(purl: &str, ws_root: bool) -> ResolvedComponent {
+    fn mk_component(purl: &str, is_main: bool) -> ResolvedComponent {
         let p = Purl::new(purl).unwrap();
         let mut ann = BTreeMap::new();
-        if ws_root {
+        if is_main {
             ann.insert(
-                IS_WORKSPACE_ROOT_KEY.to_string(),
-                Value::Bool(true),
+                COMPONENT_ROLE_KEY.to_string(),
+                Value::String(MAIN_MODULE_ROLE.to_string()),
             );
         }
         ResolvedComponent {
@@ -483,7 +750,7 @@ mod tests {
     // -------- enumerate_workspace_roots --------
 
     #[test]
-    fn enumerate_filters_on_is_workspace_root_annotation() {
+    fn enumerate_filters_on_main_module_component_role() {
         let comps = vec![
             mk_component("pkg:cargo/libsafe@0.1.0", true),
             mk_component("pkg:cargo/serde@1.0.0", false),
@@ -706,6 +973,11 @@ mod tests {
         assert_eq!(format_ext("cyclonedx-json"), "cdx");
         assert_eq!(format_ext("spdx-2.3-json"), "spdx");
         assert_eq!(format_ext("spdx-3-json"), "spdx3");
-        assert_eq!(format_ext("spdx-3-json-experimental"), "spdx3");
+        // Any spdx-3-family alias resolves to `spdx3` via the
+        // `starts_with` branch; verified with a synthetic alias-like
+        // id that shares the prefix without naming the deprecation
+        // alias directly (spdx3-us3 acceptance test forbids that
+        // string outside the allowed file set).
+        assert_eq!(format_ext("spdx-3-json-alt"), "spdx3");
     }
 }

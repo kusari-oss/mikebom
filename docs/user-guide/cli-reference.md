@@ -703,6 +703,56 @@ waybill sbom scan --path . \
 When omitted, each format writes to its own default filename
 (`waybill.cdx.json`, `waybill.spdx.json`, `waybill.spdx3.json`).
 
+### `--split`
+
+**Milestone 215.** Emit one SBOM per detected workspace member (Cargo workspace
+member, npm workspace member, Go workspace, Maven multi-module, pyproject dir,
+gem sub-gem, etc.) instead of one combined SBOM. Requires `--output-dir <DIR>`;
+incompatible with `--output` (a single file cannot hold N sub-SBOMs).
+
+```bash
+waybill sbom scan --path ./my-monorepo --split --output-dir ./sboms/
+# Emits:
+#   ./sboms/<slug1>.<ecosystem>.cdx.json
+#   ./sboms/<slug2>.<ecosystem>.cdx.json
+#   …
+#   ./sboms/split-manifest.json      ← operator-facing index
+```
+
+**Interaction matrix**:
+
+| `--split` | `--output <file>` | `--output-dir <dir>` | Behavior |
+|:---------:|:-----------------:|:--------------------:|----------|
+| unset     | *any*             | *any*                | Pre-feature single-SBOM behavior, unchanged. |
+| set       | *any*             | *any*                | **HARD ERROR** at CLI parse. |
+| set       | unset             | set                  | Fan out: emit N × M sub-SBOMs + 1 manifest into `<dir>`. |
+| set       | unset             | unset                | **HARD ERROR** at CLI parse — pass `--output-dir <dir>`. |
+
+**Multi-format**: passing `--format` multiple times produces N × M files
+(N subprojects × M formats), grouped in the manifest's per-entry `files` map.
+
+**Zero-boundary fallback (FR-009)**: on a single-package project (no workspace
+members detected), Waybill emits ONE SBOM identical to pre-feature output plus
+a WARN log — the command still exits 0 so CI scripts opportunistically passing
+`--split` don't break on non-monorepo trees.
+
+**Filename convention** (per subproject × format):
+`<slug>.<ecosystem>.<format-ext>.json` where `<slug>` derives from the
+subproject's PURL name (lowercased, unsafe chars stripped), `<ecosystem>` is
+the PURL type (`cargo`, `npm`, `pypi`, `maven`, `go`, `gem`, `swift`, …), and
+`<format-ext>` is `cdx` / `spdx` / `spdx3`. Two subprojects that collide on
+`<slug>.<ecosystem>` get an 8-hex-char `SHA-256(source-dir)` disambiguation
+suffix; the result is deterministic across scans.
+
+See [split-manifest](split-manifest.md) for the manifest schema + operator
+recipes for consuming the output.
+
+### `--output-dir <DIR>`
+
+**Milestone 215.** Directory that receives split-mode sub-SBOMs +
+`split-manifest.json`. Required when `--split` is set; ignored otherwise.
+Directory is created if missing.
+
 ### `--format <FORMAT>`
 
 Output format(s). Comma-separated and the flag itself is repeatable:

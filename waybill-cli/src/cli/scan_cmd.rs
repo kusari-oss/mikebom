@@ -433,6 +433,26 @@ pub struct ScanArgs {
     #[arg(long, action = clap::ArgAction::Append, value_name = "[FMT=]PATH")]
     pub output: Vec<String>,
 
+    /// Milestone 215 — split monorepo SBOM into per-workspace-member
+    /// sub-SBOMs. When set, emit one SBOM per detected workspace
+    /// boundary (Cargo workspace member, npm workspace member, Go
+    /// workspace, Maven multi-module, pyproject dir, etc.) plus a
+    /// sibling `split-manifest.json` describing the split.
+    ///
+    /// Requires `--output-dir <dir>`; incompatible with `--output`
+    /// (a single file cannot hold N sub-SBOMs). On single-package
+    /// projects with no workspace boundaries, falls back to one SBOM
+    /// with a WARN log (FR-009). See
+    /// `docs/user-guide/cli-reference.md#split` for the full contract.
+    #[arg(long, conflicts_with = "output")]
+    pub split: bool,
+
+    /// Milestone 215 — output directory for split-mode sub-SBOMs +
+    /// `split-manifest.json`. Required when `--split` is set; ignored
+    /// otherwise. Directory is created if missing.
+    #[arg(long = "output-dir", value_name = "DIR")]
+    pub output_dir: Option<PathBuf>,
+
     /// Output format(s). Comma-separated list, and the flag itself
     /// is repeatable: `--format cyclonedx-json,spdx-2.3-json` is
     /// equivalent to `--format cyclonedx-json --format spdx-2.3-json`.
@@ -2288,6 +2308,18 @@ pub async fn execute(
         anyhow::bail!("one of --path, --image, or --helm-chart is required");
     }
 
+    // Milestone 215 — `--split` requires `--output-dir`. `clap`
+    // already rejects `--split` + `--output`; here we enforce the
+    // positive requirement so operators get a friendly diagnostic
+    // pointing at the fix rather than a silent no-op.
+    if args.split && args.output_dir.is_none() {
+        anyhow::bail!(
+            "`--split` requires `--output-dir <dir>` — a single file cannot \
+             hold N sub-SBOMs. Example:\n  \
+             waybill sbom scan --path . --split --output-dir ./sboms/",
+        );
+    }
+
     // Resolve format dispatch BEFORE any scan work so argument errors
     // abort without having paid for a scan.
     let registry = SerializerRegistry::with_defaults();
@@ -3408,6 +3440,48 @@ pub async fn execute(
         overrides: plan.overrides.clone(),
     };
 
+    // Milestone 215 — `--split` fan-out. When set and at least one
+    // workspace boundary is detected, emit one SBOM per subproject +
+    // a `split-manifest.json` into `--output-dir`, then early-return.
+    // Zero-boundary fallback (FR-009): `emit_split` returns
+    // `Ok(false)` and we fall through to the pre-feature single-SBOM
+    // emit below (WARN log already emitted).
+    if args.split {
+        let output_dir = args.output_dir.as_ref().expect(
+            "--output-dir required when --split; validated at CLI parse",
+        );
+        let split_handled = crate::generate::split::emit_split(
+            &artifacts,
+            &plan.formats,
+            &registry,
+            output_dir,
+            output_cfg.created,
+            output_cfg.mikebom_version,
+            &root_path,
+        )?;
+        if split_handled {
+            if args.json {
+                let ctx_str = match generation_context {
+                    GenerationContext::FilesystemScan => "filesystem-scan",
+                    GenerationContext::ContainerImageScan => "container-image-scan",
+                    GenerationContext::BuildTimeTrace => "build-time-trace",
+                };
+                let summary = serde_json::json!({
+                    "split_output_dir": output_dir.to_string_lossy(),
+                    "split_manifest": output_dir.join("split-manifest.json").to_string_lossy(),
+                    "components": components.len(),
+                    "relationships": relationships.len(),
+                    "scanned_root": root_path.to_string_lossy(),
+                    "target_name": target_name,
+                    "generation_context": ctx_str,
+                });
+                println!("{}", serde_json::to_string_pretty(&summary)?);
+            }
+            return Ok(());
+        }
+        // else: zero-boundary fallback — fall through to normal emit.
+    }
+
     // Dispatch: serialize to every requested format and write each
     // emitted artifact to the chosen path. The first format's first
     // artifact path drives the backwards-compatible `--json` summary
@@ -4388,6 +4462,8 @@ mod tests {
             // FR-016 / SC-005).
             helm_chart: None,
             helm_render: false,
+            split: false,
+            output_dir: None,
             output: vec![],
             format: vec![],
             max_file_size: 256 * 1024 * 1024,

@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain — **1 remains**: FR-002 (PURL type choice — genuinely design-blocking)
+- [X] No [NEEDS CLARIFICATION] markers remain — FR-002 resolved 2026-07-22 to `pkg:generic/<name>@<version>` + `waybill:package-shape = "application"` per the purl-spec's own type definitions
 - [X] Requirements are testable and unambiguous
 - [X] Success criteria are measurable
 - [X] Success criteria are technology-agnostic (no implementation details)
@@ -31,5 +31,5 @@
 
 ## Notes
 
-- **FR-002 clarification pending**: PURL type + companion annotation for Gemfile-derived main-modules. Three options with distinct downstream consumer implications (vuln scanner matching, SBOM merge behavior). Requires operator/consumer input before `/speckit.plan` — cannot be defaulted safely. See the `/speckit.clarify` step.
-- Every other item passes; the spec is ready for clarification pass.
+- All items pass. Spec is ready for `/speckit.plan`.
+- FR-002 resolved via the purl-spec's own type definitions (`pkg:gem/` = "RubyGems" with default repository `https://rubygems.org`; a bundler-managed application isn't on rubygems.org, so `pkg:generic/` is the spec-blessed escape hatch). Companion annotation `waybill:package-shape = "application"` preserves the ecosystem signal for downstream consumers.

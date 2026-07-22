@@ -433,6 +433,26 @@ pub struct ScanArgs {
     #[arg(long, action = clap::ArgAction::Append, value_name = "[FMT=]PATH")]
     pub output: Vec<String>,
 
+    /// Milestone 215 — split monorepo SBOM into per-workspace-member
+    /// sub-SBOMs. When set, emit one SBOM per detected workspace
+    /// boundary (Cargo workspace member, npm workspace member, Go
+    /// workspace, Maven multi-module, pyproject dir, etc.) plus a
+    /// sibling `split-manifest.json` describing the split.
+    ///
+    /// Requires `--output-dir <dir>`; incompatible with `--output`
+    /// (a single file cannot hold N sub-SBOMs). On single-package
+    /// projects with no workspace boundaries, falls back to one SBOM
+    /// with a WARN log (FR-009). See
+    /// `docs/user-guide/cli-reference.md#split` for the full contract.
+    #[arg(long, conflicts_with = "output")]
+    pub split: bool,
+
+    /// Milestone 215 — output directory for split-mode sub-SBOMs +
+    /// `split-manifest.json`. Required when `--split` is set; ignored
+    /// otherwise. Directory is created if missing.
+    #[arg(long = "output-dir", value_name = "DIR")]
+    pub output_dir: Option<PathBuf>,
+
     /// Output format(s). Comma-separated list, and the flag itself
     /// is repeatable: `--format cyclonedx-json,spdx-2.3-json` is
     /// equivalent to `--format cyclonedx-json --format spdx-2.3-json`.
@@ -2286,6 +2306,18 @@ pub async fn execute(
 
     if args.path.is_none() && args.image.is_none() {
         anyhow::bail!("one of --path, --image, or --helm-chart is required");
+    }
+
+    // Milestone 215 — `--split` requires `--output-dir`. `clap`
+    // already rejects `--split` + `--output`; here we enforce the
+    // positive requirement so operators get a friendly diagnostic
+    // pointing at the fix rather than a silent no-op.
+    if args.split && args.output_dir.is_none() {
+        anyhow::bail!(
+            "`--split` requires `--output-dir <dir>` — a single file cannot \
+             hold N sub-SBOMs. Example:\n  \
+             waybill sbom scan --path . --split --output-dir ./sboms/",
+        );
     }
 
     // Resolve format dispatch BEFORE any scan work so argument errors
@@ -4388,6 +4420,8 @@ mod tests {
             // FR-016 / SC-005).
             helm_chart: None,
             helm_render: false,
+            split: false,
+            output_dir: None,
             output: vec![],
             format: vec![],
             max_file_size: 256 * 1024 * 1024,

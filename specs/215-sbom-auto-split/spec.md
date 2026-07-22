@@ -5,6 +5,14 @@
 **Status**: Draft
 **Input**: User description: "let's build a flag that will automatically split an sbom in a monorepo or a project with subrepos and whatnot into multiple sboms."
 
+## Clarifications
+
+### Session 2026-07-22
+
+- Q: Shared-dependency semantics across sub-SBOMs — duplicate, dedup-by-hash, shared-overlay, or configurable? → A: **Duplicate**. Each sub-SBOM contains its full dep closure; shared deps appear in every SBOM that depends on them. Downstream tooling consumes each SBOM independently; cross-SBOM referencing is deliberately avoided. Manifest reports shared-dep counts as a diagnostic signal only. No configurability in v1 — dedup / overlay modes deferred to a follow-up spec if operator demand emerges.
+- Q: Multi-manifest-per-directory behavior (e.g., a dir with both `package.json` + `pyproject.toml`)? → A: **One sub-SBOM per ecosystem manifest**. A single directory with N ecosystem manifests emits N sub-SBOMs. Filenames disambiguate via ecosystem suffix (e.g., `myapp.npm.cdx.json`, `myapp.pypi.cdx.json`). Manifest lists all N. Each ecosystem's dep-graph is independent (no cross-ecosystem shared components in the wire-shape sense), so a merged-root SBOM would be misleading. Follow-up issue [#627](https://github.com/kusari-oss/waybill/issues/627): once waybill supports SBOM merging, document how operators can re-merge these when they want a unified view.
+- Q: Canonical flag name? → A: `--split`. Short, matches operator mental model, precedent-friendly (csplit / split(1) / `git rebase --split`). Help text will clarify "one SBOM per detected subproject" so the bare word isn't ambiguous.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Monorepo owner emits per-workspace-member SBOMs in a single scan (Priority: P1)
@@ -82,7 +90,7 @@ A monorepo's two subprojects both depend on `serde 1.0.219` (same version, same 
 
 ### Functional Requirements
 
-- **FR-001**: The `waybill sbom scan` command MUST accept a new opt-in flag (canonical name TBD in Assumptions; likely `--split` or `--split-by-workspace`). Without the flag, behavior is byte-identical to pre-feature scan output.
+- **FR-001**: The `waybill sbom scan` command MUST accept a new opt-in flag named `--split` (confirmed via 2026-07-22 clarification). Without the flag, behavior is byte-identical to pre-feature scan output.
 - **FR-002**: When the flag is set, the tool MUST detect subproject boundaries by reusing each ecosystem reader's existing workspace / main-module detection (per m176 workspace definition — cargo workspace members, npm workspaces, Go workspaces, Maven multi-module projects, gradle sub-projects, pyproject/setup.py directories, etc.).
 - **FR-003**: For each detected subproject boundary, the tool MUST emit one SBOM containing only that subproject's dep-graph reachable set of components (root component + transitive dependencies).
 - **FR-004**: Each emitted SBOM's `metadata.component` (CDX) / `describes` (SPDX 2.3) / root Element (SPDX 3) MUST identify the specific subproject (its PURL), not the whole-repo root.
@@ -122,10 +130,10 @@ A monorepo's two subprojects both depend on `serde 1.0.219` (same version, same 
 
 ## Assumptions
 
-- **Canonical flag name**: This spec assumes `--split` as the default flag name (short, discoverable, matches the user's word choice). If reviewers prefer `--split-by-workspace` or `--per-subproject` for clarity, that's a low-impact rename resolved during `/speckit.clarify`.
+- **Canonical flag name** (confirmed via 2026-07-22 clarification): `--split`. Short, discoverable, matches operator mental model + precedent-friendly (csplit / split(1) / `git rebase --split`).
 - **Boundary-detection strategy**: Reuse each ecosystem reader's existing main-module / workspace-member detection per m176. Zero new detection logic — the same directory that produces a main-module component in single-SBOM mode becomes a subproject boundary in split mode. This keeps the scope tight and avoids re-inventing workspace-boundary detection per ecosystem.
 - **Output directory**: The flag pairs with `--output-dir <dir>` (existing today). Split mode writes N sub-SBOM files + 1 manifest into `<dir>`. Filenames auto-generated from subproject identity per FR-005. The existing `--output` flag (single-file target) is incompatible with `--split` and produces a friendly error suggesting `--output-dir` instead.
-- **Shared-dep default**: DUPLICATE (each sub-SBOM is self-contained). Alternative "shared SBOM + per-sub overlays" is a common pattern in some tooling but adds significant complexity and requires cross-SBOM references that many downstream tools don't handle. Duplicate default matches operator expectations. If reviewers want a dedup mode, that's a future flag (e.g., `--split-mode=dedup-shared`) — this spec ships duplicate-only.
+- **Shared-dep default** (confirmed via 2026-07-22 clarification): DUPLICATE — no configurability in v1. Each sub-SBOM contains its full dep closure; shared deps appear in every SBOM that depends on them. Alternative dedup / shared-SBOM-overlay modes are deferred to a follow-up spec if operator demand emerges.
 - **Manifest format**: JSON with a stable schema documented in the planning-phase contracts. Not a wire-format spec artifact (CDX/SPDX consumers don't parse it) — it's a Waybill-side operator-facing artifact under the `waybill:*` namespace.
 - **Manifest filename**: `split-manifest.json` at the output-dir root. Distinct-enough name that it won't collide with a subproject SBOM.
 - **Multi-format simultaneity**: When operator requests multiple output formats (e.g., `--format cyclonedx-json --format spdx-2.3-json`), split-mode emits N × M files. Manifest lists all of them grouped by subproject.

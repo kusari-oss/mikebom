@@ -38,6 +38,28 @@ pub struct SplitEntry {
     /// Format-id → relative-filename (e.g. `"cyclonedx-json" → "libsafe.cargo.cdx.json"`).
     /// `BTreeMap` guarantees deterministic key ordering across runs.
     pub files: BTreeMap<String, String>,
+    /// Milestone 219 — additive-optional field. OMITTED (via
+    /// `skip_serializing_if`) when the group covers exactly one
+    /// main-module — preserves m215 wire-shape byte-identity per
+    /// SC-005. PRESENT (sorted lex by `purl`) when the group covers
+    /// ≥2 members (only possible under `--split=directory` today).
+    /// See `specs/219-split-modes/contracts/manifest-additive-members.md`.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub members: Option<Vec<SplitMember>>,
+}
+
+/// Milestone 219 — one contributing main-module in a multi-member
+/// group. Populates `SplitEntry.members[]`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SplitMember {
+    /// PURL string of the contributing main-module. Purl-spec conformant.
+    pub purl: String,
+    /// Source directory of that main-module (relative to scan root).
+    /// For multi-member groups under `--split=directory`, every
+    /// member's source_dir is IDENTICAL to the group's source_dir;
+    /// preserved per-member for consistency with future non-directory
+    /// grouping modes (e.g., `--split=ecosystem`).
+    pub source_dir: String,
 }
 
 impl SplitManifest {
@@ -76,6 +98,7 @@ mod tests {
             component_count: 42,
             shared_deps_count: 3,
             files,
+            members: None,
         }
     }
 
@@ -135,6 +158,7 @@ mod tests {
             component_count: 1,
             shared_deps_count: 0,
             files,
+            members: None,
         };
         let json = serde_json::to_string(&entry).unwrap();
         // Alphabetical: cyclonedx-json < spdx-2.3-json < spdx-3-json.
@@ -143,6 +167,54 @@ mod tests {
         let spdx3_pos = json.find("spdx-3-json").unwrap();
         assert!(cdx_pos < spdx23_pos);
         assert!(spdx23_pos < spdx3_pos);
+    }
+
+    /// Milestone 219 — SC-005 byte-identity: single-member entries
+    /// (`members: None`) MUST omit the field entirely from wire JSON,
+    /// preserving m215 wire shape verbatim.
+    #[test]
+    fn m219_members_none_omitted_from_wire() {
+        let entry = sample_entry("libsafe.cargo", "pkg:cargo/libsafe@0.1.0");
+        assert!(entry.members.is_none());
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(
+            !json.contains("\"members\""),
+            "single-member entry MUST NOT emit `members` field; got: {json}"
+        );
+    }
+
+    /// Milestone 219 — multi-member entries include a `members[]`
+    /// array. Wire shape is JSON-canonical.
+    #[test]
+    fn m219_members_some_includes_sorted_array() {
+        let mut entry = sample_entry("services-api.multi", "pkg:generic/services-api@0.0.0-unknown");
+        entry.members = Some(vec![
+            SplitMember {
+                purl: "pkg:cargo/api@0.1.0".to_string(),
+                source_dir: "services/api".to_string(),
+            },
+            SplitMember {
+                purl: "pkg:npm/api@0.1.0".to_string(),
+                source_dir: "services/api".to_string(),
+            },
+        ]);
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("\"members\""));
+        assert!(json.contains("\"pkg:cargo/api@0.1.0\""));
+        assert!(json.contains("\"pkg:npm/api@0.1.0\""));
+    }
+
+    /// Milestone 219 — m215 payloads (no `members` field) round-trip
+    /// through m219 `SplitEntry` with zero data loss (per
+    /// contracts/manifest-additive-members.md deserialize contract).
+    #[test]
+    fn m219_m215_payload_deserializes_cleanly() {
+        let m215_json = r#"{"subproject_id":"libsafe.cargo","root_purl":"pkg:cargo/libsafe@0.1.0","source_dir":"crates/libsafe","component_count":42,"shared_deps_count":3,"files":{"cyclonedx-json":"libsafe.cargo.cdx.json"}}"#;
+        let entry: SplitEntry = serde_json::from_str(m215_json).unwrap();
+        assert!(entry.members.is_none());
+        // Re-serialize; MUST be byte-identical to the input.
+        let round_trip = serde_json::to_string(&entry).unwrap();
+        assert_eq!(round_trip, m215_json);
     }
 
     #[test]

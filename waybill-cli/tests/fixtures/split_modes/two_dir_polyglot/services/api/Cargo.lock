@@ -1,0 +1,12 @@
+version = 3
+
+[[package]]
+name = "m219-api"
+version = "0.1.0"
+dependencies = ["serde"]
+
+[[package]]
+name = "serde"
+version = "1.0.219"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f8ec9d43deb2b4fca29cbfe3d81fd4b31e5f0eaeff5aacff29c8d51fcdc1e3d"

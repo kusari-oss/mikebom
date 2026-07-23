@@ -1,15 +1,15 @@
-# What kind of SBOM does waybill emit?
+# What kind of SBOM does Waybill emit?
 
-A common question when comparing waybill's component count to
+A common question when comparing Waybill's component count to
 trivy's, syft's, or another scanner's: **are we counting the
 same thing?** Often the answer is no — and the gap is a scope
-choice, not a bug. waybill self-describes its scope on every
+choice, not a bug. Waybill self-describes its scope on every
 output so consumers can answer the question by reading the SBOM
 rather than reverse-engineering it from the component list.
 
 ## Two axes
 
-waybill uses two orthogonal scope axes:
+Waybill uses two orthogonal scope axes:
 
 **1. Document-level scope mode** — the answer to "what set of
 things is this SBOM trying to describe?"
@@ -35,9 +35,9 @@ values:
 | `deployed` | Installed in the runtime image — dpkg, apk, rpm, populated `node_modules`, populated venv `dist-info`. |
 | `analyzed` | Artifact file on disk, identified by filename + content hash. |
 
-## How waybill self-describes scope in each format
+## How Waybill self-describes scope in each format
 
-waybill ships scope information through native fields in every
+Waybill ships scope information through native fields in every
 output format, not as `waybill:`-prefixed extensions, so any
 spec-compliant SBOM reader picks it up:
 
@@ -55,21 +55,21 @@ recipes, the four-column equivalence table, and the
 
 ## Industry / consumer terminology bridge
 
-When operators compare waybill's count to other scanners, the
+When operators compare Waybill's count to other scanners, the
 delta usually traces back to a different scope choice rather
 than a real coverage gap. As a rule of thumb:
 
-- waybill's `--image` output ≈ NTIA "deployed" SBOM. CDX phase
+- Waybill's `--image` output ≈ NTIA "deployed" SBOM. CDX phase
   `operations` dominates. Tighter than tools that walk a build
   cache (e.g. trivy's `~/.m2/`) but more accurate for "what's
   actually running in this image."
-- waybill's `--path` output ≈ NTIA "build" SBOM. CDX phases
+- Waybill's `--path` output ≈ NTIA "build" SBOM. CDX phases
   `pre-build` (lockfile entries) and `build` (eBPF-traced
   events, when applicable) dominate. Closer to a manifest
   view; useful for license compliance and full transitive
   coverage.
 
-For the deeper rationale on why waybill takes this stance — and
+For the deeper rationale on why Waybill takes this stance — and
 why class-presence verification deliberately prunes Maven shade-
 relocation ancestors that *aren't actually in the JAR* — see
 [design notes](../design-notes.md)'s "Scope: artifact vs

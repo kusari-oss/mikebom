@@ -16,7 +16,7 @@ Point at any directory that contains lockfiles or manifests. Works on any OS.
 waybill sbom scan --path ./my-project --output project.cdx.json --json
 ```
 
-waybill reads every supported lockfile (`Cargo.lock`, `package-lock.json`,
+Waybill reads every supported lockfile (`Cargo.lock`, `package-lock.json`,
 `pnpm-lock.yaml`, `go.mod` + `go.sum`, `Gemfile.lock`, `pom.xml`,
 `poetry.lock`, `Pipfile.lock`, `requirements.txt`) plus Maven JAR
 `META-INF/maven/.../pom.xml`, per-module Go `.mod` files from the module
@@ -28,7 +28,7 @@ cache if present, and produces a CycloneDX with:
 - Strict PURL encoding round-trippable through `packageurl-python`
 
 For richer Go dep graphs, run `go mod download` (or let `go build` populate
-`$GOMODCACHE`) before the scan — per-module `.mod` files let waybill walk the
+`$GOMODCACHE`) before the scan — per-module `.mod` files let Waybill walk the
 transitive require graph.
 
 See [CLI reference: `waybill sbom scan`](cli-reference.md) for the full flag
@@ -44,7 +44,7 @@ Works on any OS. No privilege, no eBPF.
 waybill sbom scan --image alpine:3.19 --output alpine.cdx.json --json
 ```
 
-For OCI references waybill checks the local docker daemon's cache first then
+For OCI references Waybill checks the local docker daemon's cache first then
 falls back to a registry pull on miss. Pass a `docker save` tarball if you'd
 rather feed bytes directly:
 
@@ -91,13 +91,13 @@ Credentials come from `~/.docker/config.json` (both `Bearer`-style —
 Docker Hub, GHCR, gcr.io — and `Basic`-style — AWS ECR — challenges).
 Run `docker login <registry>` (or
 `aws ecr get-login-password | docker login --username AWS …` for ECR)
-once and waybill picks up the credentials.
+once and Waybill picks up the credentials.
 
 ### OCI Referrers API (milestone 186 / #442)
 
 When a registry publishes a pre-generated SBOM via the OCI Distribution
 Spec v1.1 Referrers API (e.g., `docker buildx --sbom=true` output), the
-`--sbom-source` flag lets waybill prefer it over re-scanning the image
+`--sbom-source` flag lets Waybill prefer it over re-scanning the image
 bytes:
 
 ```bash
@@ -156,7 +156,7 @@ trace-mode inside the `waybill-dev` container or a Lima VM — see
 ## Recipe 4 — Assert SBOM type with `--sbom-type`
 
 When your pipeline knows the SBOM should be classified as a single CISA SBOM
-Type regardless of waybill's per-component auto-detection, override at the
+Type regardless of Waybill's per-component auto-detection, override at the
 document level:
 
 ```bash
@@ -257,7 +257,7 @@ Without this metadata embedded in the SBOM itself, the link between "this
 SBOM" and "this running workload" is lost once the file leaves the scanning
 context.
 
-waybill doesn't ship dedicated `--cluster-id` / `--namespace` flags. Use the
+Waybill doesn't ship dedicated `--cluster-id` / `--namespace` flags. Use the
 existing `--id <scheme>=<value>` flag (repeatable) to encode K8s workload
 identity:
 
@@ -361,7 +361,7 @@ See [CLI reference: `--metadata-file`](cli-reference.md) for the schema.
 
 ## Recipe 9 — Verify a signed DSSE attestation
 
-Works on any OS. Accepts DSSE envelopes produced by waybill, witness, or any
+Works on any OS. Accepts DSSE envelopes produced by Waybill, witness, or any
 other SBOMit-compliant tool.
 
 ```bash

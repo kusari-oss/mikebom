@@ -1,6 +1,6 @@
 # Compiled-binary identity and provenance
 
-Every binary waybill scans carries a cross-platform identity in the
+Every binary Waybill scans carries a cross-platform identity in the
 SBOM. This page is the reference for the per-format binary-identity
 annotations, Go VCS provenance, Rust crate-closure provenance, and
 the curated embedded-version-string detector. For where each
@@ -44,7 +44,7 @@ regardless of OS.
 
 ## Go VCS provenance
 
-waybill extracts `vcs.revision` (commit SHA), `vcs.time` (RFC 3339
+Waybill extracts `vcs.revision` (commit SHA), `vcs.time` (RFC 3339
 build timestamp), and `vcs.modified` (dirty-tree flag) from every Go
 binary's BuildInfo. Surfaced as `waybill:go-vcs-revision` /
 `waybill:go-vcs-time` / `waybill:go-vcs-modified` on the main-module
@@ -53,7 +53,7 @@ consumers don't have to shell out.
 
 ## Rust crate-closure provenance
 
-waybill extracts the full build-time crate dependency closure from
+Waybill extracts the full build-time crate dependency closure from
 the `.dep-v0` linker section that
 [`cargo auditable build`](https://github.com/rust-secure-code/cargo-auditable)
 embeds. Each crate becomes a `pkg:cargo/<name>@<version>` component
@@ -72,7 +72,7 @@ closure without source access. Cross-format: ELF / Mach-O / PE.
 
 Curated detection for **11 high-CVE-volume native libraries**
 statically-linked into compiled binaries — the heuristic-tier
-counterpart to source-tree manifest parsing. waybill walks the
+counterpart to source-tree manifest parsing. Waybill walks the
 binary's read-only string region (`.rodata` / `__TEXT,__cstring` /
 `.rdata` — never the full image, to bound the false-positive
 surface) and recognises each library's canonical version banner

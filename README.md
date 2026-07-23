@@ -46,7 +46,7 @@ A toolkit for working with software bills of materials (SBOMs) end-to-end:
 
 - [Install](#install)
 - [Why Waybill?](#why-waybill)
-- [What kind of SBOM does waybill emit?](#what-kind-of-sbom-does-waybill-emit)
+- [What kind of SBOM does Waybill emit?](#what-kind-of-sbom-does-waybill-emit)
 - [Supported ecosystems](#supported-ecosystems)
 - [Usage](#usage)
 - [Cross-tier correlation](#cross-tier-correlation)
@@ -80,7 +80,7 @@ cargo binstall --git https://github.com/kusari-sandbox/waybill waybill
 
 `waybill-cli`'s [`[package.metadata.binstall]`](waybill-cli/Cargo.toml)
 block pins the URL template to the existing release-tarball naming so
-discovery is deterministic. Once waybill is published to crates.io
+discovery is deterministic. Once Waybill is published to crates.io
 (planned for a future milestone), bare `cargo binstall waybill` will
 work without the `--git` flag.
 
@@ -165,7 +165,7 @@ per-module metadata to build a proper CycloneDX with:
   binaries. Full reference:
   [`docs/reference/binary-identity.md`](docs/reference/binary-identity.md).
 
-On top of scan-mode, waybill adds:
+On top of scan-mode, Waybill adds:
 
 - **Signed DSSE envelope attestations** via sigstore (local-key or
   keyless OIDC → Fulcio → Rekor).
@@ -173,10 +173,10 @@ On top of scan-mode, waybill adds:
 - **Witness-collection v0.1** output compatible with `sbomit generate`
   and any go-witness-aware verifier.
 
-## What kind of SBOM does waybill emit?
+## What kind of SBOM does Waybill emit?
 
-Comparing waybill's component count to trivy's or syft's? The gap is
-usually a **scope choice, not a bug** — and waybill self-describes its
+Comparing Waybill's component count to trivy's or syft's? The gap is
+usually a **scope choice, not a bug** — and Waybill self-describes its
 scope on every output. Two orthogonal axes:
 
 - **Document-level scope mode:** *artifact* (on-disk components only;
@@ -257,7 +257,7 @@ Per-flag reference:
 ## Cross-tier correlation
 
 When the same software produces multiple SBOMs across its lifecycle —
-source, build, and image — waybill ships the identity plumbing to tie
+source, build, and image — Waybill ships the identity plumbing to tie
 them together:
 
 - **Stable identifiers**, auto-detected (`repo:` from the git remote,
@@ -267,7 +267,7 @@ them together:
   [`docs/reference/identifiers.md`](docs/reference/identifiers.md).
 - **Content-addressed handshake** — the build SBOM carries
   `subject:sha256:X` for its output binary; the image SBOM's digest
-  matches by plain string. No waybill-side resolver needed.
+  matches by plain string. No Waybill-side resolver needed.
 - **Explicit binding** — `--bind-to-source` embeds a content-hashed
   reference to the source SBOM; `sbom verify-binding` /
   `sbom trace-binding` re-derive and walk the chain. See

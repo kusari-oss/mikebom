@@ -433,19 +433,33 @@ pub struct ScanArgs {
     #[arg(long, action = clap::ArgAction::Append, value_name = "[FMT=]PATH")]
     pub output: Vec<String>,
 
-    /// Milestone 215 — split monorepo SBOM into per-workspace-member
-    /// sub-SBOMs. When set, emit one SBOM per detected workspace
-    /// boundary (Cargo workspace member, npm workspace member, Go
-    /// workspace, Maven multi-module, pyproject dir, etc.) plus a
-    /// sibling `split-manifest.json` describing the split.
+    /// Milestone 215/219 — split monorepo SBOM into per-workspace-
+    /// member OR per-directory sub-SBOMs.
+    ///
+    /// Accepts an optional value:
+    ///
+    /// - `--split` (bare) OR `--split=workspace` → per-main-module
+    ///   grouping (m215 default; byte-identity preserved with pre-m219
+    ///   behavior).
+    /// - `--split=directory` → group all main-modules whose
+    ///   canonicalized source dirs match into ONE sub-SBOM per dir.
+    ///   Useful for polyglot repos where Cargo + package.json coexist.
     ///
     /// Requires `--output-dir <dir>`; incompatible with `--output`
     /// (a single file cannot hold N sub-SBOMs). On single-package
     /// projects with no workspace boundaries, falls back to one SBOM
     /// with a WARN log (FR-009). See
-    /// `docs/user-guide/cli-reference.md#split` for the full contract.
-    #[arg(long, conflicts_with = "output")]
-    pub split: bool,
+    /// `docs/reference/split-modes.md` for the mode table + worked
+    /// examples.
+    #[arg(
+        long,
+        value_enum,
+        num_args = 0..=1,
+        default_missing_value = "workspace",
+        require_equals = true,
+        conflicts_with = "output",
+    )]
+    pub split: Option<crate::generate::split::SplitMode>,
 
     /// Milestone 215 — output directory for split-mode sub-SBOMs +
     /// `split-manifest.json`. Required when `--split` is set; ignored
@@ -2365,7 +2379,7 @@ pub async fn execute(
     // already rejects `--split` + `--output`; here we enforce the
     // positive requirement so operators get a friendly diagnostic
     // pointing at the fix rather than a silent no-op.
-    if args.split && args.output_dir.is_none() {
+    if args.split.is_some() && args.output_dir.is_none() {
         anyhow::bail!(
             "`--split` requires `--output-dir <dir>` — a single file cannot \
              hold N sub-SBOMs. Example:\n  \
@@ -3508,7 +3522,7 @@ pub async fn execute(
     // Zero-boundary fallback (FR-009): `emit_split` returns
     // `Ok(false)` and we fall through to the pre-feature single-SBOM
     // emit below (WARN log already emitted).
-    if args.split {
+    if let Some(mode) = args.split {
         let output_dir = args.output_dir.as_ref().expect(
             "--output-dir required when --split; validated at CLI parse",
         );
@@ -3520,6 +3534,7 @@ pub async fn execute(
             output_cfg.created,
             output_cfg.mikebom_version,
             &root_path,
+            mode,
         )?;
         if split_handled {
             if args.json {
@@ -4524,7 +4539,7 @@ mod tests {
             // FR-016 / SC-005).
             helm_chart: None,
             helm_render: false,
-            split: false,
+            split: None,
             output_dir: None,
             output: vec![],
             format: vec![],

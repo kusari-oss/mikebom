@@ -22,6 +22,7 @@
 
 pub mod compiler_pipeline_annotation;
 pub mod cpe;
+pub mod cross_ecosystem_edges;
 pub mod cyclonedx;
 pub mod divergence_annotation;
 pub mod graph_completeness;
@@ -119,6 +120,15 @@ pub struct ScanArtifacts<'a> {
     /// (byte-identity for non-Go and Go-project-only scans). Mirrors the
     /// borrowed-slice pattern of `go_cache_warming` above.
     pub go_toolchains_detected: Option<&'a [PathBuf]>,
+    /// Milestone 218 (waybill#633): scan-scoped cross-ecosystem
+    /// dep-name edge resolution report. `None` when the
+    /// FR-000 `--experimental-cross-ecosystem-edges` flag is OFF
+    /// (byte-identity for pre-m218 behavior). `Some(_)` when the
+    /// flag is ON; the report drives C137/C138 per-edge annotations
+    /// and the C139 doc-scope unresolved annotation across CDX,
+    /// SPDX 2.3, and SPDX 3 emitters.
+    pub cross_ecosystem_edges_report:
+        Option<&'a cross_ecosystem_edges::CrossEcosystemEdgesReport>,
     /// Milestone 204 (#554): document-scope Helm image-extraction-mode
     /// signal driving the C123 `waybill:image-extraction-completeness`
     /// annotation. `None` when no helm reader ran during the scan
@@ -323,6 +333,7 @@ impl<'a> ScanArtifacts<'a> {
             go_cache_warming: self.go_cache_warming,
             go_workspace_mode: self.go_workspace_mode,
             go_toolchains_detected: self.go_toolchains_detected,
+            cross_ecosystem_edges_report: self.cross_ecosystem_edges_report,
             helm_extraction_mode: self.helm_extraction_mode,
             image_source: self.image_source,
             source_document_binding: self.source_document_binding,

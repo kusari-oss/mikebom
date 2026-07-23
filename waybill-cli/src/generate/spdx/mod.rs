@@ -391,6 +391,7 @@ mod tests {
             go_cache_warming: None,
             go_workspace_mode: None,
             go_toolchains_detected: None,
+            cross_ecosystem_edges_report: None,
             helm_extraction_mode: None,
             image_source: None,
             scan_target_coord: None,

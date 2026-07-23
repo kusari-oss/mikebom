@@ -34,6 +34,7 @@ use crate::generate::ScanArtifacts;
 /// Build the `Annotation` elements for component-level waybill
 /// signals (Section C rows C1–C20 + D1/D2 of the format-mapping
 /// doc that stay annotation-bound under the Q2 strict-match rule).
+#[allow(clippy::too_many_arguments)]
 pub fn build_component_annotations(
     components: &[ResolvedComponent],
     package_iri_by_purl: &std::collections::BTreeMap<String, String>,
@@ -43,6 +44,9 @@ pub fn build_component_annotations(
     include_source_files: bool,
     compiler_pipeline: Option<
         &waybill_common::attestation::compiler_pipeline::CompilerPipelineData,
+    >,
+    cross_ecosystem_edges_report: Option<
+        &crate::generate::cross_ecosystem_edges::CrossEcosystemEdgesReport,
     >,
 ) -> Vec<Value> {
     let mut out: Vec<Value> = Vec::new();
@@ -59,6 +63,7 @@ pub fn build_component_annotations(
             _include_dev,
             include_source_files,
             compiler_pipeline,
+            cross_ecosystem_edges_report,
         );
     }
     sort_by_spdx_id(&mut out);
@@ -164,20 +169,41 @@ fn build_annotation(
     field: &str,
     value: serde_json::Value,
 ) -> Value {
+    build_annotation_with_disambiguator(subject_iri, doc_iri, creation_info_id, field, value, None)
+}
+
+/// Milestone 218 (waybill#633): variant of [`build_annotation`] that
+/// accepts an optional `disambiguator` string added to the anno_iri
+/// hash. Needed for per-edge annotations like C137/C138 where a
+/// single source Package emits N annotations with the same field
+/// name but distinct `target_purl` values — without a disambiguator,
+/// the m166 spdxId-dedupe pass collapses all N into 1.
+///
+/// ID derivation MUST NOT include `statement` — that string carries
+/// workspace-relative source-file paths for `waybill:source-files`,
+/// and including host-specific bytes here breaks cross-host
+/// byte-identity (milestone 017 T013b: same scan on macOS dev vs
+/// Linux CI produced different `anno-*` hashes, displacing every
+/// annotation in the spdxId-sorted `@graph[]` array). The
+/// disambiguator (typically a target_purl from the annotation's
+/// payload) is bytes-stable across hosts by construction.
+fn build_annotation_with_disambiguator(
+    subject_iri: &str,
+    doc_iri: &str,
+    creation_info_id: &str,
+    field: &str,
+    value: serde_json::Value,
+    disambiguator: Option<&str>,
+) -> Value {
     let envelope = MikebomAnnotationCommentV1::new(field, coerce_envelope_value(value));
     let statement = envelope.to_comment_string();
-    // ID derivation MUST NOT include `statement` — that string carries
-    // workspace-relative source-file paths for `waybill:source-files`,
-    // and including host-specific bytes here breaks cross-host
-    // byte-identity (milestone 017 T013b: same scan on macOS dev vs
-    // Linux CI produced different `anno-*` hashes, displacing every
-    // annotation in the spdxId-sorted `@graph[]` array). `subject|field`
-    // is already unique per annotation: `push_*_fields` emits one
-    // annotation per (component, field) pair, with no duplicate field
-    // names per subject.
+    let hash_input = match disambiguator {
+        Some(d) => format!("{subject_iri}|{field}|{d}"),
+        None => format!("{subject_iri}|{field}"),
+    };
     let anno_iri = format!(
         "{doc_iri}/anno-{}",
-        hash_prefix(format!("{subject_iri}|{field}").as_bytes(), 16)
+        hash_prefix(hash_input.as_bytes(), 16)
     );
     json!({
         "type": "Annotation",
@@ -202,6 +228,9 @@ fn push_component_fields(
     include_source_files: bool,
     compiler_pipeline: Option<
         &waybill_common::attestation::compiler_pipeline::CompilerPipelineData,
+    >,
+    cross_ecosystem_edges_report: Option<
+        &crate::generate::cross_ecosystem_edges::CrossEcosystemEdgesReport,
     >,
 ) {
     let push = |out: &mut Vec<Value>, field: &str, value: serde_json::Value| {
@@ -426,6 +455,51 @@ fn push_component_fields(
             push(out, "waybill:trace-attach-late", json!("true"));
         }
     }
+
+    // Milestone 218 (waybill#633) — C137/C138 per-Package
+    // annotations. Ideal SPDX 3 landing is the Relationship IRI,
+    // but per-Package landing satisfies the parity contract (which
+    // matches by field name, not subject IRI) and avoids threading
+    // Relationship-IRI mapping through this function. Silent when
+    // the report is None or the source PURL has no crossed edges.
+    //
+    // Use the disambiguated builder — a single source Package
+    // typically has N > 1 crossed edges (one per DEPENDENCIES gem),
+    // all with the same field name but distinct target_purl values.
+    // Without the disambiguator, the m166 spdxId-dedupe pass
+    // collapses all N into 1 (bug: SPDX 3 loses 26 of 27
+    // annotations on the fastlane fixture).
+    if let Some(report) = cross_ecosystem_edges_report {
+        let c_purl = c.purl.as_str();
+        for ((src, tgt), payload) in &report.crossed_edges {
+            if src == c_purl {
+                if let Ok(value) = serde_json::to_string(payload) {
+                    out.push(build_annotation_with_disambiguator(
+                        subject_iri,
+                        doc_iri,
+                        creation_info_id,
+                        "waybill:cross-ecosystem-inference",
+                        json!(value),
+                        Some(tgt),
+                    ));
+                }
+            }
+        }
+        for ((src, tgt), ambig) in &report.ambiguous_edges {
+            if src == c_purl {
+                if let Ok(value) = serde_json::to_string(ambig) {
+                    out.push(build_annotation_with_disambiguator(
+                        subject_iri,
+                        doc_iri,
+                        creation_info_id,
+                        "waybill:cross-ecosystem-inference-ambiguous",
+                        json!(value),
+                        Some(tgt),
+                    ));
+                }
+            }
+        }
+    }
 }
 
 /// Mirror of `annotations::annotate_document` — C21–C23 + E1.
@@ -644,6 +718,22 @@ fn push_document_fields(
                 toolchains.iter().map(|p| p.display().to_string()).collect();
             let value = serde_json::to_string(&paths).unwrap_or_default();
             push(out, "waybill:go-toolchain-detected", json!(value));
+        }
+    }
+
+    // Milestone 218 (waybill#633): C139 doc-scope
+    // `waybill:cross-ecosystem-inference-unresolved` annotation
+    // (SPDX 3). Silent when unresolved is empty per FR-011
+    // (matches CDX + SPDX 2.3 emission gates).
+    if let Some(report) = scan.cross_ecosystem_edges_report {
+        if !report.unresolved.is_empty() {
+            let value =
+                serde_json::to_string(&report.unresolved).unwrap_or_default();
+            push(
+                out,
+                "waybill:cross-ecosystem-inference-unresolved",
+                json!(value),
+            );
         }
     }
 
@@ -910,6 +1000,7 @@ mod tests {
                 true,
                 true,
                 None,
+            None,
             );
             let envs = envelopes_for_field(&out, "waybill:lifecycle-scope");
             assert!(
@@ -952,6 +1043,7 @@ mod tests {
             &c,
             /* include_dev = */ true,
             /* include_source_files = */ true,
+            None,
             None,
         );
         let envs = envelopes_for_field(&out, "waybill:source-files");

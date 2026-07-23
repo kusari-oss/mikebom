@@ -45,6 +45,9 @@ pub fn build_dependencies(
     components: &[ResolvedComponent],
     relationships: &[Relationship],
     target_ref: &str,
+    cross_ecosystem_edges_report: Option<
+        &crate::generate::cross_ecosystem_edges::CrossEcosystemEdgesReport,
+    >,
 ) -> serde_json::Value {
     // Build a map of ref -> set of dependency refs.
     let mut dep_map: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
@@ -99,13 +102,53 @@ pub fn build_dependencies(
     }
 
     // Convert to CycloneDX format.
+    // Milestone 218 (waybill#633): for source PURLs that have
+    // entries in the cross-ecosystem report, emit C137
+    // (`waybill:cross-ecosystem-inference`) + conditionally C138
+    // (`waybill:cross-ecosystem-inference-ambiguous`) as
+    // `dependencies[i].properties[]` objects. Per-edge disambiguation
+    // via the `target_purl` field inside the property value payload.
     let entries: Vec<serde_json::Value> = dep_map
         .into_iter()
         .map(|(ref_str, depends_on)| {
-            json!({
-                "ref": ref_str,
-                "dependsOn": depends_on.into_iter().collect::<Vec<String>>()
-            })
+            let dep_vec: Vec<String> = depends_on.into_iter().collect();
+            let properties = cross_ecosystem_edges_report
+                .map(|report| {
+                    let mut props: Vec<serde_json::Value> = Vec::new();
+                    for target in &dep_vec {
+                        let key = (ref_str.clone(), target.clone());
+                        if let Some(base) = report.crossed_edges.get(&key) {
+                            if let Ok(value) = serde_json::to_string(base) {
+                                props.push(json!({
+                                    "name": "waybill:cross-ecosystem-inference",
+                                    "value": value,
+                                }));
+                            }
+                        }
+                        if let Some(ambig) = report.ambiguous_edges.get(&key) {
+                            if let Ok(value) = serde_json::to_string(ambig) {
+                                props.push(json!({
+                                    "name": "waybill:cross-ecosystem-inference-ambiguous",
+                                    "value": value,
+                                }));
+                            }
+                        }
+                    }
+                    props
+                })
+                .unwrap_or_default();
+            if properties.is_empty() {
+                json!({
+                    "ref": ref_str,
+                    "dependsOn": dep_vec,
+                })
+            } else {
+                json!({
+                    "ref": ref_str,
+                    "dependsOn": dep_vec,
+                    "properties": properties,
+                })
+            }
         })
         .collect();
 
@@ -172,7 +215,7 @@ mod tests {
             make_component("tokio", "1.38.0"),
         ];
 
-        let result = build_dependencies(&components, &[], "myapp@0.1.0");
+        let result = build_dependencies(&components, &[], "myapp@0.1.0", None);
         let deps = result.as_array().expect("array");
 
         // Should have 3 entries: myapp target + 2 components.
@@ -232,7 +275,7 @@ mod tests {
             },
         ];
 
-        let result = build_dependencies(&components, &relationships, "myapp@0.1.0");
+        let result = build_dependencies(&components, &relationships, "myapp@0.1.0", None);
         let deps = result.as_array().unwrap();
         let target = deps.iter().find(|d| d["ref"] == "myapp@0.1.0").unwrap();
         let target_deps: Vec<&str> = target["dependsOn"]
@@ -258,7 +301,7 @@ mod tests {
                 data_type: "test".to_string(),
             },
         }];
-        let result = build_dependencies(&components, &relationships, "myapp@0.1.0");
+        let result = build_dependencies(&components, &relationships, "myapp@0.1.0", None);
         let deps = result.as_array().unwrap();
         let target = deps.iter().find(|d| d["ref"] == "myapp@0.1.0").unwrap();
         let target_deps: Vec<&str> = target["dependsOn"]
@@ -299,7 +342,7 @@ mod tests {
             },
         ];
 
-        let result = build_dependencies(&components, &relationships, "target@0.1.0");
+        let result = build_dependencies(&components, &relationships, "target@0.1.0", None);
         let deps = result.as_array().expect("array");
 
         // Find the myapp entry.
@@ -321,7 +364,7 @@ mod tests {
             make_component("alpha", "1.0.0"),
         ];
 
-        let result = build_dependencies(&components, &[], "target@0.1.0");
+        let result = build_dependencies(&components, &[], "target@0.1.0", None);
         let deps = result.as_array().expect("array");
 
         // BTreeMap ensures alphabetical ordering by ref.

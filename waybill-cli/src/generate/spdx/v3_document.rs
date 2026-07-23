@@ -763,6 +763,7 @@ pub fn build_document(
             scan.include_dev,
             scan.include_source_files,
             scan.compiler_pipeline,
+            scan.cross_ecosystem_edges_report,
         );
     // Milestone 158 US2 — compute the multi-root BFS reachability
     // pass on the AUGMENTED SPDX 3 graph and pass into

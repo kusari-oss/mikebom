@@ -329,6 +329,7 @@ pub fn build_packages(
             artifacts.component_identifiers,
             &mut match_counts,
             artifacts.compiler_pipeline,
+            artifacts.cross_ecosystem_edges_report,
         );
         packages.push(pkg);
         if let Some(info) = decl_extracted {
@@ -452,6 +453,9 @@ fn component_to_package(
     match_counts: &mut std::collections::BTreeMap<usize, usize>,
     compiler_pipeline: Option<
         &waybill_common::attestation::compiler_pipeline::CompilerPipelineData,
+    >,
+    cross_ecosystem_edges_report: Option<
+        &crate::generate::cross_ecosystem_edges::CrossEcosystemEdgesReport,
     >,
 ) -> (
     SpdxPackage,
@@ -586,6 +590,7 @@ fn component_to_package(
         include_dev,
         include_source_files,
         compiler_pipeline,
+        cross_ecosystem_edges_report,
     );
 
     let (license_declared, decl_extracted) = reduce_license_vec(&c.licenses);

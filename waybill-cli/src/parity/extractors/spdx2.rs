@@ -604,6 +604,10 @@ spdx23_anno!(c133_spdx23, "waybill:secrets-read-filtered",            document);
 spdx23_anno!(c134_spdx23, "waybill:trace-attach-late",                component);
 spdx23_anno!(c135_spdx23, "waybill:package-shape",                    component);
 spdx23_anno!(c136_spdx23, "waybill:go-toolchain-detected",            document);
+// Milestone 218 (waybill#633): cross-ecosystem edge annotations.
+spdx23_anno!(c137_spdx23, "waybill:cross-ecosystem-inference",             component);
+spdx23_anno!(c138_spdx23, "waybill:cross-ecosystem-inference-ambiguous",   component);
+spdx23_anno!(c139_spdx23, "waybill:cross-ecosystem-inference-unresolved",  document);
 
 // Milestone 162 (closes #496): C113/C114 per-component Ruby built-in
 // gem synthetic-component annotations.

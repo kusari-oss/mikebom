@@ -38,6 +38,12 @@ the way it did, or contribute to the pipeline.
 
 ## Reference material
 
+- [SBOM scopes](reference/sbom-scopes.md) — what kind of SBOM waybill
+  emits: artifact vs manifest scope, per-component lifecycle tiers, and
+  the terminology bridge to other scanners.
+- [Binary identity](reference/binary-identity.md) — ELF / Mach-O / PE
+  identity annotations, Go VCS provenance, cargo-auditable crate
+  closures, and embedded-version-string detection.
 - [Identifiers](reference/identifiers.md) — the four-layer identity model
   (`repo:` / `git:` / `image:` / `attestation:` / user-defined) and per-flag
   identity behavior.

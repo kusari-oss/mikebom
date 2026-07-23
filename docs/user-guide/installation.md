@@ -46,8 +46,21 @@ that matches your platform.
 > Do not rely on the Windows binary for production SBOM workflows
 > until #210 closes.
 
-For the latest Windows x86_64 binary, follow the [Windows install
-instructions in the README](../../README.md#windows-install).
+Download `waybill-v<version>-x86_64-pc-windows-msvc.zip` from the
+[latest release](https://github.com/kusari-sandbox/waybill/releases),
+extract `waybill.exe`, and place it on your `PATH`.
+
+```powershell
+waybill.exe sbom scan --path C:\Users\dev\my-project --output out.cdx.json
+```
+
+The Windows build covers the cross-platform readers (cargo, npm, pip,
+gem, maven, golang) and the cross-format binary scanner (ELF, Mach-O,
+PE). Linux-specific OS-package readers (dpkg, rpm, apk), Docker-daemon
+scanning, and eBPF tracing are unavailable on Windows hosts; they no-op
+silently. Path strings in emitted SBOMs are forward-slash-normalized
+regardless of host OS so the same input produces the same SBOM bytes
+on Linux, macOS, and Windows.
 
 ## Build from source
 

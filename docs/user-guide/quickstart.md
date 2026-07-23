@@ -78,6 +78,49 @@ component carries byte-level tamper detection. Pass `--no-deep-hash` to skip
 this on very large images; `--no-package-db` to fall back to artifact-file-
 only scanning.
 
+Pass `--image-src remote` to force a fresh registry fetch (skip the local
+docker cache):
+
+```bash
+waybill sbom scan --image alpine:3.19 --image-src remote --output alpine.cdx.json
+```
+
+### Authenticated registries
+
+Credentials come from `~/.docker/config.json` (both `Bearer`-style —
+Docker Hub, GHCR, gcr.io — and `Basic`-style — AWS ECR — challenges).
+Run `docker login <registry>` (or
+`aws ecr get-login-password | docker login --username AWS …` for ECR)
+once and waybill picks up the credentials.
+
+### OCI Referrers API (milestone 186 / #442)
+
+When a registry publishes a pre-generated SBOM via the OCI Distribution
+Spec v1.1 Referrers API (e.g., `docker buildx --sbom=true` output), the
+`--sbom-source` flag lets waybill prefer it over re-scanning the image
+bytes:
+
+```bash
+# Prefer a referrer if published, fall through to scan otherwise.
+waybill sbom scan --image ghcr.io/example/app:v1 \
+    --sbom-source either \
+    --format cyclonedx-json --output app.cdx.json
+
+# Compliance: require a matching upstream SBOM (fail if absent).
+waybill sbom scan --image ghcr.io/example/app:v1 \
+    --sbom-source referrer \
+    --format cyclonedx-json --output app.cdx.json
+
+# Default (`scan`) preserves pre-m186 behavior byte-identically —
+# no network activity on the Referrers endpoint.
+waybill sbom scan --image ghcr.io/example/app:v1 \
+    --format cyclonedx-json --output app.cdx.json
+```
+
+Referrer content is emitted byte-identically to preserve any
+upstream signer's Cosign / in-toto DSSE contracts. Full flag
+reference: `specs/186-oci-referrers-sbom/quickstart.md`.
+
 See [Architecture: scanning](../architecture/scanning.md) for the ecosystem
 walker design.
 
@@ -384,6 +427,55 @@ waybill sbom verify attest.dsse.json --layout layout.json
 
 Layouts are standard in-toto — any in-toto-aware verifier accepts them. Use
 `--expires <DURATION>` to control the validity window (default `1y`).
+
+---
+
+## Recipe 12 — Scan a package cache
+
+Treats cached bytes as present-on-disk; useful for CI cache audits.
+
+```bash
+waybill sbom scan --path ~/.cargo/registry/cache --output cargo.cdx.json
+```
+
+---
+
+## Recipe 13 — Scan a Maven fat-jar and see shaded ancestors
+
+With feature 009 the SBOM emits one nested component per shade-relocated
+ancestor whose bytecode is actually in the JAR.
+
+```bash
+waybill sbom scan --path ./target/ --output app.cdx.json
+
+jq '
+  .components[]
+  | select(.purl | test("pkg:maven/"))
+  | .components // []
+  | map(select(.properties // [] | any(.name == "waybill:shade-relocation" and .value == "true")))
+  | map({purl, bom_ref: ."bom-ref"})
+' app.cdx.json
+```
+
+---
+
+## Recipe 14 — Enrich an SBOM with an RFC 6902 JSON Patch
+
+Each patch is recorded as a `waybill:enrichment-patch[N]` property on the
+BOM metadata so the provenance of every change survives.
+
+```bash
+waybill sbom enrich project.cdx.json \
+  --patch add-supplier.json --author you@example.com
+```
+
+---
+
+**Common flags** across every `sbom *` subcommand: `--offline`,
+`--exclude-scope`, `--include-declared-deps`,
+`--include-legacy-rpmdb` (env: `WAYBILL_INCLUDE_LEGACY_RPMDB=1`).
+See the [CLI reference](cli-reference.md) for the full per-flag
+reference and `waybill sbom <verb> --help` for the canonical source.
 
 ---
 

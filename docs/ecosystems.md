@@ -383,6 +383,32 @@ a VCS worktree emit no `waybill:go-vcs-*` annotations.
 - ClearlyDefined: concluded licenses via CD's `golang` / `github`
   provider.
 
+### Build the binary for richer per-component classification
+
+A source-only scan (`waybill sbom scan --path .` on a Go project
+before `go build`) emits the full `go.sum` closure — every module
+the resolver ever fetched, including build-tag alternatives the
+linker DCE'd and test scaffolding never linked. With the binary
+present, waybill keeps the same components but annotates each one
+the linker didn't embed with `waybill:not-linked = true`, so
+consumers get both the broad lockfile view AND a precise
+"what shipped" filter on a single SBOM. On `apigatewayv2/config`
+(typical service): 65 modules with binary, 24 of them carrying
+`waybill:not-linked`; consumers wanting the binary-tight view
+filter on the property and see ~41:
+
+```bash
+go build .                                    # produces ./apigatewayv2-config
+waybill sbom scan --path . --output app.cdx.json
+# → 65 components, 24 carrying waybill:not-linked = true
+jq '[.components[] | select(.properties[]? | select(.name=="waybill:not-linked") | not)]' app.cdx.json
+# → strict "what shipped" view (~41 components, no annotation noise)
+```
+
+When no binary is found, waybill emits a one-line `tracing::info`
+hint pointing you at this workflow — no `waybill:not-linked` data
+is computed in that case.
+
 ---
 
 ## maven

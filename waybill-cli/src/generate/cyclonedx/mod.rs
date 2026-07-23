@@ -77,6 +77,12 @@ impl SbomSerializer for CycloneDxJsonSerializer {
             // builder for the C136 `waybill:go-toolchain-detected`
             // metadata property.
             .with_go_toolchains_detected(scan.go_toolchains_detected.map(|s| s.to_vec()))
+            // Milestone 218 (waybill#633) — propagate the cross-ecosystem
+            // edges report from ScanArtifacts into the builder for the
+            // C137/C138 per-edge annotations (emitted by dependencies.rs)
+            // + C139 doc-scope unresolved annotation (emitted by
+            // metadata.rs).
+            .with_cross_ecosystem_edges_report(scan.cross_ecosystem_edges_report.cloned())
             // Milestone 204 (#554) — propagate the doc-scope helm
             // image-extraction-mode signal from ScanArtifacts into the
             // builder for the C123

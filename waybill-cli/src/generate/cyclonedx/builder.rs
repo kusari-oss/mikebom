@@ -79,6 +79,12 @@ pub struct CycloneDxBuilder {
     /// (C136 absent — byte-identity for non-Go and Go-project-only
     /// scans).
     go_toolchains_detected: Option<Vec<std::path::PathBuf>>,
+    /// Milestone 218 (waybill#633): cross-ecosystem edges report
+    /// for C137/C138 per-edge annotations + C139 doc-scope
+    /// unresolved annotation. `None` when FR-000 flag OFF.
+    cross_ecosystem_edges_report: Option<
+        crate::generate::cross_ecosystem_edges::CrossEcosystemEdgesReport,
+    >,
     /// Milestone 204 (#554): doc-scope helm image-extraction-mode
     /// signal for the C123 `waybill:image-extraction-completeness`
     /// annotation. `None` ⇒ no helm reader ran (C123 absent).
@@ -175,6 +181,7 @@ impl CycloneDxBuilder {
             go_cache_warming: None,
             go_workspace_mode: None,
             go_toolchains_detected: None,
+            cross_ecosystem_edges_report: None,
             helm_extraction_mode: None,
             image_source: None,
             source_document_binding: None,
@@ -395,6 +402,17 @@ impl CycloneDxBuilder {
         detected: Option<Vec<std::path::PathBuf>>,
     ) -> Self {
         self.go_toolchains_detected = detected;
+        self
+    }
+
+    /// Milestone 218 (waybill#633) — record the cross-ecosystem
+    /// edges report for C137/C138/C139 emission. `None` when the
+    /// FR-000 experimental flag is OFF (byte-identity preserved).
+    pub fn with_cross_ecosystem_edges_report(
+        mut self,
+        report: Option<crate::generate::cross_ecosystem_edges::CrossEcosystemEdgesReport>,
+    ) -> Self {
+        self.cross_ecosystem_edges_report = report;
         self
     }
 
@@ -637,6 +655,7 @@ impl CycloneDxBuilder {
             self.go_transitive_fallback_count,
             self.go_cache_warming.as_ref(),
             self.go_toolchains_detected.as_deref(),
+            self.cross_ecosystem_edges_report.as_ref(),
             self.helm_extraction_mode.as_ref(),
             self.image_source.as_ref(),
             self.compiler_pipeline.as_ref(),
@@ -738,7 +757,7 @@ impl CycloneDxBuilder {
         let effective_relationships: &[Relationship] = effective_relationships_owned
             .as_deref()
             .unwrap_or(effective_relationships_base);
-        let deps = build_dependencies(effective_components, effective_relationships, &target_ref);
+        let deps = build_dependencies(effective_components, effective_relationships, &target_ref, self.cross_ecosystem_edges_report.as_ref());
         let vulnerabilities = build_vulnerabilities(effective_components);
 
         // Milestone 080 — build CDX 1.6 `bom.annotations[]` for the

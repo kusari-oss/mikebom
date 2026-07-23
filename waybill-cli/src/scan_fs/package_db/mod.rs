@@ -394,6 +394,11 @@ pub struct ScanDiagnostics {
     /// `ScanArtifacts.go_toolchains_detected` field for the C136
     /// `waybill:go-toolchain-detected` document-scope annotation.
     pub go_toolchains_detected: Option<Vec<std::path::PathBuf>>,
+    // Milestone 218 (waybill#633): the scan-scoped cross-ecosystem
+    // edges report is built inside `scan_fs::scan_path`'s resolver
+    // loop (not inside `read_all`), so it does NOT live on this
+    // struct. It flows directly onto `ScanResult` instead. See
+    // `scan_fs::mod::xeco_report` for the accumulator.
 
     /// Milestone 107 FR-005a: scan-context ambiguities detected by the
     /// Yocto sysroot-vs-rootfs heuristic. Each entry is a free-form

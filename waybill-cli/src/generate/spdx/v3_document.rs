@@ -101,6 +101,7 @@ pub fn build_document(
             go_cache_warming: scan.go_cache_warming,
             go_workspace_mode: scan.go_workspace_mode,
             go_toolchains_detected: scan.go_toolchains_detected,
+            cross_ecosystem_edges_report: scan.cross_ecosystem_edges_report,
             helm_extraction_mode: scan.helm_extraction_mode,
             image_source: scan.image_source,
             source_document_binding: scan.source_document_binding,
@@ -762,6 +763,7 @@ pub fn build_document(
             scan.include_dev,
             scan.include_source_files,
             scan.compiler_pipeline,
+            scan.cross_ecosystem_edges_report,
         );
     // Milestone 158 US2 — compute the multi-root BFS reachability
     // pass on the AUGMENTED SPDX 3 graph and pass into

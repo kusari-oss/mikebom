@@ -140,6 +140,13 @@ pub struct ScanResult {
     /// was observed (byte-identity for non-Go and Go-project-only
     /// scans; C136 annotation absent).
     pub go_toolchains_detected: Option<Vec<std::path::PathBuf>>,
+    /// Milestone 218 (waybill#633): scan-scoped cross-ecosystem
+    /// dep-name edge resolution report. `None` when the
+    /// `--experimental-cross-ecosystem-edges` flag is OFF. Mirrored
+    /// from `scan_result.diagnostics.cross_ecosystem_edges_report`
+    /// below.
+    pub cross_ecosystem_edges_report:
+        Option<crate::generate::cross_ecosystem_edges::CrossEcosystemEdgesReport>,
     /// Milestone 204 (#554): document-scope Helm image-extraction-mode
     /// signal driving the C123 `waybill:image-extraction-completeness`
     /// annotation. `None` when no helm reader ran during the scan
@@ -336,6 +343,21 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
     // ScanResult into the format emitters for the C136 doc-scope
     // annotation.
     let mut go_toolchains_detected: Option<Vec<std::path::PathBuf>> = None;
+    // Milestone 218 (waybill#633): scan-scoped cross-ecosystem edges
+    // report. `None` when `--experimental-cross-ecosystem-edges` is
+    // OFF. Mirrored from ScanDiagnostics after the resolver pass.
+    let mut cross_ecosystem_edges_report:
+        Option<crate::generate::cross_ecosystem_edges::CrossEcosystemEdgesReport> = None;
+    // Milestone 218 (waybill#633): FR-000 flag read via env var
+    // (bridged from CLI in scan_cmd.rs). Hoisted here so both the
+    // resolver loop inside `if read_package_db` AND the report
+    // finalization at end-of-scan can access it.
+    let xeco_enabled = std::env::var("WAYBILL_EXPERIMENTAL_CROSS_ECOSYSTEM_EDGES")
+        .map(|v| !v.is_empty() && v != "0" && v.to_lowercase() != "false")
+        .unwrap_or(false);
+    // FR-000 scan-scoped report; populated inside the resolver.
+    let mut xeco_report =
+        crate::generate::cross_ecosystem_edges::CrossEcosystemEdgesReport::default();
     // Milestone 204 (#554): doc-scope helm-extraction-mode signal for
     // the C123 `waybill:image-extraction-completeness` annotation.
     // `None` on non-Helm scans (byte-identity per FR-004).
@@ -614,6 +636,42 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
         let mut manifest_sha_cache: std::collections::HashMap<String, Option<String>> =
             std::collections::HashMap::new();
 
+        // Milestone 218 (waybill#633): FR-003 data-model E7 sibling-
+        // ecosystem set = every ecosystem appearing on a non-generic
+        // main-module in this scan. Precomputed once; consumed by the
+        // tie-break rule for every generic-source ambiguous match.
+        // Main-module-ness derived from
+        // `extra_annotations["waybill:component-role"] == "main-module"`
+        // (existing waybill convention set by every m216-alike reader).
+        let xeco_sibling_ecos: std::collections::HashSet<String> = if xeco_enabled {
+            db_entries
+                .iter()
+                .filter(|e| {
+                    let is_main_module = e
+                        .extra_annotations
+                        .get("waybill:component-role")
+                        .and_then(|v| v.as_str())
+                        == Some("main-module");
+                    is_main_module && e.purl.ecosystem() != "generic"
+                })
+                .map(|e| e.purl.ecosystem().to_string())
+                .collect()
+        } else {
+            std::collections::HashSet::new()
+        };
+        // FR-001 candidate-ecosystem set = every distinct non-generic
+        // ecosystem appearing anywhere in the resolver index. Precomputed
+        // once so the inner cross-eco lookup avoids
+        // `name_to_purl.iter().map()` per dep name.
+        let xeco_candidate_ecos: std::collections::HashSet<String> = if xeco_enabled {
+            name_to_purl
+                .keys()
+                .filter_map(|(eco, _)| if eco != "generic" { Some(eco.clone()) } else { None })
+                .collect()
+        } else {
+            std::collections::HashSet::new()
+        };
+
         for entry in &db_entries {
             let purl_str = entry.purl.as_str().to_string();
             let ecosystem = entry.purl.ecosystem().to_string();
@@ -791,6 +849,16 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
             // (Depends names we never saw) are silently dropped so the
             // CycloneDX `dependsOn[]` array only references bom-refs
             // that exist in this SBOM.
+            //
+            // Milestone 218 (waybill#633): when the FR-000
+            // `--experimental-cross-ecosystem-edges` flag is enabled
+            // AND `ecosystem == "generic"`, a failed same-ecosystem
+            // lookup falls through to a cross-ecosystem search over
+            // `name_to_purl.iter()` — bridging `pkg:generic/`
+            // main-modules (m216 Ruby apps + future m216-alikes) to
+            // matching non-generic components. See
+            // `generate/cross_ecosystem_edges/tie_break.rs` +
+            // `contracts/tie-break-rule.md`.
             for dep_name in &entry.depends {
                 let key = (ecosystem.clone(), normalize_dep_name(&ecosystem, dep_name));
                 if let Some(to) = name_to_purl.get(&key) {
@@ -805,6 +873,86 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
                                 data_type: "package-database-depends".to_string(),
                             },
                         });
+                    }
+                } else if xeco_enabled && ecosystem == "generic" {
+                    // FR-001 cross-ecosystem fallback. Build the
+                    // candidate list by iterating every ecosystem in
+                    // the resolver index (target-ecosystem's
+                    // normalization applied per FR-012).
+                    let mut candidates: Vec<(String, String)> = Vec::new();
+                    for candidate_eco in xeco_candidate_ecos.iter() {
+                        let cand_key = (
+                            candidate_eco.clone(),
+                            crate::generate::cross_ecosystem_edges::normalize::target_normalized_name(
+                                candidate_eco,
+                                dep_name,
+                            ),
+                        );
+                        if let Some(target_purl) = name_to_purl.get(&cand_key) {
+                            candidates.push((candidate_eco.clone(), target_purl.clone()));
+                        }
+                    }
+                    // Deterministic sort per contracts/tie-break-rule.md.
+                    candidates.sort();
+                    if candidates.is_empty() {
+                        // FR-004: zero-match → record for the C139
+                        // doc-scope unresolved annotation.
+                        xeco_report.unresolved.push(
+                            crate::generate::cross_ecosystem_edges::CrossEcosystemInferenceUnresolvedRecord {
+                                source_purl: purl_str.clone(),
+                                unresolved_name: dep_name.clone(),
+                            },
+                        );
+                    } else {
+                        for emission in crate::generate::cross_ecosystem_edges::tie_break::resolve_cross_ecosystem(
+                            dep_name,
+                            &purl_str,
+                            candidates,
+                            &xeco_sibling_ecos,
+                            "gemfile-lock-dependencies",
+                        ) {
+                            use crate::generate::cross_ecosystem_edges::tie_break::EdgeEmission;
+                            match emission {
+                                EdgeEmission::Resolved(target_purl, payload) => {
+                                    if target_purl != purl_str {
+                                        relationships.push(Relationship {
+                                            from: purl_str.clone(),
+                                            to: target_purl.clone(),
+                                            relationship_type: RelationshipType::DependsOn,
+                                            provenance: EnrichmentProvenance {
+                                                source: entry.source_path.clone(),
+                                                data_type: "cross-ecosystem-bridge".to_string(),
+                                            },
+                                        });
+                                        xeco_report.crossed_edges.insert(
+                                            (purl_str.clone(), target_purl.clone()),
+                                            payload,
+                                        );
+                                    }
+                                }
+                                EdgeEmission::Ambiguous(target_purl, base, ambig) => {
+                                    if target_purl != purl_str {
+                                        relationships.push(Relationship {
+                                            from: purl_str.clone(),
+                                            to: target_purl.clone(),
+                                            relationship_type: RelationshipType::DependsOn,
+                                            provenance: EnrichmentProvenance {
+                                                source: entry.source_path.clone(),
+                                                data_type: "cross-ecosystem-bridge-ambiguous".to_string(),
+                                            },
+                                        });
+                                        xeco_report.crossed_edges.insert(
+                                            (purl_str.clone(), target_purl.clone()),
+                                            base,
+                                        );
+                                        xeco_report.ambiguous_edges.insert(
+                                            (purl_str.clone(), target_purl.clone()),
+                                            ambig,
+                                        );
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -891,6 +1039,22 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
     // serialized SBOM output.
     tag_main_modules_with_workspace_root(&mut components, root);
 
+    // Milestone 218 (waybill#633): finalize the cross-ecosystem
+    // report + emit the FR-013 INFO summary. Emission gated on the
+    // FR-000 flag (no log line when flag OFF).
+    if xeco_enabled {
+        xeco_report.recompute_summary();
+        tracing::info!(
+            resolved = xeco_report.summary.edges_resolved,
+            ambiguous = xeco_report.summary.edges_ambiguous,
+            unresolved = xeco_report.summary.names_unresolved,
+            "cross-ecosystem edges"
+        );
+        // Sort unresolved for byte-identity in the C139 annotation.
+        xeco_report.unresolved.sort();
+        cross_ecosystem_edges_report = Some(xeco_report);
+    }
+
     Ok(ScanResult {
         components,
         relationships,
@@ -901,6 +1065,7 @@ pub fn scan_path(root: &Path, deb_codename: Option<&str>, size_cap: u64, read_pa
         go_cache_warming,
         go_workspace_mode,
         go_toolchains_detected,
+        cross_ecosystem_edges_report,
         helm_extraction_mode,
         scan_target_coord,
         divergence_records,
@@ -1457,7 +1622,7 @@ fn apply_lifecycle_scope_to_edges(
     }
 }
 
-fn normalize_dep_name(ecosystem: &str, name: &str) -> String {
+pub(crate) fn normalize_dep_name(ecosystem: &str, name: &str) -> String {
     match ecosystem {
         "pypi" => name.replace('_', "-").to_lowercase(),
         _ => name.to_lowercase(),

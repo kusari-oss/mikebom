@@ -156,6 +156,9 @@ pub fn annotate_component(
     compiler_pipeline: Option<
         &waybill_common::attestation::compiler_pipeline::CompilerPipelineData,
     >,
+    cross_ecosystem_edges_report: Option<
+        &crate::generate::cross_ecosystem_edges::CrossEcosystemEdgesReport,
+    >,
 ) -> Vec<SpdxAnnotation> {
     use serde_json::json;
     let mut out: Vec<SpdxAnnotation> = Vec::new();
@@ -417,6 +420,36 @@ pub fn annotate_component(
             }
         ) {
             push(&mut out, "waybill:trace-attach-late", json!("true"));
+        }
+    }
+
+    // Milestone 218 (waybill#633) — C137
+    // `waybill:cross-ecosystem-inference` + C138
+    // `waybill:cross-ecosystem-inference-ambiguous` per-Package
+    // annotations. Emitted on the source Package for every crossed
+    // edge whose source PURL matches this component. Payload carries
+    // `target_purl` inline for disambiguation (SPDX 2.3 has no
+    // relationship-level annotation slot). Silent when the report is
+    // None (byte-identity for flag-off scans).
+    if let Some(report) = cross_ecosystem_edges_report {
+        let c_purl = c.purl.as_str();
+        for ((src, _tgt), payload) in &report.crossed_edges {
+            if src == c_purl {
+                if let Ok(value) = serde_json::to_string(payload) {
+                    push(&mut out, "waybill:cross-ecosystem-inference", json!(value));
+                }
+            }
+        }
+        for ((src, _tgt), ambig) in &report.ambiguous_edges {
+            if src == c_purl {
+                if let Ok(value) = serde_json::to_string(ambig) {
+                    push(
+                        &mut out,
+                        "waybill:cross-ecosystem-inference-ambiguous",
+                        json!(value),
+                    );
+                }
+            }
         }
     }
 
@@ -689,6 +722,23 @@ pub fn annotate_document(
                 toolchains.iter().map(|p| p.display().to_string()).collect();
             let value = serde_json::to_string(&paths).unwrap_or_default();
             push(&mut out, "waybill:go-toolchain-detected", json!(value));
+        }
+    }
+
+    // Milestone 218 (waybill#633): C139 doc-scope
+    // `waybill:cross-ecosystem-inference-unresolved` annotation.
+    // Silent when `unresolved` is empty per FR-011 (matches m176
+    // workspaces-detected + m217 go-toolchain-detected silence-on-
+    // absence precedent).
+    if let Some(report) = artifacts.cross_ecosystem_edges_report {
+        if !report.unresolved.is_empty() {
+            let value =
+                serde_json::to_string(&report.unresolved).unwrap_or_default();
+            push(
+                &mut out,
+                "waybill:cross-ecosystem-inference-unresolved",
+                json!(value),
+            );
         }
     }
 
@@ -1126,7 +1176,7 @@ mod tests {
             "pkg:golang/example.com/testify@v1",
             Some(waybill_common::resolution::LifecycleScope::Test),
         );
-        let annos = annotate_component("Tool: waybill-test", "2026-05-23T00:00:00Z", &c, false, false, None);
+        let annos = annotate_component("Tool: waybill-test", "2026-05-23T00:00:00Z", &c, false, false, None, None);
         let scope_annos: Vec<_> = annos
             .iter()
             .filter(|a| parse_envelope(a).field == "waybill:lifecycle-scope")
@@ -1143,7 +1193,7 @@ mod tests {
             (waybill_common::resolution::LifecycleScope::Build, "build"),
         ] {
             let c = mk_minimal_component("pkg:cargo/x@1", Some(scope));
-            let annos = annotate_component("Tool: waybill-test", "2026-05-23T00:00:00Z", &c, false, false, None);
+            let annos = annotate_component("Tool: waybill-test", "2026-05-23T00:00:00Z", &c, false, false, None, None);
             let found = annos
                 .iter()
                 .any(|a| {
@@ -1164,7 +1214,7 @@ mod tests {
             None,
         ] {
             let c = mk_minimal_component("pkg:deb/debian/libc6@2.36", scope);
-            let annos = annotate_component("Tool: waybill-test", "2026-05-23T00:00:00Z", &c, false, false, None);
+            let annos = annotate_component("Tool: waybill-test", "2026-05-23T00:00:00Z", &c, false, false, None, None);
             let leaked = annos
                 .iter()
                 .any(|a| parse_envelope(a).field == "waybill:lifecycle-scope");

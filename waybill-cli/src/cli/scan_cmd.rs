@@ -1230,6 +1230,45 @@ pub struct ScanArgs {
     /// features / non-Linux host / no `--features ebpf-tracing`).
     #[arg(long)]
     pub include_system_reads: bool,
+
+    /// Milestone 218 (waybill#633): EXPERIMENTAL opt-in cross-
+    /// ecosystem dep-name edge resolution.
+    ///
+    /// When enabled, the graph-dep-name resolver at
+    /// `scan_fs/mod.rs:794` bridges `pkg:generic/` main-module
+    /// `depends[]` names to matching components across every
+    /// ecosystem present in the resolver index (not just the
+    /// source ecosystem). This restores outgoing DEPENDS_ON edges
+    /// on m216 Gemfile-only Ruby-app main-modules (and, by
+    /// generalization, any future m216-alike reader producing
+    /// `pkg:generic/` main-modules for pip apps, npm CLI tools,
+    /// cargo binary-only crates, etc.).
+    ///
+    /// Emits three new annotations:
+    /// - `waybill:cross-ecosystem-inference` (per-edge) on every
+    ///   crossed edge.
+    /// - `waybill:cross-ecosystem-inference-ambiguous` (per-edge)
+    ///   on ambiguous multi-ecosystem matches per FR-003.
+    /// - `waybill:cross-ecosystem-inference-unresolved` (doc-scope)
+    ///   listing bare dep names that matched no component in any
+    ///   ecosystem.
+    ///
+    /// Default: OFF. Preserves current post-m216 output byte-
+    /// identically. The "experimental" prefix signals that
+    /// annotation shapes MAY evolve before flag graduation.
+    ///
+    /// See `docs/reference/cross-ecosystem-edges.md` for the
+    /// consumer-facing interpretation guide.
+    ///
+    /// The env-var equivalent
+    /// `WAYBILL_EXPERIMENTAL_CROSS_ECOSYSTEM_EDGES=1` is read
+    /// directly by `scan_fs::scan_path` (bypasses clap) so operators
+    /// can enable via env alone in CI without CLI-arg mutation.
+    #[arg(
+        long = "experimental-cross-ecosystem-edges",
+        action = clap::ArgAction::SetTrue,
+    )]
+    pub experimental_cross_ecosystem_edges: bool,
 }
 
 /// Milestone 173: CLI-side cache-warming mode. Two variants;
@@ -2225,6 +2264,20 @@ pub async fn execute(
         }
     }
 
+    // Milestone 218 (waybill#633): bridge the FR-000
+    // `--experimental-cross-ecosystem-edges` CLI flag to the env-var
+    // read by `scan_fs::scan_path`'s resolver. Same env-var-bridge
+    // pattern as WAYBILL_INCLUDE_VENDORED / WAYBILL_DEEP_HASH. Only
+    // SET when the CLI arg is true; NEVER unset — otherwise an
+    // env-var-only invocation (`WAYBILL_EXPERIMENTAL_...=1 waybill
+    // ...`, without the CLI flag) would be silently disabled.
+    if args.experimental_cross_ecosystem_edges {
+        // SAFETY: see comment above.
+        unsafe {
+            std::env::set_var("WAYBILL_EXPERIMENTAL_CROSS_ECOSYSTEM_EDGES", "1");
+        }
+    }
+
     // Milestone 108 US5: re-export `--fingerprints-rev` to the env so
     // the matcher's `LoadOptions::from_env()` sees the runtime
     // override (and ignores it if the operator didn't also pass the
@@ -2646,6 +2699,7 @@ pub async fn execute(
         go_cache_warming,
         go_workspace_mode,
         go_toolchains_detected,
+        cross_ecosystem_edges_report,
         helm_extraction_mode,
         scan_target_coord,
         divergence_records,
@@ -3345,6 +3399,7 @@ pub async fn execute(
         // scanned rootfs (byte-identity for non-Go and Go-project-only
         // scans; annotation absent).
         go_toolchains_detected: go_toolchains_detected.as_deref(),
+        cross_ecosystem_edges_report: cross_ecosystem_edges_report.as_ref(),
         // Milestone 204 (#554): doc-scope helm image-extraction-mode
         // signal for the C123 annotation.
         helm_extraction_mode: helm_extraction_mode.as_ref(),
@@ -4545,6 +4600,9 @@ mod tests {
             // by default. Individual tests flip on when auditing
             // secret paths in fixtures.
             include_system_reads: false,
+            // Milestone 218 — opt-in cross-ecosystem edges off by
+            // default (matches CLI default; preserves SC-009).
+            experimental_cross_ecosystem_edges: false,
         }
     }
 

@@ -43,12 +43,13 @@ const MAIN_MODULE_ROLE: &str = "main-module";
 /// (3) `docs/reference/split-modes.md`, (4) a new test scenario.
 /// See `specs/219-split-modes/contracts/grouping-strategy.md` for
 /// the full extensibility contract.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
 #[value(rename_all = "lowercase")]
 pub enum SplitMode {
     /// m215 default. Group key = `SubprojectRoot::subproject_id()` —
     /// one group per main-module. Byte-identity contract with
     /// alpha.67 `--split` preserved (SC-005).
+    #[default]
     Workspace,
     /// m219 addition. Group key = canonicalized
     /// `SubprojectRoot::source_dir`. All main-modules whose source
@@ -72,12 +73,6 @@ impl SplitMode {
                 }
             }
         }
-    }
-}
-
-impl Default for SplitMode {
-    fn default() -> Self {
-        SplitMode::Workspace
     }
 }
 
@@ -153,11 +148,20 @@ impl SubprojectRoot {
 /// up in a single sub-SBOM.
 #[derive(Debug)]
 pub(crate) struct SplitProjection {
+    // m219 note: `root` + `shared_deps_count` were consumed by m215's
+    // emit-time loop; after m219's GroupedProjection refactor at
+    // `emit_split`, only `components` + `relationships` are read from
+    // this struct at emit time (merge_group_projection consumes the
+    // BFS output and drops the wrapper). Both fields still exist for
+    // test/introspection use — allow-dead-code to silence clippy in
+    // the non-test build.
+    #[allow(dead_code)]
     pub root: SubprojectRoot,
     pub components: Vec<ResolvedComponent>,
     pub relationships: Vec<Relationship>,
     /// Count of THIS projection's components that also appear in ≥ 1
     /// sibling projection. Populated post-hoc by [`compute_shared_deps`].
+    #[allow(dead_code)]
     pub shared_deps_count: usize,
 }
 
@@ -413,6 +417,10 @@ fn is_dep_edge(kind: &waybill_common::resolution::RelationshipType) -> bool {
 /// components that overlap with ≥ 1 sibling) and return
 /// `(total_unique_components, aggregate_shared_dep_count)` for manifest
 /// document-level aggregates.
+// m219: compute_shared_deps is replaced by compute_shared_deps_groups
+// in the emit path. Retained for m215 unit-test coverage of the
+// per-projection shared-dep shape.
+#[allow(dead_code)]
 pub(crate) fn compute_shared_deps(
     projections: &mut [SplitProjection],
 ) -> (u64, u64) {
@@ -504,7 +512,10 @@ const RESERVED_SUB_SBOM_NAMES: &[&str] = &[
 /// 7. Empty string → `"root"` sentinel (would otherwise produce
 ///    `.multi.cdx.json` — a leading-dot hidden file on POSIX).
 pub(crate) fn dir_slug(source_dir: &str) -> String {
-    let mut s = source_dir.replace('/', "-").replace('\\', "-");
+    let mut s: String = source_dir
+        .chars()
+        .map(|c| if c == '/' || c == '\\' { '-' } else { c })
+        .collect();
     while s.starts_with('-') {
         s.remove(0);
     }
@@ -784,6 +795,7 @@ pub(crate) fn compute_shared_deps_groups(
 /// invocation (no partial writes are cleaned up here — the operator
 /// deletes `output_dir` on failure). The manifest is written LAST so
 /// its presence implies all sub-SBOMs landed successfully.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn emit_split(
     base_artifacts: &ScanArtifacts<'_>,
     formats: &[String],
@@ -1511,6 +1523,13 @@ mod tests {
     /// the ONLY file edited to prove the extension pattern works.
     #[test]
     fn sc009_extensibility_gate_hand_add_ecosystem_variant() {
+        // Variants are constructed via method calls below (Directory
+        // + TestOnlyEcosystem exercised in the assertions). Workspace
+        // is included as an intentional-completeness signal proving
+        // the extension is additive to the existing enum shape, not a
+        // replacement — allow-dead-code to silence the "never
+        // constructed" clippy on a variant that documents intent.
+        #[allow(dead_code)]
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         enum TestOnlySplitMode {
             Workspace,
